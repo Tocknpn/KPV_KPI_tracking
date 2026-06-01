@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SalesTrack Pro - Supervisor Dashboard</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-secondary-container": "#745c00",
+            "secondary-fixed": "#ffe088",
+            "surface-container-lowest": "#ffffff",
+            "tertiary": "#17575c",
+            "secondary": "#735c00",
+            "surface-bright": "#f8f9ff",
+            "tertiary-fixed": "#b1edf2",
+            "on-background": "#0b1c30",
+            "inverse-on-surface": "#eaf1ff",
+            "on-error-container": "#93000a",
+            "primary-fixed-dim": "#a6c8ff",
+            "primary": "#004f96",
+            "surface-container": "#e5eeff",
+            "tertiary-container": "#357075",
+            "surface-container-low": "#eff4ff",
+            "secondary-fixed-dim": "#e9c349",
+            "on-surface": "#0b1c30",
+            "on-primary-fixed-variant": "#004787",
+            "surface": "#f8f9ff",
+            "error": "#ba1a1a",
+            "on-primary-fixed": "#001c3b",
+            "inverse-surface": "#213145",
+            "on-secondary": "#ffffff",
+            "inverse-primary": "#a6c8ff",
+            "outline": "#717783",
+            "on-tertiary": "#ffffff",
+            "surface-variant": "#d3e4fe",
+            "on-tertiary-fixed-variant": "#074f54",
+            "surface-dim": "#cbdbf5",
+            "on-secondary-fixed-variant": "#574500",
+            "on-primary": "#ffffff",
+            "secondary-container": "#fed65b",
+            "on-tertiary-fixed": "#002022",
+            "on-surface-variant": "#414752",
+            "primary-fixed": "#d5e3ff",
+            "surface-container-highest": "#d3e4fe",
+            "tertiary-fixed-dim": "#96d1d6",
+            "primary-container": "#0067c0",
+            "on-primary-container": "#dbe7ff",
+            "on-secondary-fixed": "#241a00",
+            "error-container": "#ffdad6",
+            "outline-variant": "#c1c6d4",
+            "surface-tint": "#005eb1",
+            "on-error": "#ffffff",
+            "background": "#f8f9ff",
+            "surface-container-high": "#dce9ff",
+            "on-tertiary-container": "#b6f1f7"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.125rem",
+            "lg": "0.25rem",
+            "xl": "0.5rem",
+            "full": "0.75rem"
+          },
+          "spacing": {
+            "container-padding": "2rem",
+            "card-gap": "1.5rem",
+            "gutter": "1rem",
+            "sidebar-width": "260px",
+            "compact-row": "0.5rem"
+          },
+          "fontFamily": {
+            "headline-lg": ["Inter"],
+            "display-xl": ["Inter"],
+            "body-lg": ["Inter"],
+            "tabular-nums": ["Inter"],
+            "headline-md": ["Inter"],
+            "body-sm": ["Inter"],
+            "label-md": ["Inter"],
+            "body-md": ["Inter"]
+          },
+          "fontSize": {
+            "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+            "display-xl": ["44px", {"lineHeight": "52px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+            "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+            "tabular-nums": ["16px", {"lineHeight": "24px", "fontWeight": "500"}],
+            "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+            "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+            "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+            "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    body {
+      background: radial-gradient(circle at top left, #f8f9ff 0%, #e5eeff 100%);
+      min-height: 100vh;
+      font-family: 'Inter', sans-serif;
+    }
+    .mica-effect {
+      backdrop-filter: blur(40px);
+      background-color: rgba(255, 255, 255, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+    .glass-card {
+      background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      border-top: 1px solid rgba(255, 255, 255, 0.8);
+      border-left: 1px solid rgba(255, 255, 255, 0.8);
+      transition: all 0.2s ease;
+    }
+    .glass-card:hover {
+      background: rgba(255, 255, 255, 0.85);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+    .radial-progress {
+      transform: rotate(-90deg);
+    }
+    .gold-gradient {
+      background: linear-gradient(135deg, #D4AF37 0%, #F1D279 100%);
+    }
+    .sync-pulse {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+  </style>
+</head>
+<body class="text-on-surface">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-screen w-[260px] bg-surface-container-low/60 backdrop-blur-3xl border-r border-white/10 shadow-sm flex flex-col py-6 px-4 z-50">
+<div class="mb-10 px-2 flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center text-on-primary-container">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-on-surface leading-tight">SalesTrack</h1>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Supervisor Portal</p>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<!-- Active: Dashboard -->
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-primary bg-primary-container/20 border-l-4 border-primary font-bold transition-colors" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors" href="#">
+<span class="material-symbols-outlined">edit_document</span>
+<span class="font-label-md text-label-md">Performance Entry</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors" href="#">
+<span class="material-symbols-outlined">insert_chart</span>
+<span class="font-label-md text-label-md">Reports</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</nav>
+<div class="mt-auto pt-6 border-t border-white/10">
+<div class="flex items-center justify-between px-4 py-3 rounded-lg text-on-surface-variant bg-surface-container-highest/20">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-tertiary">cloud_done</span>
+<span class="font-label-md text-label-md">Sync Status</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-tertiary sync-pulse"></span>
+<span class="text-[10px] font-bold text-tertiary uppercase">Live</span>
+</div>
+</div>
+<div class="mt-4 px-2 flex items-center gap-3">
+<img alt="Executive User Avatar" class="w-10 h-10 rounded-full bg-surface-container" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB-_P3jKY9l5Be2VM83DFslH8Sm1yRmDT80vi3UTtyr7MtA2crQ70vbyTh1re-75yTxG78XRgMnhv4lYcNyZwrTaBECJnhbc-C_MmGnvnhwgSMxsG5Kh3jRG7Jfr10M7-Ax5wD6-t_l4NUQdjl4nJ-NVHzcJ0G4n2TTdia1wteOnlH7HsYCi1H1whr2TlXb8DMhJGdR2iGX0_K0UmQgGyEs0O4M75MHpybKe6ofj5Sg6ZxF9ohWp72xMgzLTxY-M-RgkoNCOQzpgQCz"/>
+<div>
+<p class="font-label-md text-label-md font-bold text-on-surface">Alex Rivera</p>
+<p class="text-[10px] text-on-surface-variant">Regional Supervisor</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- TopNavBar -->
+<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface/80 backdrop-blur-2xl border-b border-white/20 z-40">
+<div class="flex justify-between items-center h-full px-gutter max-w-[1600px] mx-auto">
+<div class="flex items-center gap-8">
+<h2 class="font-headline-md text-headline-md font-extrabold text-primary">Dashboard Overview</h2>
+<nav class="hidden md:flex items-center gap-6">
+<a class="font-label-md text-label-md text-primary font-bold border-b-2 border-primary pb-1" href="#">All Branches</a>
+<a class="font-label-md text-label-md text-on-surface-variant font-medium hover:text-primary transition-all" href="#">Main Office</a>
+<a class="font-label-md text-label-md text-on-surface-variant font-medium hover:text-primary transition-all" href="#">Regional Hub</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary rounded-xl font-label-md text-label-md hover:opacity-90 active:scale-95 transition-all shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined text-sm">sync</span>
+          Sync to Cloud
+        </button>
+<div class="h-8 w-px bg-white/20"></div>
+<button class="p-2 text-on-surface-variant hover:bg-surface-variant/30 rounded-full transition-colors relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full border-2 border-surface"></span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-variant/30 rounded-full transition-colors">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="ml-[260px] pt-24 pb-12 px-gutter max-w-[1600px]">
+<!-- Top KPI Grid -->
+<section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-card-gap mb-10">
+<!-- Gold Bar Card -->
+<div class="glass-card p-6 rounded-xl relative overflow-hidden group">
+<div class="flex items-start justify-between mb-4">
+<div>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">Gold Bar (Weight)</p>
+<h3 class="font-display-xl text-display-xl font-bold font-tabular-nums text-on-surface">1,248.5<span class="text-headline-md font-medium text-on-surface-variant ml-1">kg</span></h3>
+</div>
+<div class="p-3 bg-secondary-container text-on-secondary-container rounded-lg">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">payments</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-tertiary font-bold flex items-center text-body-sm">
+<span class="material-symbols-outlined text-sm">trending_up</span> 12.4%
+          </span>
+<span class="text-on-surface-variant text-body-sm font-label-md">vs last month</span>
+</div>
+<div class="absolute bottom-0 left-0 h-1 bg-secondary w-[85%] group-hover:w-[90%] transition-all duration-700"></div>
+</div>
+<!-- Jewelry Card -->
+<div class="glass-card p-6 rounded-xl relative overflow-hidden group">
+<div class="flex items-start justify-between mb-4">
+<div>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">Jewelry (Weight)</p>
+<h3 class="font-display-xl text-display-xl font-bold font-tabular-nums text-on-surface">342.2<span class="text-headline-md font-medium text-on-surface-variant ml-1">kg</span></h3>
+</div>
+<div class="p-3 bg-primary-container text-on-primary-container rounded-lg">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">diamond</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-tertiary font-bold flex items-center text-body-sm">
+<span class="material-symbols-outlined text-sm">trending_up</span> 5.1%
+          </span>
+<span class="text-on-surface-variant text-body-sm font-label-md">vs last month</span>
+</div>
+<div class="absolute bottom-0 left-0 h-1 bg-primary w-[62%] group-hover:w-[70%] transition-all duration-700"></div>
+</div>
+<!-- Quantity Card -->
+<div class="glass-card p-6 rounded-xl relative overflow-hidden group">
+<div class="flex items-start justify-between mb-4">
+<div>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">Total Quantity</p>
+<h3 class="font-display-xl text-display-xl font-bold font-tabular-nums text-on-surface">14,802</h3>
+</div>
+<div class="p-3 bg-tertiary-container text-on-tertiary-container rounded-lg">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">inventory_2</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-error font-bold flex items-center text-body-sm">
+<span class="material-symbols-outlined text-sm">trending_down</span> 2.3%
+          </span>
+<span class="text-on-surface-variant text-body-sm font-label-md">vs last month</span>
+</div>
+<div class="absolute bottom-0 left-0 h-1 bg-tertiary w-[92%] group-hover:w-[95%] transition-all duration-700"></div>
+</div>
+<!-- Big Bar Card -->
+<div class="glass-card p-6 rounded-xl relative overflow-hidden group">
+<div class="flex items-start justify-between mb-4">
+<div>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">1kg Big Bar</p>
+<h3 class="font-display-xl text-display-xl font-bold font-tabular-nums text-on-surface">85<span class="text-headline-md font-medium text-on-surface-variant ml-1">Units</span></h3>
+</div>
+<div class="p-3 bg-secondary-fixed text-on-secondary-fixed-variant rounded-lg">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">view_cozy</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-tertiary font-bold flex items-center text-body-sm">
+<span class="material-symbols-outlined text-sm">trending_up</span> 18.0%
+          </span>
+<span class="text-on-surface-variant text-body-sm font-label-md">vs last month</span>
+</div>
+<div class="absolute bottom-0 left-0 h-1 bg-secondary-container w-[45%] group-hover:w-[55%] transition-all duration-700"></div>
+</div>
+</section>
+<!-- Mid Section: Progress & Performance -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-card-gap">
+<!-- Radial Gauges (Month to Date) -->
+<div class="lg:col-span-5 glass-card p-8 rounded-xl">
+<div class="flex items-center justify-between mb-8">
+<h4 class="font-headline-md text-headline-md font-bold text-on-surface">Month to Date % Hit</h4>
+<span class="px-3 py-1 bg-surface-container-high rounded-full font-label-md text-label-md text-primary">November 2023</span>
+</div>
+<div class="flex flex-wrap items-center justify-around gap-8">
+<!-- Gauge 1: Gold Sell -->
+<div class="flex flex-col items-center gap-4">
+<div class="relative w-32 h-32">
+<svg class="w-full h-full radial-progress" viewbox="0 0 100 100">
+<circle cx="50" cy="50" fill="none" r="45" stroke="#e5eeff" stroke-width="8"></circle>
+<circle cx="50" cy="50" fill="none" r="45" stroke="url(#goldGradient)" stroke-dasharray="283" stroke-dashoffset="56" stroke-linecap="round" stroke-width="8"></circle>
+<defs>
+<lineargradient id="goldGradient" x1="0%" x2="100%" y1="0%" y2="0%">
+<stop offset="0%" style="stop-color:#D4AF37;stop-opacity:1"></stop>
+<stop offset="100%" style="stop-color:#F1D279;stop-opacity:1"></stop>
+</lineargradient>
+</defs>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="font-tabular-nums text-headline-md font-extrabold text-on-surface">80%</span>
+</div>
+</div>
+<p class="font-label-md text-label-md font-bold text-on-surface-variant uppercase">Gold Sell</p>
+</div>
+<!-- Gauge 2: Weight Target -->
+<div class="flex flex-col items-center gap-4">
+<div class="relative w-32 h-32">
+<svg class="w-full h-full radial-progress" viewbox="0 0 100 100">
+<circle cx="50" cy="50" fill="none" r="45" stroke="#e5eeff" stroke-width="8"></circle>
+<circle cx="50" cy="50" fill="none" r="45" stroke="#004f96" stroke-dasharray="283" stroke-dashoffset="100" stroke-linecap="round" stroke-width="8"></circle>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="font-tabular-nums text-headline-md font-extrabold text-on-surface">65%</span>
+</div>
+</div>
+<p class="font-label-md text-label-md font-bold text-on-surface-variant uppercase">Weight Target</p>
+</div>
+<!-- Gauge 3: Efficiency -->
+<div class="flex flex-col items-center gap-4">
+<div class="relative w-32 h-32">
+<svg class="w-full h-full radial-progress" viewbox="0 0 100 100">
+<circle cx="50" cy="50" fill="none" r="45" stroke="#e5eeff" stroke-width="8"></circle>
+<circle cx="50" cy="50" fill="none" r="45" stroke="#17575c" stroke-dasharray="283" stroke-dashoffset="20" stroke-linecap="round" stroke-width="8"></circle>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="font-tabular-nums text-headline-md font-extrabold text-on-surface">92%</span>
+</div>
+</div>
+<p class="font-label-md text-label-md font-bold text-on-surface-variant uppercase">Efficiency</p>
+</div>
+</div>
+</div>
+<!-- Team Performance Table -->
+<div class="lg:col-span-7 glass-card rounded-xl overflow-hidden flex flex-col">
+<div class="p-6 border-b border-white/20 flex items-center justify-between">
+<h4 class="font-headline-md text-headline-md font-bold text-on-surface">Top 5 Performers</h4>
+<button class="text-primary font-label-md text-label-md hover:underline">View All Sales Staff</button>
+</div>
+<div class="flex-1 overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container/30">
+<th class="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase">Sales Member</th>
+<th class="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase">Region</th>
+<th class="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase">Total Weight</th>
+<th class="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase">Status</th>
+<th class="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-white/10">
+<tr class="hover:bg-surface-variant/20 transition-colors">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<img alt="Sales Member Avatar" class="w-8 h-8 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBObTnmld5DQ0DQDzCj3qMpI8UnIunLmoz8hvKn5A7o2N4U2GdaRNIklv2qliVEJRTAIxATEUnJsJih10Wy7Gp8bKZfiwamsNiEpC3iOEtgtURCUvp6_agyyhrgoCIznKq77xeWhHxHGcEu41jGr8zIlyVvUBWhFVG3n9XYc78zqvFXiaWsY7qAoyg9AOv5KNsgV07af8ltQ-KPnI3P_RqyxtxdqCeqMd5g4ku7M9N8pfE8H9MWPsxp3S6qE9poq7M-Cz9aYDuSrtqJ"/>
+<span class="font-body-md text-body-md font-semibold">Sarah Miller</span>
+</div>
+</td>
+<td class="px-6 py-4 font-body-md text-body-md">South District</td>
+<td class="px-6 py-4 font-tabular-nums text-body-md font-bold">142.5 kg</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed-variant text-[10px] font-bold uppercase">Gold Tier</span>
+</td>
+<td class="px-6 py-4">
+<button class="p-2 hover:bg-surface-container rounded-lg transition-colors"><span class="material-symbols-outlined text-on-surface-variant">more_horiz</span></button>
+</td>
+</tr>
+<tr class="hover:bg-surface-variant/20 transition-colors">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<img alt="Sales Member Avatar" class="w-8 h-8 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCrYrUhfAfFb7ZrFs72m930KszTqtbDfzNMtM1CQXIIrkXzlcPdrUDhiQFoOT4BNRBp5KRqeV9_zmxp7UW7PID-oKlGlwL3IPeBU33ptWSHHhIi5NdWw-2JbB4Ggt0hA6sq-BnzFLEFbz0fDYhAJMv1Rz8x6G-NILyp0pNIPjX4wkY8hLadJ9QooYatV-Egkkwp4WD8vG5con43h0XOzi-RH4Duo1s2v4kNa0kzFr8BjRJKpw4WGhzlBBDTDRBBtTMl7H2zBwuHUAVc"/>
+<span class="font-body-md text-body-md font-semibold">James Douglas</span>
+</div>
+</td>
+<td class="px-6 py-4 font-body-md text-body-md">Central Hub</td>
+<td class="px-6 py-4 font-tabular-nums text-body-md font-bold">128.0 kg</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed-variant text-[10px] font-bold uppercase">Silver Tier</span>
+</td>
+<td class="px-6 py-4">
+<button class="p-2 hover:bg-surface-container rounded-lg transition-colors"><span class="material-symbols-outlined text-on-surface-variant">more_horiz</span></button>
+</td>
+</tr>
+<tr class="hover:bg-surface-variant/20 transition-colors">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<img alt="Sales Member Avatar" class="w-8 h-8 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCp1EqRkMcLwA5b0z6QYQ2qENCVTmgLmr9FhjSLtSoc-4ZMBEVC3UyQ19F6nBl_fEKYo2h0iV_5cUC7Fl2d5OD_ZOpV0gmh9Bh0RxEKVN1tGCa8qtlyzUkIlu2BNI2JbsgXwcezxa7suSuyqqrIfZq3OCzqW3usE6fn7hIK5p7TAv0q_KasqOXmKv6kgzBzl5dF9OLa7aGJ1Z33QGT7WYq7yurYK0LFawLpCSbJnpiat52gMpiDYsUd8TYVg03Hz1Dj9J5AqGmbr0Vg"/>
+<span class="font-body-md text-body-md font-semibold">Elena Atkins</span>
+</div>
+</td>
+<td class="px-6 py-4 font-body-md text-body-md">North Port</td>
+<td class="px-6 py-4 font-tabular-nums text-body-md font-bold">115.2 kg</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed-variant text-[10px] font-bold uppercase">Silver Tier</span>
+</td>
+<td class="px-6 py-4">
+<button class="p-2 hover:bg-surface-container rounded-lg transition-colors"><span class="material-symbols-outlined text-on-surface-variant">more_horiz</span></button>
+</td>
+</tr>
+<tr class="hover:bg-surface-variant/20 transition-colors">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<img alt="Sales Member Avatar" class="w-8 h-8 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_v1cDPO43Ec1lzUAUFYcMfTcI8e5tJAEZ7doJNRgD1N3MqUj_oF-qXfpclWgvZUAONNihc2ncAvor8yeMdhiPvz58AvB7U-UYx64olAXX_Wg6sm8MWzuzRrwxc5kyUAi9VZ1omjrxcaEnYoQ_YOBIrOVKy8hvmuSvCpLAaSXeiJBcQBH_Y_rd8simmQpe3q7-tc9FaF-Nmu-6auCEI9SsKygN6llGQGsMmNl8uYqJmjgYIOObFmML1EibHaJsyeA-avtgSIjG3wNU"/>
+<span class="font-body-md text-body-md font-semibold">Marcus Tso</span>
+</div>
+</td>
+<td class="px-6 py-4 font-body-md text-body-md">West Valley</td>
+<td class="px-6 py-4 font-tabular-nums text-body-md font-bold">108.9 kg</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant text-[10px] font-bold uppercase">Standard</span>
+</td>
+<td class="px-6 py-4">
+<button class="p-2 hover:bg-surface-container rounded-lg transition-colors"><span class="material-symbols-outlined text-on-surface-variant">more_horiz</span></button>
+</td>
+</tr>
+<tr class="hover:bg-surface-variant/20 transition-colors">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<img alt="Sales Member Avatar" class="w-8 h-8 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDi9cycCq0y6qIc_1t_siYRmWFJumJ2wxb3tbApwSsZ_pf3Gvh2i7TjKjKl935G0eaeoSh73NSmd297n4bo7CuAhwF4o82JFe75lFPBEoveZENWcJtYCDWbCpIts-98QGWej0aSSRyFgAIv2VaU7o0UcGyVMSi9J5xaS6U2voBtLXcmLEP98K3ZjJkMKhj3B4bnzx38PR_y8ZKylR8UtKbndxcsp2gEwjg9pj3FXw8pBmJBhusbLYx81G9eGA_iaMZZSuHKNermjL2E"/>
+<span class="font-body-md text-body-md font-semibold">Kelsey Wong</span>
+</div>
+</td>
+<td class="px-6 py-4 font-body-md text-body-md">East Marina</td>
+<td class="px-6 py-4 font-tabular-nums text-body-md font-bold">98.4 kg</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant text-[10px] font-bold uppercase">Standard</span>
+</td>
+<td class="px-6 py-4">
+<button class="p-2 hover:bg-surface-container rounded-lg transition-colors"><span class="material-symbols-outlined text-on-surface-variant">more_horiz</span></button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- Background Decoration -->
+<div class="fixed top-[-10%] right-[-10%] w-[500px] h-[500px] bg-primary/5 blur-[120px] rounded-full -z-10"></div>
+<div class="fixed bottom-[-5%] left-[10%] w-[400px] h-[400px] bg-secondary/5 blur-[100px] rounded-full -z-10"></div>
+</main>
+<script>
+    // Micro-interactions for button clicks and data simulation
+    document.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.classList.add('scale-95');
+        setTimeout(() => btn.classList.remove('scale-95'), 150);
+      });
+    });
+
+    // Simple Sync Simulation
+    const syncBtn = document.querySelector('button:contains("Sync to Cloud")');
+    if (syncBtn) {
+      syncBtn.addEventListener('click', () => {
+        const icon = syncBtn.querySelector('.material-symbols-outlined');
+        icon.classList.add('animate-spin');
+        syncBtn.innerText = 'Syncing...';
+        setTimeout(() => {
+          icon.classList.remove('animate-spin');
+          syncBtn.innerHTML = '<span class="material-symbols-outlined text-sm">check_circle</span> Synced';
+          setTimeout(() => {
+            syncBtn.innerHTML = '<span class="material-symbols-outlined text-sm">sync</span> Sync to Cloud';
+          }, 2000);
+        }, 3000);
+      });
+    }
+
+    // Helper for contains selector (vanilla js equivalent)
+    function addContainsSelector() {
+       const buttons = document.querySelectorAll('button');
+       buttons.forEach(btn => {
+         if (btn.innerText.includes('Sync to Cloud')) {
+            btn.addEventListener('click', function() {
+              const icon = this.querySelector('.material-symbols-outlined');
+              icon.style.animation = 'spin 1s linear infinite';
+              const originalText = this.innerHTML;
+              this.innerHTML = `<span class="material-symbols-outlined text-sm" style="animation: spin 1s linear infinite">sync</span> Syncing...`;
+              setTimeout(() => {
+                this.innerHTML = `<span class="material-symbols-outlined text-sm">done</span> Success`;
+                setTimeout(() => {
+                   this.innerHTML = originalText;
+                }, 2000);
+              }, 2500);
+            });
+         }
+       });
+    }
+    addContainsSelector();
+  </script>
+<style>
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</body></html>

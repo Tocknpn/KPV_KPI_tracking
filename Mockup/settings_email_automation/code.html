@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SalesTrack Pro | App Configuration</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        }
+        .glass-panel-elevated {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(40px);
+            border-top: 1px solid rgba(255, 255, 255, 1);
+            border-left: 1px solid rgba(255, 255, 255, 1);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at 50% 0%, #eff4ff 0%, #f8f9ff 100%);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #d3e4fe;
+            border-radius: 10px;
+        }
+        .sync-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-container": "#745c00",
+                        "secondary-fixed": "#ffe088",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary": "#17575c",
+                        "secondary": "#735c00",
+                        "surface-bright": "#f8f9ff",
+                        "tertiary-fixed": "#b1edf2",
+                        "on-background": "#0b1c30",
+                        "inverse-on-surface": "#eaf1ff",
+                        "on-error-container": "#93000a",
+                        "primary-fixed-dim": "#a6c8ff",
+                        "primary": "#004f96",
+                        "surface-container": "#e5eeff",
+                        "tertiary-container": "#357075",
+                        "surface-container-low": "#eff4ff",
+                        "secondary-fixed-dim": "#e9c349",
+                        "on-surface": "#0b1c30",
+                        "on-primary-fixed-variant": "#004787",
+                        "surface": "#f8f9ff",
+                        "error": "#ba1a1a",
+                        "on-primary-fixed": "#001c3b",
+                        "inverse-surface": "#213145",
+                        "on-secondary": "#ffffff",
+                        "inverse-primary": "#a6c8ff",
+                        "outline": "#717783",
+                        "on-tertiary": "#ffffff",
+                        "surface-variant": "#d3e4fe",
+                        "on-tertiary-fixed-variant": "#074f54",
+                        "surface-dim": "#cbdbf5",
+                        "on-secondary-fixed-variant": "#574500",
+                        "on-primary": "#ffffff",
+                        "secondary-container": "#fed65b",
+                        "on-tertiary-fixed": "#002022",
+                        "on-surface-variant": "#414752",
+                        "primary-fixed": "#d5e3ff",
+                        "surface-container-highest": "#d3e4fe",
+                        "tertiary-fixed-dim": "#96d1d6",
+                        "primary-container": "#0067c0",
+                        "on-primary-container": "#dbe7ff",
+                        "on-secondary-fixed": "#241a00",
+                        "error-container": "#ffdad6",
+                        "outline-variant": "#c1c6d4",
+                        "surface-tint": "#005eb1",
+                        "on-error": "#ffffff",
+                        "background": "#f8f9ff",
+                        "surface-container-high": "#dce9ff",
+                        "on-tertiary-container": "#b6f1f7"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "container-padding": "2rem",
+                        "card-gap": "1.5rem",
+                        "gutter": "1rem",
+                        "sidebar-width": "260px",
+                        "compact-row": "0.5rem"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Inter"],
+                        "display-xl": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "tabular-nums": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "label-md": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "display-xl": ["44px", {"lineHeight": "52px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                        "tabular-nums": ["16px", {"lineHeight": "24px", "fontWeight": "500"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+</head>
+<body class="text-on-surface bg-background">
+<!-- Sidebar Navigation -->
+<aside class="h-screen w-[260px] fixed left-0 top-0 bg-surface-container-low/60 backdrop-blur-3xl border-r border-white/10 shadow-sm flex flex-col py-6 px-4 z-50">
+<div class="mb-10 px-2">
+<h1 class="font-headline-md text-headline-md font-bold text-on-surface">Sales Performance</h1>
+<p class="font-label-md text-label-md text-on-surface-variant/70 uppercase tracking-widest mt-1">Supervisor Portal</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 font-label-md text-label-md text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors rounded" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 font-label-md text-label-md text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors rounded" href="#">
+<span class="material-symbols-outlined">edit_document</span>
+                Performance Entry
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 font-label-md text-label-md text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors rounded" href="#">
+<span class="material-symbols-outlined">insert_chart</span>
+                Reports
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 font-label-md text-label-md text-primary font-bold border-l-4 border-primary bg-primary-container/20 rounded-r" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">settings</span>
+                Settings
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 font-label-md text-label-md text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors rounded" href="#">
+<span class="material-symbols-outlined">sync</span>
+                Sync
+            </a>
+</nav>
+<div class="mt-auto pt-6 border-t border-white/10">
+<div class="flex items-center gap-3 px-3 py-2">
+<span class="material-symbols-outlined text-tertiary">cloud_done</span>
+<span class="font-label-md text-label-md text-on-surface-variant">Sync Status: Live</span>
+</div>
+<div class="mt-4 flex items-center gap-3 px-2">
+<div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border border-primary/20">
+<img alt="Executive User Avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCi8CTtJq6KHFmRtP8V7WsiOczcO6RKGGbjeQzLuxZbGIhq6DSK59ad3VRcyrh_u3C7m_1-qmAqhW2aVsog2BefvQcR5jCwhiG2pv5r6P5TBWlzekdOFmjxeGcFQISLQEzdYlI7Kt62W8zVA_n3Vo_fRpJPp81CbGzud2bx4KQZidz_CCElMUyDYOnAs4V3rQ2gghOy-XG4m0dqbjZCOCa9SoYysJ9_4r-DKwlIi6E9lORKOV-fJ2jrfC_KbZ-3dwe7ZhmbUi4lqym6"/>
+</div>
+<div>
+<p class="font-label-md text-label-md font-bold text-on-surface">Alex Mercer</p>
+<p class="text-[10px] text-on-surface-variant">Lead Supervisor</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Top AppBar -->
+<header class="fixed top-0 right-0 w-[calc(100%-260px)] z-40 bg-surface/80 backdrop-blur-2xl border-b border-white/20 h-16 flex justify-between items-center px-gutter">
+<div class="flex items-center gap-4">
+<span class="font-headline-md text-headline-md font-extrabold text-primary">SalesTrack Pro</span>
+<div class="h-6 w-px bg-outline-variant/30 mx-2"></div>
+<nav class="hidden lg:flex gap-6">
+<a class="font-label-md text-label-md text-on-surface-variant font-medium hover:text-primary transition-all" href="#">All Branches</a>
+<a class="font-label-md text-label-md text-on-surface-variant font-medium hover:text-primary transition-all" href="#">Main Office</a>
+<a class="font-label-md text-label-md text-on-surface-variant font-medium hover:text-primary transition-all" href="#">Regional Hub</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative group hidden md:block">
+<input class="bg-surface-variant/20 border-none rounded-full py-1.5 pl-10 pr-4 text-sm focus:ring-2 focus:ring-primary/30 w-64 transition-all" placeholder="Search config..." type="text"/>
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+</div>
+<button class="bg-primary hover:opacity-80 text-white font-label-md text-label-md px-4 py-1.5 rounded-full transition-opacity">Sync to Cloud</button>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-variant/30">notifications</span>
+<span class="material-symbols-outlined text-on-surface-variant hover:text-primary cursor-pointer p-2 rounded-full hover:bg-surface-variant/30">account_circle</span>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-[260px] pt-24 pb-12 px-gutter max-w-[1600px] min-h-screen">
+<!-- Header Section -->
+<header class="mb-8">
+<div class="flex items-end justify-between">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface">App Configuration</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Manage report automation, external sync endpoints, and local storage.</p>
+</div>
+<div class="flex gap-3">
+<button class="flex items-center gap-2 font-label-md text-label-md px-5 py-2 rounded-full border border-primary text-primary hover:bg-primary/5 transition-colors">
+<span class="material-symbols-outlined text-sm">restart_alt</span>
+                        Reset Defaults
+                    </button>
+<button class="flex items-center gap-2 font-label-md text-label-md px-6 py-2 rounded-full bg-primary text-white shadow-lg hover:shadow-primary/20 transition-all">
+<span class="material-symbols-outlined text-sm">save</span>
+                        Save All Changes
+                    </button>
+</div>
+</div>
+</header>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-12 gap-card-gap">
+<!-- Email Report Settings (Large Card) -->
+<section class="col-span-12 lg:col-span-8 glass-panel-elevated p-8 rounded-xl">
+<div class="flex items-center gap-3 mb-6">
+<div class="w-12 h-12 rounded-xl bg-secondary-container/30 flex items-center justify-center">
+<span class="material-symbols-outlined text-secondary text-2xl">mail</span>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface">Email Report Settings</h3>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Automated Dispatch</p>
+</div>
+</div>
+<div class="space-y-8">
+<!-- Recipients -->
+<div>
+<label class="font-label-md text-label-md block mb-3 text-primary">Recipients</label>
+<div class="flex flex-wrap gap-2 p-3 bg-surface-container rounded border border-outline-variant/30">
+<span class="inline-flex items-center gap-2 bg-primary/10 text-primary-fixed-dim bg-primary px-3 py-1.5 rounded-full text-sm font-medium">
+                                a.mercer@salestrack.pro
+                                <button class="material-symbols-outlined text-xs hover:text-white">close</button>
+</span>
+<span class="inline-flex items-center gap-2 bg-primary/10 text-primary-fixed-dim bg-primary px-3 py-1.5 rounded-full text-sm font-medium">
+                                regional.lead@corporate.com
+                                <button class="material-symbols-outlined text-xs hover:text-white">close</button>
+</span>
+<div class="flex-1 min-w-[200px]">
+<input class="w-full bg-transparent border-none focus:ring-0 text-sm py-1.5" placeholder="Add email address..." type="email"/>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+<!-- Frequency -->
+<div>
+<label class="font-label-md text-label-md block mb-3 text-primary">Schedule Frequency</label>
+<div class="flex bg-surface-container rounded p-1 border border-outline-variant/20">
+<button class="flex-1 py-2 font-label-md text-label-md rounded transition-all bg-white shadow-sm text-primary font-bold">Daily</button>
+<button class="flex-1 py-2 font-label-md text-label-md rounded transition-all text-on-surface-variant hover:bg-white/50">Weekly</button>
+<button class="flex-1 py-2 font-label-md text-label-md rounded transition-all text-on-surface-variant hover:bg-white/50">Monthly</button>
+</div>
+</div>
+<!-- Time Selection -->
+<div>
+<label class="font-label-md text-label-md block mb-3 text-primary">Dispatch Time (EST)</label>
+<div class="relative">
+<input class="w-full bg-surface-container border-b-2 border-primary border-t-0 border-l-0 border-r-0 text-headline-md font-tabular-nums px-4 py-1.5 focus:ring-0" type="time" value="08:00"/>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary opacity-50">schedule</span>
+</div>
+</div>
+</div>
+<!-- Metrics Inclusion -->
+<div>
+<label class="font-label-md text-label-md block mb-4 text-primary">Included Performance Metrics</label>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+<label class="group cursor-pointer flex flex-col p-4 glass-panel rounded-lg hover:border-primary transition-all">
+<input checked="" class="hidden peer" type="checkbox"/>
+<span class="material-symbols-outlined mb-2 text-on-surface-variant peer-checked:text-primary transition-colors">monitoring</span>
+<span class="font-label-md text-label-md text-on-surface-variant peer-checked:text-primary peer-checked:font-bold">Total Sales</span>
+<div class="mt-2 h-1 w-0 group-hover:w-full bg-primary/20 transition-all rounded-full peer-checked:bg-primary"></div>
+</label>
+<label class="group cursor-pointer flex flex-col p-4 glass-panel rounded-lg hover:border-primary transition-all">
+<input checked="" class="hidden peer" type="checkbox"/>
+<span class="material-symbols-outlined mb-2 text-on-surface-variant peer-checked:text-primary transition-colors">stars</span>
+<span class="font-label-md text-label-md text-on-surface-variant peer-checked:text-primary peer-checked:font-bold">Gold Targets</span>
+<div class="mt-2 h-1 w-0 group-hover:w-full bg-primary/20 transition-all rounded-full peer-checked:bg-primary"></div>
+</label>
+<label class="group cursor-pointer flex flex-col p-4 glass-panel rounded-lg hover:border-primary transition-all">
+<input class="hidden peer" type="checkbox"/>
+<span class="material-symbols-outlined mb-2 text-on-surface-variant peer-checked:text-primary transition-colors">groups</span>
+<span class="font-label-md text-label-md text-on-surface-variant peer-checked:text-primary peer-checked:font-bold">Team Rank</span>
+<div class="mt-2 h-1 w-0 group-hover:w-full bg-primary/20 transition-all rounded-full peer-checked:bg-primary"></div>
+</label>
+<label class="group cursor-pointer flex flex-col p-4 glass-panel rounded-lg hover:border-primary transition-all">
+<input checked="" class="hidden peer" type="checkbox"/>
+<span class="material-symbols-outlined mb-2 text-on-surface-variant peer-checked:text-primary transition-colors">history</span>
+<span class="font-label-md text-label-md text-on-surface-variant peer-checked:text-primary peer-checked:font-bold">Delta %</span>
+<div class="mt-2 h-1 w-0 group-hover:w-full bg-primary/20 transition-all rounded-full peer-checked:bg-primary"></div>
+</label>
+</div>
+</div>
+</div>
+</section>
+<!-- Side Cards -->
+<div class="col-span-12 lg:col-span-4 flex flex-col gap-card-gap">
+<!-- Google Sheets Sync -->
+<section class="glass-panel-elevated p-6 rounded-xl flex-1">
+<div class="flex items-center gap-3 mb-6">
+<div class="w-10 h-10 rounded-lg bg-tertiary-container/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-tertiary">table_chart</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface !text-lg">External Sheet Sync</h3>
+</div>
+<div class="space-y-5">
+<div>
+<label class="font-label-md text-label-md block mb-1.5 text-on-surface-variant">Sheet URL</label>
+<div class="relative">
+<input class="w-full bg-surface-container-low border-b-2 border-tertiary border-t-0 border-l-0 border-r-0 text-sm px-3 py-2 pr-10 truncate focus:ring-0" type="text" value="https://docs.google.com/spreadsheets/d/1vH9...7rX9"/>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-tertiary text-sm cursor-pointer hover:scale-110 transition-transform">open_in_new</span>
+</div>
+</div>
+<div class="bg-surface-container rounded-lg p-4">
+<div class="flex justify-between items-center mb-2">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase">Last Sync Log</span>
+<span class="flex items-center gap-1.5 text-[10px] font-bold text-tertiary">
+<span class="w-2 h-2 rounded-full bg-tertiary sync-pulse"></span>
+                                    ONLINE
+                                </span>
+</div>
+<div class="space-y-2 font-tabular-nums text-sm">
+<div class="flex justify-between text-on-surface-variant">
+<span>Timestamp</span>
+<span class="text-on-surface">2023-10-27 14:32:01</span>
+</div>
+<div class="flex justify-between text-on-surface-variant">
+<span>Records</span>
+<span class="text-on-surface">1,248 updated</span>
+</div>
+<div class="flex justify-between text-on-surface-variant">
+<span>Status</span>
+<span class="text-on-secondary-container font-bold">SUCCESS</span>
+</div>
+</div>
+</div>
+<button class="w-full py-2.5 bg-tertiary text-white font-label-md text-label-md rounded flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined text-sm">sync</span>
+                            Force Manual Sync
+                        </button>
+</div>
+</section>
+<!-- Cache Management -->
+<section class="glass-panel p-6 rounded-xl">
+<div class="flex items-center justify-between mb-4">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant">database</span>
+<h3 class="font-headline-md text-headline-md text-on-surface !text-lg">Local Storage</h3>
+</div>
+<span class="font-label-md text-label-md text-on-surface-variant">124.5 MB Used</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-5">Cached data accelerates dashboard loading. Clear it if you experience visual inconsistencies.</p>
+<div class="space-y-3">
+<div class="flex items-center justify-between p-3 rounded-lg bg-surface-container-low border border-outline-variant/10">
+<div>
+<p class="font-label-md text-label-md text-on-surface">Image Assets</p>
+<p class="text-[10px] text-on-surface-variant">82.1 MB • 142 files</p>
+</div>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-error transition-colors">delete</button>
+</div>
+<div class="flex items-center justify-between p-3 rounded-lg bg-surface-container-low border border-outline-variant/10">
+<div>
+<p class="font-label-md text-label-md text-on-surface">Offline Data Logs</p>
+<p class="text-[10px] text-on-surface-variant">42.4 MB • JSON format</p>
+</div>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-error transition-colors">delete</button>
+</div>
+</div>
+<div class="mt-6">
+<div class="flex items-center justify-between mb-2">
+<span class="font-label-md text-label-md text-on-surface">Auto-Cache Limit</span>
+<span class="font-label-md text-label-md text-primary">500 MB</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-primary" style="width: 25%"></div>
+</div>
+</div>
+</section>
+</div>
+</div>
+<!-- System Notifications & Alerts (Asymmetric Overlay Style) -->
+<div class="mt-12 grid grid-cols-12 gap-card-gap">
+<div class="col-span-12 md:col-span-4 glass-panel p-6 rounded-xl border-l-4 border-error/50">
+<div class="flex items-start gap-4">
+<span class="material-symbols-outlined text-error mt-1" style="font-variation-settings: 'FILL' 1;">warning</span>
+<div>
+<h4 class="font-label-md text-label-md font-bold text-on-surface">Security Alert</h4>
+<p class="text-sm text-on-surface-variant mt-1 leading-relaxed">External sync key expires in 3 days. Please refresh OAuth credentials to avoid automated report failure.</p>
+<a class="inline-block mt-3 text-xs font-bold text-primary hover:underline" href="#">RENEW ACCESS</a>
+</div>
+</div>
+</div>
+<!-- Graphic Illustration Placeholder -->
+<div class="col-span-12 md:col-span-8 glass-panel overflow-hidden rounded-xl relative group">
+<img alt="Abstract data visualization" class="w-full h-48 object-cover opacity-60 grayscale group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700" data-alt="A highly sophisticated abstract data visualization showing glowing blue and gold fiber optic strands networking across a dark, glass-like surface. The lighting is ethereal and corporate, reflecting a high-end enterprise software aesthetic. Subtle lens flares and bokeh highlights create depth, while the overall mood is technical, precise, and authoritative." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBRrW2fP-LEotQlesiP12cpajpZnmwMOnVDX3o_GeEMKEu8C_yAu40Xq3Abdrx192mBe_fFozledbOUB0bnwUgOnyEV6r2zIFUFhOeIpw_jftQgR59a_DW9AJz7uJ7-CIiw8jkB_fJV5eNn_l2FTup61vcCwIozvzWA2p9pr8acOwq5J58J3PBRlt7MMc0q4DUtFbZd841qDhEeWWlNbcHXB9EOUwnikeBygNWpE8Jc_Xweqepcyye3Oam_OmSweqkwXfbnvQ-cznrJ"/>
+<div class="absolute inset-0 bg-gradient-to-r from-surface to-transparent p-8 flex items-center">
+<div class="max-w-md">
+<h4 class="font-headline-md text-headline-md text-primary">Automation Engine 2.0</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-2">Enhanced reporting allows for dynamic segmentation of branch-level performance metrics with zero latency.</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Micro-interaction Script -->
+<script>
+        document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                const parent = this.closest('label');
+                if (this.checked) {
+                    parent.style.transform = 'scale(0.98)';
+                    setTimeout(() => parent.style.transform = 'scale(1)', 100);
+                }
+            });
+        });
+
+        // Simple tab switching for frequency buttons
+        const freqButtons = document.querySelectorAll('button[class*="flex-1"]');
+        freqButtons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                freqButtons.forEach(b => {
+                    b.classList.remove('bg-white', 'shadow-sm', 'text-primary', 'font-bold');
+                    b.classList.add('text-on-surface-variant', 'hover:bg-white/50');
+                });
+                this.classList.add('bg-white', 'shadow-sm', 'text-primary', 'font-bold');
+                this.classList.remove('text-on-surface-variant', 'hover:bg-white/50');
+            });
+        });
+    </script>
+</body></html>

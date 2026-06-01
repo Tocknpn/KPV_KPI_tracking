@@ -1,0 +1,40 @@
+import { ReactNode, useEffect } from 'react'
+import { Navigate } from 'react-router-dom'
+import { Sidebar } from './Sidebar'
+import { TopBar } from './TopBar'
+import { useAuthStore } from '../../store/auth.store'
+import { useAppStore } from '../../store/app.store'
+import type { UserRole } from '../../types'
+
+interface Props {
+  children: ReactNode
+  title: string
+  allowedRoles?: UserRole[]
+}
+
+export function AppShell({ children, title, allowedRoles }: Props) {
+  const { token, user, setBranches } = useAuthStore()
+  const { setUnsyncedCount } = useAppStore()
+
+  if (!token || !user) return <Navigate to="/login" replace />
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  // Load branches and unsynced count once after login
+  useEffect(() => {
+    if (!token) return
+    window.api.getBranches(token).then(setBranches).catch(console.error)
+    window.api.getUnsyncedCount(token).then(setUnsyncedCount).catch(console.error)
+  }, [token])
+
+  return (
+    <div className="min-h-screen bg-mica font-sans text-on-surface">
+      <Sidebar />
+      <TopBar title={title} />
+      <main className="ml-sidebar-width mt-16 p-container-padding max-w-[1600px] min-h-[calc(100vh-64px)]">
+        {children}
+      </main>
+    </div>
+  )
+}

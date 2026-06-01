@@ -1,0 +1,32 @@
+appId: com.salestrackpro.app
+productName: SalesTrack Pro
+copyright: Copyright © 2026 SalesTrack Pro
+
+directories:
+  output: dist
+  buildResources: resources
+
+files:
+  - out/**/*
+  - "!out/**/*.map"
+
+# Copy sql.js WASM into the packaged app's resources folder
+# Connection.ts reads it from process.resourcesPath at runtime
+extraResources:
+  - from: node_modules/sql.js/dist/sql-wasm.wasm
+    to: sql-wasm.wasm
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SalesTrack Pro

@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Performance Entry | SalesTrack Pro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(40px);
+            border-top: 1px solid rgba(255, 255, 255, 0.8);
+            border-left: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+        .mica-bg {
+            background: radial-gradient(circle at 50% 0%, #eff4ff 0%, #f8f9ff 100%);
+            background-attachment: fixed;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .row-hover:hover {
+            background-color: rgba(0, 79, 150, 0.02);
+        }
+        .cell-edit:focus-within {
+            border-bottom: 2px solid #004f96;
+            background: rgba(0, 79, 150, 0.03);
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-secondary-container": "#745c00",
+                      "secondary-fixed": "#ffe088",
+                      "surface-container-lowest": "#ffffff",
+                      "tertiary": "#17575c",
+                      "secondary": "#735c00",
+                      "surface-bright": "#f8f9ff",
+                      "tertiary-fixed": "#b1edf2",
+                      "on-background": "#0b1c30",
+                      "inverse-on-surface": "#eaf1ff",
+                      "on-error-container": "#93000a",
+                      "primary-fixed-dim": "#a6c8ff",
+                      "primary": "#004f96",
+                      "surface-container": "#e5eeff",
+                      "tertiary-container": "#357075",
+                      "surface-container-low": "#eff4ff",
+                      "secondary-fixed-dim": "#e9c349",
+                      "on-surface": "#0b1c30",
+                      "on-primary-fixed-variant": "#004787",
+                      "surface": "#f8f9ff",
+                      "error": "#ba1a1a",
+                      "on-primary-fixed": "#001c3b",
+                      "inverse-surface": "#213145",
+                      "on-secondary": "#ffffff",
+                      "inverse-primary": "#a6c8ff",
+                      "outline": "#717783",
+                      "on-tertiary": "#ffffff",
+                      "surface-variant": "#d3e4fe",
+                      "on-tertiary-fixed-variant": "#074f54",
+                      "surface-dim": "#cbdbf5",
+                      "on-secondary-fixed-variant": "#574500",
+                      "on-primary": "#ffffff",
+                      "secondary-container": "#fed65b",
+                      "on-tertiary-fixed": "#002022",
+                      "on-surface-variant": "#414752",
+                      "primary-fixed": "#d5e3ff",
+                      "surface-container-highest": "#d3e4fe",
+                      "tertiary-fixed-dim": "#96d1d6",
+                      "primary-container": "#0067c0",
+                      "on-primary-container": "#dbe7ff",
+                      "on-secondary-fixed": "#241a00",
+                      "error-container": "#ffdad6",
+                      "outline-variant": "#c1c6d4",
+                      "surface-tint": "#005eb1",
+                      "on-error": "#ffffff",
+                      "background": "#f8f9ff",
+                      "surface-container-high": "#dce9ff",
+                      "on-tertiary-container": "#b6f1f7"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "container-padding": "2rem",
+                      "card-gap": "1.5rem",
+                      "gutter": "1rem",
+                      "sidebar-width": "260px",
+                      "compact-row": "0.5rem"
+              },
+              "fontFamily": {
+                      "headline-lg": ["Inter"],
+                      "display-xl": ["Inter"],
+                      "body-lg": ["Inter"],
+                      "tabular-nums": ["Inter"],
+                      "headline-md": ["Inter"],
+                      "body-sm": ["Inter"],
+                      "label-md": ["Inter"],
+                      "body-md": ["Inter"]
+              },
+              "fontSize": {
+                      "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "display-xl": ["44px", {"lineHeight": "52px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                      "tabular-nums": ["16px", {"lineHeight": "24px", "fontWeight": "500"}],
+                      "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                      "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                      "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+              }
+            },
+          },
+        }
+    </script>
+</head>
+<body class="mica-bg min-h-screen text-on-surface font-body-md overflow-x-hidden">
+<!-- Sidebar Navigation Shell -->
+<aside class="fixed left-0 top-0 h-screen w-[260px] bg-surface-container-low/60 backdrop-blur-3xl border-r border-white/10 shadow-sm flex flex-col py-6 px-4 z-50">
+<div class="mb-10 px-2">
+<h1 class="font-headline-md text-headline-md font-bold text-on-surface">Sales Performance</h1>
+<p class="font-label-md text-label-md text-on-surface-variant opacity-70">Supervisor Portal</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-primary border-l-4 border-primary font-bold bg-primary-container/20 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="edit_document">edit_document</span>
+<span class="font-label-md text-label-md">Performance Entry</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="insert_chart">insert_chart</span>
+<span class="font-label-md text-label-md">Reports</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="sync">sync</span>
+<span class="font-label-md text-label-md">Sync</span>
+</a>
+</nav>
+<div class="mt-auto border-t border-white/10 pt-4 px-2">
+<div class="flex items-center gap-3 group cursor-pointer">
+<div class="w-10 h-10 rounded-full bg-surface-container-highest overflow-hidden">
+<img alt="Executive User Avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDFwf-gMU-WIOG1spG01sbhwVe1T9r1QnGOu21-tTYGV-NZa8YZmbo362ABGQV_gU140fyQgQmdBZ0SXnHnvkoinHNtQvFDHB_3__zVBYKXqnvJQHTyTT-khKeNjd1xlRCYZ29XV8c7jGZHO47PPImw3HfHApbL_EaHd94g32NNW-a-e6K6_TRFYQzE9NLCrMqVXI-mf4mbwypNPvgwpuBiwxfTklONG7su9Cobfsgw7rhLm8ac97Q-3oJfWyRunvBA-6RE4UAYvhP7"/>
+</div>
+<div>
+<p class="font-label-md text-label-md text-on-surface">Alex Rivera</p>
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-secondary-container animate-pulse"></span>
+<p class="text-[10px] uppercase font-bold text-on-surface-variant">Live Sync</p>
+</div>
+</div>
+</div>
+</div>
+</aside>
+<!-- Top AppBar Shell -->
+<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface/80 backdrop-blur-2xl border-b border-white/20 z-40 flex justify-between items-center px-8">
+<div class="flex items-center gap-8">
+<span class="font-headline-md text-headline-md font-extrabold text-primary">SalesTrack Pro</span>
+<nav class="hidden md:flex gap-6">
+<a class="text-on-surface-variant font-medium hover:text-primary transition-all" href="#">All Branches</a>
+<a class="text-primary font-bold border-b-2 border-primary pb-1" href="#">Main Office</a>
+<a class="text-on-surface-variant font-medium hover:text-primary transition-all" href="#">Regional Hub</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-3 text-on-surface-variant" data-icon="search">search</span>
+<input class="bg-surface-container-low border-none rounded-full pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-primary/20 w-64 transition-all" placeholder="Search salesman..." type="text"/>
+</div>
+<button class="material-symbols-outlined p-2 text-on-surface-variant hover:bg-surface-variant/30 rounded-full" data-icon="notifications">notifications</button>
+<div class="h-8 w-[1px] bg-white/20 mx-2"></div>
+<button class="bg-primary text-white px-4 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-[18px]" data-icon="cloud_done">cloud_done</span>
+                Sync to Cloud
+            </button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-[260px] mt-16 p-8 pb-24 max-w-[1600px]">
+<!-- Page Header -->
+<div class="mb-8 flex justify-between items-end">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface">Performance Entry</h2>
+<p class="text-on-surface-variant font-body-md">Daily performance tracking for Q3 Targets</p>
+</div>
+<div class="flex gap-3">
+<div class="glass-panel px-4 py-2 rounded-xl flex items-center gap-4">
+<div class="flex flex-col">
+<span class="font-label-md text-[10px] text-on-surface-variant uppercase tracking-wider">Active Period</span>
+<span class="font-tabular-nums text-sm font-bold text-primary">Oct 24, 2023</span>
+</div>
+<div class="w-[1px] h-8 bg-black/5"></div>
+<div class="flex flex-col">
+<span class="font-label-md text-[10px] text-on-surface-variant uppercase tracking-wider">Entries</span>
+<span class="font-tabular-nums text-sm font-bold text-secondary">42 / 150</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Dropzone Section -->
+<section class="mb-8">
+<div class="glass-panel border-2 border-dashed border-primary/30 rounded-2xl h-48 flex flex-col items-center justify-center cursor-pointer hover:border-primary/60 transition-all group overflow-hidden relative" id="dropzone">
+<div class="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<div class="relative z-10 flex flex-col items-center">
+<div class="w-16 h-16 rounded-full bg-primary-container/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary text-4xl" data-icon="upload_file">upload_file</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-1">Upload Targets</h3>
+<p class="text-on-surface-variant font-body-md">Drag and drop your .CSV or .XLSX team performance files here</p>
+<div class="mt-4 flex gap-4">
+<span class="text-[10px] font-bold text-on-surface-variant/40 uppercase tracking-widest px-2 py-1 border border-black/5 rounded">XLSX</span>
+<span class="text-[10px] font-bold text-on-surface-variant/40 uppercase tracking-widest px-2 py-1 border border-black/5 rounded">CSV</span>
+<span class="text-[10px] font-bold text-on-surface-variant/40 uppercase tracking-widest px-2 py-1 border border-black/5 rounded">PDF</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Data Grid Table -->
+<section class="glass-panel rounded-2xl overflow-hidden mb-8">
+<div class="overflow-x-auto">
+<table class="w-full border-collapse">
+<thead>
+<tr class="bg-surface-container-highest/50 border-b border-black/5">
+<th class="px-6 py-4 text-left font-label-md text-label-md text-on-surface-variant uppercase">Salesman Name</th>
+<th class="px-6 py-4 text-left font-label-md text-label-md text-on-surface-variant uppercase">Entry Date</th>
+<th class="px-6 py-4 text-right font-label-md text-label-md text-on-surface-variant uppercase">Gold Bar (g)</th>
+<th class="px-6 py-4 text-right font-label-md text-label-md text-on-surface-variant uppercase">Jewelry (g)</th>
+<th class="px-6 py-4 text-right font-label-md text-label-md text-on-surface-variant uppercase">Qty (pcs)</th>
+<th class="px-6 py-4 text-right font-label-md text-label-md text-on-surface-variant uppercase">1kg Bar (unit)</th>
+<th class="px-6 py-4 text-center font-label-md text-label-md text-on-surface-variant uppercase">Status</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-black/5">
+<!-- Table Rows -->
+<tr class="row-hover transition-colors">
+<td class="px-6 py-compact-row">
+<div class="flex items-center gap-3">
+<img alt="Salesman" class="w-8 h-8 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA0nv9nx_N5RFhyljT96_m8zyI-6ORiwCgQUT-S5h3uuyrhSpDVmqJfbjXOrnmMTk-XGgiIMacAoKoMWxmIojCvHqmmjiWDF3z8ow4nbUhiVbFOEmEydciQuwywI6exlxE3O7TRWNb3r1SXendbKwTx5IsxD-zPlRVxGI-kHR3aI7XvHUH165-FShMMO_RX8ovS2_81GLx2BTZv7LWiH61nAcax-Ll3unVeubK32RwLr6NnWr0UvwMxLJiL84vhR8x3tACI9vn_FoUK"/>
+<span class="font-medium">James Anderson</span>
+</div>
+</td>
+<td class="px-6 py-compact-row text-on-surface-variant font-tabular-nums text-sm">2023-10-24</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="450.50"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="1,200.00"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="14"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="0"/>
+</td>
+<td class="px-6 py-compact-row text-center">
+<span class="material-symbols-outlined text-green-500 text-[18px]" data-icon="check_circle">check_circle</span>
+</td>
+</tr>
+<tr class="row-hover transition-colors">
+<td class="px-6 py-compact-row">
+<div class="flex items-center gap-3">
+<img alt="Salesman" class="w-8 h-8 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAo3HPHfzzgYbpLx33W1lybbC4OWUwILgnfZ63ZxI8dGHp4Eupw9ILhVhw3O1dq8a68nmtgQ5dRTal5PXEUnNvgQ9x6eycfpGbniRC5B6OCzoFNL1TUKjYP_cToJKT4xIHOOMNENf9t2c4wNQVx7Y-GC6sbYmhFQsF1e4xMDR6m-axnnbDTMuwzjgNMlgv1PtUydnZj2N6aYE49uT58Usle4Fx3TA7H97ZqGYtuLegbnl5Ke-sp4KJaBCWYKHd1kTA7BkkBTmDrrhaN"/>
+<span class="font-medium">Sarah Jenkins</span>
+</div>
+</td>
+<td class="px-6 py-compact-row text-on-surface-variant font-tabular-nums text-sm">2023-10-24</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="0.00"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="850.25"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="8"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="1"/>
+</td>
+<td class="px-6 py-compact-row text-center">
+<span class="material-symbols-outlined text-secondary text-[18px] animate-pulse" data-icon="edit">edit</span>
+</td>
+</tr>
+<tr class="row-hover transition-colors">
+<td class="px-6 py-compact-row">
+<div class="flex items-center gap-3">
+<img alt="Salesman" class="w-8 h-8 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBeXpWMsW6nj88WUS96lPry-YrFLPqmWXhbwxI8ixU8gHguuY1EDq1vVxixaE7ZKZU_HMSUflrURatV5GRsQPnDB5261cXANGeiFQCP8CfA4_ER6yIeT522Iz47R3DucVrAoFP1NByBOeEIYJMTNHFVXSpTvAXbP5HRFTjc8iqejNtunCwpPwFQEhbST1F7MquYoDF_kTGV2nPg-80GWd5lKsC0luKVGzB93rIE5ykh-pYQg4MmODk4Xmz9_bPhgbFmvebU89l__r1v"/>
+<span class="font-medium">Michael Chen</span>
+</div>
+</td>
+<td class="px-6 py-compact-row text-on-surface-variant font-tabular-nums text-sm">2023-10-24</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="2,100.00"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="0.00"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="22"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="3"/>
+</td>
+<td class="px-6 py-compact-row text-center">
+<span class="material-symbols-outlined text-on-surface-variant/30 text-[18px]" data-icon="pending">pending</span>
+</td>
+</tr>
+<!-- Fill more rows for high-performance feel -->
+<tr class="row-hover transition-colors">
+<td class="px-6 py-compact-row">
+<div class="flex items-center gap-3">
+<img alt="Salesman" class="w-8 h-8 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDF9ow2TRHX_4HEoGicutsJEPgkdL-9hF3CKLBRiThHxTD9EdZqn9Rz97dEtdJweH2gw7ePb3uTwYV9ml50zsfPsSYv55gDx20IbRvMxEqJDEK3cYuvdwNGtMhw5tawWSY7dGj2yUyB2LrThgiIiAXHY1g5jhstOKAZ00aIafeMZFDgHLEizlqb3ybTXCwycct_kKfFKTmpTmNFGaDG05R836yDtm-AZ-Csv5hYZ3Yb_0R8_oTrDyxxDP27CwQZ1JHeIY0BYDlyubOr"/>
+<span class="font-medium">Elena Rodriguez</span>
+</div>
+</td>
+<td class="px-6 py-compact-row text-on-surface-variant font-tabular-nums text-sm">2023-10-24</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="125.00"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="4,120.50"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="31"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="0"/>
+</td>
+<td class="px-6 py-compact-row text-center">
+<span class="material-symbols-outlined text-green-500 text-[18px]" data-icon="check_circle">check_circle</span>
+</td>
+</tr>
+<tr class="row-hover transition-colors">
+<td class="px-6 py-compact-row">
+<div class="flex items-center gap-3">
+<img alt="Salesman" class="w-8 h-8 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBFWe8iktAyvRsekkY_NngDtFn_mSvQsu88oZG5KGqKm5Eqb0AcFnTJuMixvhXf3J3APZcSV5ZfoNSJHZTuaCnd_j4Yxg6EgG0oVsQbetOpHIJh9Wp0HYsB5pDq8x3vct4p2Wp6sKCDp9pTvGa40jcRoe8D1Mu5uGehb23daFP5zpfyxgnkXRuh94KQs-jakTmYUhoCG_Q2lf0vjbeZS9AIkYV-KfXHvP--hJ_A3JCkbDVnkEaPhfWQIE04J9eZDwT8Yv2KLSHJ2YRu"/>
+<span class="font-medium">David Miller</span>
+</div>
+</td>
+<td class="px-6 py-compact-row text-on-surface-variant font-tabular-nums text-sm">2023-10-24</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="880.00"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="210.00"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="11"/>
+</td>
+<td class="px-6 py-compact-row text-right cell-edit">
+<input class="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1" type="text" value="1"/>
+</td>
+<td class="px-6 py-compact-row text-center">
+<span class="material-symbols-outlined text-green-500 text-[18px]" data-icon="check_circle">check_circle</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Empty row for new entry -->
+<div class="p-4 bg-surface-container-low/30 border-t border-black/5">
+<button class="flex items-center gap-2 text-primary font-bold hover:translate-x-1 transition-transform">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+                    Add Custom Entry
+                </button>
+</div>
+</section>
+<!-- KPI Summary Cards (Bento style) -->
+<div class="grid grid-cols-4 gap-6">
+<div class="glass-panel p-6 rounded-2xl relative overflow-hidden group">
+<div class="absolute -right-4 -top-4 w-24 h-24 bg-primary/5 rounded-full group-hover:scale-150 transition-transform duration-700"></div>
+<p class="font-label-md text-on-surface-variant uppercase mb-2">Total Gold Weight</p>
+<h4 class="font-headline-md text-headline-md text-primary font-bold tabular-nums">3,456.25g</h4>
+<div class="mt-4 flex items-center gap-2 text-green-600 text-xs font-bold">
+<span class="material-symbols-outlined text-[14px]" data-icon="trending_up">trending_up</span>
+                    12.4% vs Yesterday
+                </div>
+</div>
+<div class="glass-panel p-6 rounded-2xl relative overflow-hidden group">
+<div class="absolute -right-4 -top-4 w-24 h-24 bg-secondary/5 rounded-full group-hover:scale-150 transition-transform duration-700"></div>
+<p class="font-label-md text-on-surface-variant uppercase mb-2">Jewelry Volume</p>
+<h4 class="font-headline-md text-headline-md text-secondary font-bold tabular-nums">6,381.00g</h4>
+<div class="mt-4 flex items-center gap-2 text-red-600 text-xs font-bold">
+<span class="material-symbols-outlined text-[14px]" data-icon="trending_down">trending_down</span>
+                    2.1% vs Yesterday
+                </div>
+</div>
+<div class="glass-panel p-6 rounded-2xl relative overflow-hidden group">
+<div class="absolute -right-4 -top-4 w-24 h-24 bg-tertiary/5 rounded-full group-hover:scale-150 transition-transform duration-700"></div>
+<p class="font-label-md text-on-surface-variant uppercase mb-2">Unit Quantity</p>
+<h4 class="font-headline-md text-headline-md text-tertiary font-bold tabular-nums">86 Units</h4>
+<div class="mt-4 flex items-center gap-2 text-on-surface-variant text-xs font-bold">
+<span class="material-symbols-outlined text-[14px]" data-icon="drag_handle">drag_handle</span>
+                    Stable Target
+                </div>
+</div>
+<div class="glass-panel p-6 rounded-2xl relative overflow-hidden group">
+<div class="absolute -right-4 -top-4 w-24 h-24 bg-primary/5 rounded-full group-hover:scale-150 transition-transform duration-700"></div>
+<p class="font-label-md text-on-surface-variant uppercase mb-2">1kg Bulk Bars</p>
+<h4 class="font-headline-md text-headline-md text-on-surface font-bold tabular-nums">5 Units</h4>
+<div class="mt-4 flex items-center gap-2 text-green-600 text-xs font-bold">
+<span class="material-symbols-outlined text-[14px]" data-icon="trending_up">trending_up</span>
+                    New Milestone
+                </div>
+</div>
+</div>
+</main>
+<!-- Bottom Action Bar -->
+<footer class="fixed bottom-0 right-0 w-[calc(100%-260px)] h-20 bg-surface-container-low/90 backdrop-blur-xl border-t border-white/20 z-40 flex items-center justify-between px-8">
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-green-500"></div>
+<span class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Auto-save Enabled</span>
+</div>
+<p class="text-sm text-on-surface-variant">Last local save: <span class="font-bold">2 mins ago</span></p>
+</div>
+<div class="flex gap-4">
+<button class="px-6 py-2.5 rounded-lg border border-primary text-primary font-bold hover:bg-primary/5 transition-all flex items-center gap-2">
+<span class="material-symbols-outlined text-[20px]" data-icon="save">save</span>
+                Save to Local
+            </button>
+<button class="px-8 py-2.5 rounded-lg bg-primary text-white font-bold hover:shadow-lg hover:shadow-primary/20 active:scale-95 transition-all flex items-center gap-2">
+<span class="material-symbols-outlined text-[20px]" data-icon="cloud_upload">cloud_upload</span>
+                Sync to Cloud
+            </button>
+</div>
+</footer>
+<!-- Micro-interactions Script -->
+<script>
+        // Dropzone interaction
+        const dropzone = document.getElementById('dropzone');
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('border-primary', 'bg-primary/5');
+        });
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('border-primary', 'bg-primary/5');
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('border-primary', 'bg-primary/5');
+            alert('File processing simulation started...');
+        });
+
+        // Inline editing feedback
+        const inputs = document.querySelectorAll('.cell-edit input');
+        inputs.forEach(input => {
+            input.addEventListener('change', () => {
+                const row = input.closest('tr');
+                const statusIcon = row.querySelector('td:last-child span');
+                statusIcon.textContent = 'sync';
+                statusIcon.classList.add('animate-spin', 'text-secondary');
+                
+                setTimeout(() => {
+                    statusIcon.textContent = 'check_circle';
+                    statusIcon.classList.remove('animate-spin', 'text-secondary');
+                    statusIcon.classList.add('text-green-500');
+                }, 1500);
+            });
+        });
+    </script>
+</body></html>

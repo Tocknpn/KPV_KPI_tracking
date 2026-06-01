@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SalesTrack Pro - Detailed Performance Report</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-container": "#745c00",
+                        "secondary-fixed": "#ffe088",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary": "#17575c",
+                        "secondary": "#735c00",
+                        "surface-bright": "#f8f9ff",
+                        "tertiary-fixed": "#b1edf2",
+                        "on-background": "#0b1c30",
+                        "inverse-on-surface": "#eaf1ff",
+                        "on-error-container": "#93000a",
+                        "primary-fixed-dim": "#a6c8ff",
+                        "primary": "#004f96",
+                        "surface-container": "#e5eeff",
+                        "tertiary-container": "#357075",
+                        "surface-container-low": "#eff4ff",
+                        "secondary-fixed-dim": "#e9c349",
+                        "on-surface": "#0b1c30",
+                        "on-primary-fixed-variant": "#004787",
+                        "surface": "#f8f9ff",
+                        "error": "#ba1a1a",
+                        "on-primary-fixed": "#001c3b",
+                        "inverse-surface": "#213145",
+                        "on-secondary": "#ffffff",
+                        "inverse-primary": "#a6c8ff",
+                        "outline": "#717783",
+                        "on-tertiary": "#ffffff",
+                        "surface-variant": "#d3e4fe",
+                        "on-tertiary-fixed-variant": "#074f54",
+                        "surface-dim": "#cbdbf5",
+                        "on-secondary-fixed-variant": "#574500",
+                        "on-primary": "#ffffff",
+                        "secondary-container": "#fed65b",
+                        "on-tertiary-fixed": "#002022",
+                        "on-surface-variant": "#414752",
+                        "primary-fixed": "#d5e3ff",
+                        "surface-container-highest": "#d3e4fe",
+                        "tertiary-fixed-dim": "#96d1d6",
+                        "primary-container": "#0067c0",
+                        "on-primary-container": "#dbe7ff",
+                        "on-secondary-fixed": "#241a00",
+                        "error-container": "#ffdad6",
+                        "outline-variant": "#c1c6d4",
+                        "surface-tint": "#005eb1",
+                        "on-error": "#ffffff",
+                        "background": "#f8f9ff",
+                        "surface-container-high": "#dce9ff",
+                        "on-tertiary-container": "#b6f1f7"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "container-padding": "2rem",
+                        "card-gap": "1.5rem",
+                        "gutter": "1rem",
+                        "sidebar-width": "260px",
+                        "compact-row": "0.5rem"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Inter"],
+                        "display-xl": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "tabular-nums": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "label-md": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "display-xl": ["44px", {"lineHeight": "52px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                        "tabular-nums": ["16px", {"lineHeight": "24px", "fontWeight": "500"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+        .mica-bg {
+            background: radial-gradient(circle at 50% 0%, #eff4ff 0%, #f8f9ff 100%);
+        }
+        .active-tab-indicator {
+            position: absolute;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: #004f96;
+        }
+    </style>
+</head>
+<body class="mica-bg text-on-surface font-body-md text-body-md overflow-x-hidden">
+<!-- SideNavBar -->
+<aside class="h-screen w-[260px] fixed left-0 top-0 bg-surface-container-low/60 backdrop-blur-3xl border-r border-white/10 shadow-sm flex flex-col py-6 px-4 z-50">
+<div class="mb-10 px-2">
+<h1 class="font-headline-md text-headline-md font-bold text-on-surface">Sales Performance</h1>
+<p class="font-label-md text-label-md text-on-surface-variant opacity-70">Supervisor Portal</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors group" href="#">
+<span class="material-symbols-outlined text-primary">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors group" href="#">
+<span class="material-symbols-outlined text-primary">edit_document</span>
+<span class="font-label-md text-label-md">Performance Entry</span>
+</a>
+<!-- Active State: Reports -->
+<a class="relative flex items-center gap-3 px-3 py-3 rounded-lg text-primary border-l-4 border-primary font-bold bg-primary-container/20 transition-colors group" href="#">
+<span class="material-symbols-outlined text-primary">insert_chart</span>
+<span class="font-label-md text-label-md">Reports</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors group" href="#">
+<span class="material-symbols-outlined text-primary">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-surface-variant font-normal hover:bg-surface-variant/30 transition-colors group" href="#">
+<span class="material-symbols-outlined text-primary">sync</span>
+<span class="font-label-md text-label-md">Sync</span>
+</a>
+</nav>
+<div class="mt-auto pt-6 border-t border-white/10">
+<div class="flex items-center justify-between px-3 py-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-sm animate-spin" style="animation-duration: 3s;">sync</span>
+<span class="font-label-md text-label-md text-on-surface-variant">Sync Status</span>
+</div>
+<div class="w-2 h-2 rounded-full bg-secondary-container shadow-[0_0_8px_rgba(254,214,91,0.6)]"></div>
+</div>
+<div class="flex items-center gap-3 px-3 mt-4">
+<img alt="Executive User Avatar" class="w-8 h-8 rounded-full bg-surface-container-highest" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBmmqCiNrVpogK48AjH8ipVeg7yMtPJrbjRaTDDwMfHUnhJNc-tzzFoRv2skUc36y_MsQHnzEpYnbU7PGGkuSmzvY_GsR14t33fOZ9PzOdgAIsuxvFYgqBNgK8gkv6af_xEISiJ9VLyFzu2YIatAlvgT8h0e2CjBEO04KwOCMDP2nlQa7UO6Z45DvIxGkToyYyTUYX3cusx4S1GozW-E5FbiXHf_-00IB2CpZVA6oOGxwNtiIHvm0cwC9MQxjpIQloCR1hiIjIurOe5"/>
+<div class="overflow-hidden">
+<p class="font-label-md text-label-md font-bold truncate">Alex Sterling</p>
+<p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Senior Manager</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- TopAppBar -->
+<header class="fixed top-0 right-0 w-[calc(100%-260px)] z-40 bg-surface/80 backdrop-blur-2xl border-b border-white/20 flex justify-between items-center h-16 px-gutter ml-[260px]">
+<div class="flex items-center gap-8">
+<span class="font-headline-md text-headline-md font-extrabold text-primary">SalesTrack Pro</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-on-surface-variant font-medium hover:text-primary transition-all" href="#">All Branches</a>
+<a class="text-primary font-bold border-b-2 border-primary pb-1" href="#">Main Office</a>
+<a class="text-on-surface-variant font-medium hover:text-primary transition-all" href="#">Regional Hub</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative group">
+<span class="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-on-surface-variant text-lg">search</span>
+</span>
+<input class="bg-surface-variant/20 border-none rounded-full pl-10 pr-4 py-1.5 text-body-sm font-body-sm focus:ring-2 focus:ring-primary/20 w-64 transition-all group-hover:bg-surface-variant/40" placeholder="Search accounts..." type="text"/>
+</div>
+<button class="bg-primary text-on-primary px-4 py-1.5 rounded-full text-label-md font-label-md flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-sm">cloud_upload</span>
+                Sync to Cloud
+            </button>
+<div class="flex items-center gap-1">
+<button class="p-2 text-on-surface-variant hover:text-primary transition-all relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-surface"></span>
+</button>
+<button class="p-2 text-on-surface-variant hover:text-primary transition-all">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="ml-[260px] pt-24 px-gutter pb-12 max-w-[1600px]">
+<!-- Header Section with Date Picker & Export -->
+<section class="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
+<div>
+<nav class="flex items-center gap-2 text-label-md text-on-surface-variant mb-2">
+<span>Reports</span>
+<span class="material-symbols-outlined text-sm">chevron_right</span>
+<span class="text-primary">Performance Tracking</span>
+</nav>
+<h2 class="font-headline-lg text-headline-lg">Monthly Tracking Report</h2>
+<p class="text-on-surface-variant font-body-md mt-1">Real-time performance analytics for the Main Office sales division.</p>
+</div>
+<div class="flex items-center gap-3">
+<!-- Date Range Picker Simulation -->
+<div class="glass-card flex items-center rounded-xl p-1 shadow-sm">
+<button class="px-4 py-2 bg-white rounded-lg text-label-md font-label-md text-primary shadow-sm">MTD</button>
+<button class="px-4 py-2 text-label-md font-label-md text-on-surface-variant hover:text-primary transition-colors">Last Month</button>
+<div class="h-6 w-px bg-on-surface-variant/10 mx-1"></div>
+<button class="px-4 py-2 flex items-center gap-2 text-label-md font-label-md text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-lg">calendar_today</span>
+                        Oct 1 - Oct 24
+                    </button>
+</div>
+<div class="flex items-center gap-2">
+<button class="glass-card flex items-center gap-2 px-4 py-2.5 rounded-xl text-label-md font-label-md text-on-surface-variant hover:bg-surface transition-all border border-outline-variant/30">
+<span class="material-symbols-outlined text-lg">picture_as_pdf</span>
+                        PDF
+                    </button>
+<button class="glass-card flex items-center gap-2 px-4 py-2.5 rounded-xl text-label-md font-label-md text-on-surface-variant hover:bg-surface transition-all border border-outline-variant/30">
+<span class="material-symbols-outlined text-lg">csv</span>
+                        CSV
+                    </button>
+</div>
+</div>
+</section>
+<!-- KPI Summary Bento Row -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+<div class="glass-card p-6 rounded-xl border-l-4 border-primary">
+<p class="text-label-md font-label-md text-on-surface-variant uppercase tracking-wider mb-1">Total Target</p>
+<div class="flex items-baseline gap-2">
+<h3 class="font-display-xl text-display-xl">$1.2M</h3>
+<span class="text-label-md text-on-surface-variant font-normal">USD</span>
+</div>
+<div class="mt-4 flex items-center gap-2 text-body-sm">
+<span class="text-primary font-bold">84%</span>
+<span class="text-on-surface-variant">Global Reach</span>
+</div>
+</div>
+<div class="glass-card p-6 rounded-xl border-l-4 border-secondary-container">
+<p class="text-label-md font-label-md text-on-surface-variant uppercase tracking-wider mb-1">Total MTD</p>
+<div class="flex items-baseline gap-2">
+<h3 class="font-display-xl text-display-xl">$984.2K</h3>
+</div>
+<div class="mt-4 flex items-center gap-2 text-body-sm text-tertiary">
+<span class="material-symbols-outlined text-sm">trending_up</span>
+<span>12.5% increase vs LW</span>
+</div>
+</div>
+<div class="glass-card p-6 rounded-xl border-l-4 border-tertiary">
+<p class="text-label-md font-label-md text-on-surface-variant uppercase tracking-wider mb-1">Avg % Hit</p>
+<div class="flex items-baseline gap-2">
+<h3 class="font-display-xl text-display-xl">82.1%</h3>
+</div>
+<div class="mt-4 w-full bg-surface-variant/30 h-1.5 rounded-full overflow-hidden">
+<div class="bg-tertiary h-full w-[82.1%]"></div>
+</div>
+</div>
+<div class="glass-card p-6 rounded-xl bg-primary-container text-on-primary-container relative overflow-hidden">
+<div class="relative z-10">
+<p class="text-label-md font-label-md text-on-primary-container/70 uppercase tracking-wider mb-1">Pacing Goal</p>
+<h3 class="font-display-xl text-display-xl">On Track</h3>
+<p class="text-body-sm mt-4">Estimated EOM: 104.2%</p>
+</div>
+<span class="material-symbols-outlined absolute -right-4 -bottom-4 text-9xl text-white/10 rotate-12">auto_graph</span>
+</div>
+</div>
+<!-- Performance Table -->
+<div class="glass-card rounded-2xl overflow-hidden shadow-sm border border-white/40">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-variant/20 border-b border-white/40">
+<th class="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Representative</th>
+<th class="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Monthly Target</th>
+<th class="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">MTD Performance</th>
+<th class="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-center">% Hit</th>
+<th class="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Daily Goal (Rem.)</th>
+<th class="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">EOM Projection</th>
+<th class="px-6 py-4"></th>
+</tr>
+</thead>
+<tbody class="divide-y divide-white/20">
+<!-- High Performer Row -->
+<tr class="hover:bg-primary-container/[0.03] transition-colors group">
+<td class="px-6 py-4 whitespace-nowrap">
+<div class="flex items-center gap-3">
+<img alt="Avatar" class="w-8 h-8 rounded-full border border-primary/20" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBy_icgG2M-eFuyMvaQJu5VmIhW9xNG22NHi56mUAr9uEOZNwrbb-Q9zj5eubReOZcXsMVwiK8tUbdiRzK0PDdivG8sIoXmB4nZLpkVukQ2qpFcmQPoA5lQWpAjvURLiMJpKRQ70hkuuE8c8vCWbtFRAOVHO6koJb1ZWnjo2L2C2yhrs_ZK8bbPOSsOZ4KvARCsL3Li5xQPy_ZzcQpK93NNj9Byvdc-WTZKAJFWpuwvn1wXsG8eTb_Zi3czaamSr_uxxg2ug8thZAcu"/>
+<div>
+<p class="font-label-md text-label-md font-bold">Julianne Smith</p>
+<p class="text-body-sm text-on-surface-variant opacity-70">Gold Tier Seller</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 font-tabular-nums text-tabular-nums">$120,000</td>
+<td class="px-6 py-4 font-tabular-nums text-tabular-nums">$124,500</td>
+<td class="px-6 py-4">
+<div class="flex flex-col items-center gap-1">
+<span class="bg-tertiary-fixed text-on-tertiary-fixed-variant px-3 py-1 rounded-full text-label-md font-bold">103.8%</span>
+<span class="text-[10px] text-tertiary font-bold uppercase">Over Target</span>
+</div>
+</td>
+<td class="px-6 py-4 font-tabular-nums text-tabular-nums text-on-surface-variant">$0.00</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2 font-tabular-nums text-tabular-nums text-tertiary">
+<span class="material-symbols-outlined text-sm">trending_up</span>
+                                    112.5%
+                                </div>
+</td>
+<td class="px-6 py-4 text-right">
+<button class="p-2 opacity-0 group-hover:opacity-100 text-primary transition-opacity">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Pacing Row -->
+<tr class="hover:bg-primary-container/[0.03] transition-colors group">
+<td class="px-6 py-4 whitespace-nowrap">
+<div class="flex items-center gap-3">
+<img alt="Avatar" class="w-8 h-8 rounded-full border border-primary/20" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDbQcVfsjn1COGYI0kzNw_mpxDuIs0_5bllXTEpc8ABk2s7iHUuXM1FH3fOUdINAHBXl6uicti-LoFnwvrUGTiEpXsSS8vK_Fq2kzoVioxvkAjgWYUJ8que1hne6H0Mj3kPoDLfBmfocHYVkEI1yCp_Cb7MKwmhMMacPbUqHzLZ0P_qDRo9cw6EW_pk4o5TZPx1dCLP1yOTwzbuvg5Bgin2dTjN5hASLxL5iDSg66m33Hq7vtg_W51dWEDQKmv9UvFb3d_ojgpeNafO"/>
+<div>
+<p class="font-label-md text-label-md font-bold">Marcus Bennett</p>
+<p class="text-body-sm text-on-surface-variant opacity-70">Senior Representative</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 font-tabular-nums text-tabular-nums">$95,000</td>
+<td class="px-6 py-4 font-tabular-nums text-tabular-nums">$78,200</td>
+<td class="px-6 py-4">
+<div class="flex flex-col items-center gap-1">
+<span class="bg-surface-variant text-on-surface-variant px-3 py-1 rounded-full text-label-md font-bold">82.3%</span>
+<span class="text-[10px] text-on-surface-variant font-bold uppercase">On Track</span>
+</div>
+</td>
+<td class="px-6 py-4 font-tabular-nums text-tabular-nums">$2,400</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2 font-tabular-nums text-tabular-nums text-on-surface-variant">
+<span class="material-symbols-outlined text-sm">horizontal_rule</span>
+                                    101.2%
+                                </div>
+</td>
+<td class="px-6 py-4 text-right">
+<button class="p-2 opacity-0 group-hover:opacity-100 text-primary transition-opacity">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Behind Row -->
+<tr class="hover:bg-error-container/5 transition-colors group">
+<td class="px-6 py-4 whitespace-nowrap">
+<div class="flex items-center gap-3">
+<img alt="Avatar" class="w-8 h-8 rounded-full border border-primary/20" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDhttqK6yHxeJA7LUkCtxLOFN8w8KHL9UXagK8MD5STzgcR-SNM3M9Aq1IPvw5tONlvQF7uOW_Y0anW6aTO5RlSc58h4UlAkdyugaTXPdz6MbrxNN44y0SNNlekXjYs8c8aLN-tkA_Fn5VnslEw_z-Zn6tw3YbilXi9MnLH4Aqf95GAsiuPoH-jH6Pr1RMhR9XEVgwmrq6-HWaRAPklaGNIbc5LADXtFjDYh3jVgGXqKZHL8KyeaOt0cDEU1YcdPxcyW8s1hb8QzLEw"/>
+<div>
+<p class="font-label-md text-label-md font-bold">Lydia Anderson</p>
+<p class="text-body-sm text-on-surface-variant opacity-70">Junior Sales Assoc.</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 font-tabular-nums text-tabular-nums">$60,000</td>
+<td class="px-6 py-4 font-tabular-nums text-tabular-nums">$32,000</td>
+<td class="px-6 py-4">
+<div class="flex flex-col items-center gap-1">
+<span class="bg-error-container text-on-error-container px-3 py-1 rounded-full text-label-md font-bold">53.3%</span>
+<span class="text-[10px] text-error font-bold uppercase">Behind</span>
+</div>
+</td>
+<td class="px-6 py-4 font-tabular-nums text-tabular-nums text-error font-bold">$4,000</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2 font-tabular-nums text-tabular-nums text-error">
+<span class="material-symbols-outlined text-sm">trending_down</span>
+                                    78.4%
+                                </div>
+</td>
+<td class="px-6 py-4 text-right">
+<button class="p-2 opacity-0 group-hover:opacity-100 text-primary transition-opacity">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-primary-container/[0.03] transition-colors group">
+<td class="px-6 py-4 whitespace-nowrap">
+<div class="flex items-center gap-3">
+<img alt="Avatar" class="w-8 h-8 rounded-full border border-primary/20" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBfr1gxqXn6U_N9yAu4bppbJoWuQFrxoGMYVrY_HSDmVBFRQlV0vgMKwCrVt2HF1O1F53M3qVi1Rbc2IlylxnxniVV6jL1lhswlSSy-Keb1nI72Mzx-KubkqmyeQOt0WQADYKlt56RcuCrF7gOgvPTfipEEw8waTms_h6r7d-RYdrqRppMJbF0tCQ66i8rqX--ddPd7E-QFvxUZYhf5v1ijB8XFHHq8cjVOl51u2-7jNP_GnqodIIYnlXf8-tkTFiUQ8QI6bkW14QuD"/>
+<div>
+<p class="font-label-md text-label-md font-bold">David Kim</p>
+<p class="text-body-sm text-on-surface-variant opacity-70">Corporate Sales</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 font-tabular-nums text-tabular-nums">$250,000</td>
+<td class="px-6 py-4 font-tabular-nums text-tabular-nums">$212,000</td>
+<td class="px-6 py-4">
+<div class="flex flex-col items-center gap-1">
+<span class="bg-surface-variant text-on-surface-variant px-3 py-1 rounded-full text-label-md font-bold">84.8%</span>
+<span class="text-[10px] text-on-surface-variant font-bold uppercase">Pacing</span>
+</div>
+</td>
+<td class="px-6 py-4 font-tabular-nums text-tabular-nums">$5,428</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2 font-tabular-nums text-tabular-nums text-on-surface-variant">
+<span class="material-symbols-outlined text-sm">horizontal_rule</span>
+                                    102.1%
+                                </div>
+</td>
+<td class="px-6 py-4 text-right">
+<button class="p-2 opacity-0 group-hover:opacity-100 text-primary transition-opacity">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer -->
+<div class="px-6 py-4 bg-surface-variant/10 border-t border-white/40 flex justify-between items-center">
+<p class="text-body-sm text-on-surface-variant italic">Showing 1-4 of 42 performers in Main Office</p>
+<div class="flex gap-2">
+<button class="p-2 rounded-lg hover:bg-white text-on-surface-variant disabled:opacity-30" disabled="">
+<span class="material-symbols-outlined">chevron_left</span>
+</button>
+<button class="p-2 rounded-lg hover:bg-white text-on-surface-variant">
+<span class="material-symbols-outlined">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Asymmetric Visual Layout Segment -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-8 mt-12">
+<div class="md:col-span-2 glass-card rounded-2xl p-8 relative overflow-hidden h-[320px]">
+<div class="relative z-10 max-w-md">
+<h4 class="font-headline-md text-headline-md mb-4 text-primary">Regional Trend Analysis</h4>
+<p class="text-on-surface-variant mb-6">The East Coast division has shown a 14% uptick in volume since the last cloud sync. Key performance indicators suggest a strong Q4 finish for all Gold Tier representatives.</p>
+<button class="border border-primary text-primary px-6 py-2.5 rounded-full text-label-md font-bold hover:bg-primary hover:text-white transition-all">View Branch Heatmap</button>
+</div>
+<!-- Abstract Glass Element -->
+<div class="absolute right-[-10%] bottom-[-20%] w-[400px] h-[400px] bg-primary/5 rounded-full blur-3xl"></div>
+<div class="absolute right-[10%] top-[10%] opacity-10">
+<span class="material-symbols-outlined text-[200px]" style="font-variation-settings: 'FILL' 1;">insights</span>
+</div>
+</div>
+<div class="glass-card rounded-2xl p-8 flex flex-col justify-center items-center text-center">
+<div class="mb-4 text-secondary">
+<span class="material-symbols-outlined text-6xl">verified</span>
+</div>
+<h4 class="font-headline-md text-headline-md mb-2">Compliance Check</h4>
+<p class="text-on-surface-variant text-body-sm mb-6">All current reporting data meets the SEC 17a-4 archival requirements for financial sales tracking.</p>
+<div class="w-full bg-surface-container rounded-lg p-3 flex items-center justify-between text-label-md">
+<span class="font-bold text-on-surface">Last Validated</span>
+<span class="text-on-surface-variant">2 hours ago</span>
+</div>
+</div>
+</div>
+</main>
+<script>
+        // Micro-interaction: Active state pulse on sync icon
+        document.addEventListener('DOMContentLoaded', () => {
+            const syncIcon = document.querySelector('.animate-spin');
+            // Adding dynamic hover interaction to table rows
+            const rows = document.querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                row.addEventListener('mouseenter', () => {
+                    row.style.transform = 'translateX(4px)';
+                });
+                row.addEventListener('mouseleave', () => {
+                    row.style.transform = 'translateX(0)';
+                });
+                row.style.transition = 'transform 0.2s ease-out';
+            });
+        });
+    </script>
+</body></html>
