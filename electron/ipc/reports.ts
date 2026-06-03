@@ -173,21 +173,50 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('report:executive', async (_e, token: string, year: number, month: number) => {
     requireAuth(token)
-    return prepare(getDb(), `
-      SELECT b.id AS branch_id, b.name AS branch_name, b.code,
-        COALESCE(SUM(de.jewelry_weight_g),0) AS actual_jewelry,
-        COALESCE(SUM(de.bar_weight_g),0)     AS actual_bar,
-        COALESCE(SUM(de.quantity),0)         AS actual_qty,
-        COALESCE(SUM(t.jewelry_weight_g),0)  AS target_jewelry,
-        COALESCE(SUM(t.bar_weight_g),0)      AS target_bar,
-        COALESCE(SUM(t.quantity),0)          AS target_qty
-      FROM branches b
-      LEFT JOIN daily_entries de ON de.branch_id=b.id
-        AND CAST(strftime('%Y',de.entry_date) AS INTEGER)=?
-        AND CAST(strftime('%m',de.entry_date) AS INTEGER)=?
-      LEFT JOIN targets t ON t.branch_id=b.id AND t.year=? AND t.month=?
-      GROUP BY b.id ORDER BY b.id
-    `).all(year, month, year, month)
+    const db = getDb()
+    const today = new Date().toISOString().split('T')[0]
+
+    const branches = prepare(db, `SELECT id, name, code FROM branches ORDER BY id`).all() as Array<{
+      id: number; name: string; code: string
+    }>
+
+    return branches.map(b => {
+      const actuals = prepare(db, `
+        SELECT COALESCE(SUM(jewelry_weight_g),0) AS actual_jewelry,
+               COALESCE(SUM(bar_weight_g),0)     AS actual_bar,
+               COALESCE(SUM(quantity),0)          AS actual_qty
+        FROM daily_entries
+        WHERE branch_id=? AND CAST(strftime('%Y',entry_date) AS INTEGER)=? AND CAST(strftime('%m',entry_date) AS INTEGER)=?
+      `).get(b.id, year, month) as { actual_jewelry: number; actual_bar: number; actual_qty: number }
+
+      const js = computeKpiScore(db, 1, b.id, actuals.actual_jewelry, 0, today).score
+      const bs = computeKpiScore(db, 2, b.id, actuals.actual_bar,     0, today).score
+      const qs = computeKpiScore(db, 3, b.id, actuals.actual_qty,     0, today).score
+      const kpiTotalScore = js + bs + qs
+
+      const personRow = prepare(db, `SELECT COUNT(*) as cnt FROM salesmen WHERE branch_id=? AND active=1`).get(b.id) as { cnt: number }
+      const personCount = personRow.cnt
+      const perPersonTarget = getBranchPointTarget(db, b.id, year, month)
+      const kpiPointTarget  = personCount * perPersonTarget
+      const kpiPct          = kpiPointTarget > 0 ? (kpiTotalScore / kpiPointTarget) * 100 : 0
+
+      return {
+        branch_id:         b.id,
+        branch_name:       b.name,
+        code:              b.code,
+        actual_jewelry:    actuals.actual_jewelry,
+        actual_bar:        actuals.actual_bar,
+        actual_qty:        actuals.actual_qty,
+        kpi_score_jewelry: js,
+        kpi_score_bar:     bs,
+        kpi_score_qty:     qs,
+        kpi_total_score:   kpiTotalScore,
+        kpi_point_target:  kpiPointTarget,
+        per_person_target: perPersonTarget,
+        kpi_pct:           kpiPct,
+        person_count:      personCount,
+      }
+    })
   })
 
   ipcMain.handle('report:branchAnalytics', async (_e, token: string, year: number, month: number) => {

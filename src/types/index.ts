@@ -120,7 +120,12 @@ export interface MonthlyReportRow {
 export interface ExecutiveBranchRow {
   branch_id: number; branch_name: string; code: string
   actual_jewelry: number; actual_bar: number; actual_qty: number
-  target_jewelry: number; target_bar: number; target_qty: number
+  kpi_score_jewelry: number; kpi_score_bar: number; kpi_score_qty: number
+  kpi_total_score: number
+  kpi_point_target: number
+  per_person_target: number
+  kpi_pct: number
+  person_count: number
 }
 
 export interface SyncLog {
