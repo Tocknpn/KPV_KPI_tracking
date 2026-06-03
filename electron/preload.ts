@@ -59,6 +59,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('kpi:saveMetricMultiplier', token, metricId, pointsPerUnit),
   saveBranchKpiTarget: (token: string, branchId: number, target: number) =>
     ipcRenderer.invoke('kpi:saveBranchKpiTarget', token, branchId, target),
+  getMonthlyBranchTargets: (token: string, year: number, month: number) =>
+    ipcRenderer.invoke('kpi:getMonthlyBranchTargets', token, year, month),
+  saveMonthlyBranchTargets: (token: string, year: number, month: number, targets: Array<{ branchId: number; target: number }>) =>
+    ipcRenderer.invoke('kpi:saveMonthlyBranchTargets', token, year, month, targets),
   getKpiFormula: (token: string) =>
     ipcRenderer.invoke('kpi:getFormula', token),
   saveKpiFormula: (token: string, base: number, weight: number) =>

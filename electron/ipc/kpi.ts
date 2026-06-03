@@ -133,6 +133,40 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     return { success: true }
   })
 
+  ipcMain.handle('kpi:getMonthlyBranchTargets', async (_e, token: string, year: number, month: number) => {
+    requireAuth(token)
+    const db = getDb()
+    const branches = prepare(db, `SELECT id, name, code, kpi_point_target FROM branches ORDER BY id`).all() as Array<{
+      id: number; name: string; code: string; kpi_point_target: number
+    }>
+    return branches.map(b => {
+      const monthly = prepare(db, `
+        SELECT kpi_point_target FROM branch_kpi_monthly_targets WHERE branch_id=? AND year=? AND month=?
+      `).get(b.id, year, month) as { kpi_point_target: number } | undefined
+      return {
+        ...b,
+        monthly_target: monthly?.kpi_point_target ?? null,
+        effective_target: monthly?.kpi_point_target ?? b.kpi_point_target,
+      }
+    })
+  })
+
+  ipcMain.handle('kpi:saveMonthlyBranchTargets', async (_e, token: string, year: number, month: number,
+    targets: Array<{ branchId: number; target: number }>
+  ) => {
+    requireAdmin(token)
+    const db = getDb()
+    transaction(db, () => {
+      for (const { branchId, target } of targets) {
+        prepare(db, `
+          INSERT OR REPLACE INTO branch_kpi_monthly_targets (branch_id, year, month, kpi_point_target)
+          VALUES (?,?,?,?)
+        `).run(branchId, year, month, target)
+      }
+    })
+    return { success: true }
+  })
+
   ipcMain.handle('kpi:getFormula', async (_e, token: string) => {
     requireAuth(token)
     const db = getDb()

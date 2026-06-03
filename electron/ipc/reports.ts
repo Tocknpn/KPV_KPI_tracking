@@ -4,9 +4,15 @@ import { prepare } from '../db/query'
 import { requireAuth } from './auth'
 import { computeKpiScore } from './kpi'
 
-function getBranchPointTarget(db: import('sql.js').Database, branchId: number): number {
-  const row = prepare(db, `SELECT kpi_point_target FROM branches WHERE id = ?`).get(branchId) as { kpi_point_target: number } | undefined
-  return row?.kpi_point_target ?? 0
+function getBranchPointTarget(db: import('sql.js').Database, branchId: number, year: number, month: number): number {
+  // Monthly override takes priority
+  const monthly = prepare(db, `
+    SELECT kpi_point_target FROM branch_kpi_monthly_targets WHERE branch_id=? AND year=? AND month=?
+  `).get(branchId, year, month) as { kpi_point_target: number } | undefined
+  if (monthly) return monthly.kpi_point_target
+  // Fall back to branch default
+  const branch = prepare(db, `SELECT kpi_point_target FROM branches WHERE id = ?`).get(branchId) as { kpi_point_target: number } | undefined
+  return branch?.kpi_point_target ?? 0
 }
 
 function buildBranchFilter(ids: number[]): { sql: string; params: number[] } {
@@ -83,14 +89,14 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const kpiScoreQty     = computeKpiScore(db, 3, kpiBranchId, mtd?.total_qty     ?? 0, 0, today).score
     const kpiTotalScore   = kpiScoreJewelry + kpiScoreBar + kpiScoreQty
 
-    // Aggregate point target: sum of kpi_point_target across all active salesmen in selected branches
+    // Aggregate point target: sum of effective targets (monthly override or default) × person count
     const { sql: sBranchSqlT, params: sBranchParamsT } = buildSalesmenBranchFilter(effectiveBranchIds)
-    const ptRow = prepare(db, `
-      SELECT COALESCE(SUM(b.kpi_point_target), 0) AS total_target
-      FROM salesmen s JOIN branches b ON b.id = s.branch_id
-      WHERE s.active = 1 ${sBranchSqlT}
-    `).get(...sBranchParamsT) as { total_target: number }
-    const kpiPointTarget  = ptRow?.total_target ?? 0
+    const salesmenRows = prepare(db, `
+      SELECT s.branch_id FROM salesmen s WHERE s.active = 1 ${sBranchSqlT}
+    `).all(...sBranchParamsT) as Array<{ branch_id: number }>
+    const kpiPointTarget = salesmenRows.reduce((sum, r) =>
+      sum + getBranchPointTarget(db, r.branch_id, year, month), 0
+    )
     const kpiPct          = kpiPointTarget > 0 ? (kpiTotalScore / kpiPointTarget) * 100 : 0
 
     return {
@@ -119,9 +125,8 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const dayOfMonth = (new Date(today).getMonth() + 1 === month) ? new Date(today).getDate() : daysInMonth
     const daysRemaining = Math.max(daysInMonth - dayOfMonth, 0)
 
-    // Branch point targets (fetched once for efficiency)
-    const branchTargetRows = prepare(db, `SELECT id, kpi_point_target FROM branches`).all() as Array<{ id: number; kpi_point_target: number }>
-    const branchTargetMap = new Map(branchTargetRows.map(r => [r.id, r.kpi_point_target]))
+    // Monthly-aware branch targets: monthly override → branch default
+    const branchTargetMap = new Map<number, number>()
 
     const { sql: sBranchSql, params: sBranchParams } = buildSalesmenBranchFilter(effectiveBranchIds)
 
@@ -148,7 +153,11 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       const js = computeKpiScore(db, 1, r.branch_id, r.actual_jewelry, 0, today).score
       const bs = computeKpiScore(db, 2, r.branch_id, r.actual_bar,     0, today).score
       const qs = computeKpiScore(db, 3, r.branch_id, r.actual_qty,     0, today).score
-      const totalRaw     = js + bs + qs
+      const totalRaw = js + bs + qs
+      // Cache per branch to avoid repeated DB lookups
+      if (!branchTargetMap.has(r.branch_id)) {
+        branchTargetMap.set(r.branch_id, getBranchPointTarget(db, r.branch_id, year, month))
+      }
       const branchTarget = branchTargetMap.get(r.branch_id) ?? 0
       const kpiPct       = branchTarget > 0 ? (totalRaw / branchTarget) * 100 : 0
       const eomKpiPct    = dayOfMonth > 0 ? (kpiPct / dayOfMonth) * daysInMonth : 0

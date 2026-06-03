@@ -4,13 +4,10 @@ import { GlassCard } from '../../components/ui/GlassCard'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import type { DailyEntry } from '../../types'
-import { validateDailyRows, validateTargetRows } from '../../utils/csv'
-import {
-  parseXLSX, readFileAsArrayBuffer,
-  generateDailyTemplateXLSX, generateTargetTemplateXLSX, downloadXLSX,
-} from '../../utils/xlsx'
+import { validateDailyRows } from '../../utils/csv'
+import { parseXLSX, readFileAsArrayBuffer, generateDailyTemplateXLSX, downloadXLSX } from '../../utils/xlsx'
 
-type Tab = 'manual' | 'daily-csv' | 'target-csv'
+type Tab = 'manual' | 'daily-csv'
 
 function fmt(n: number) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -34,7 +31,6 @@ export default function DailyEntry() {
   const [uploadResult, setUploadResult] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-  const targetFileRef = useRef<HTMLInputElement>(null)
 
   const effectiveBranchId = user?.role === 'supervisor'
     ? (user.branchId ?? 1)
@@ -119,35 +115,6 @@ export default function DailyEntry() {
     } finally { setUploading(false) }
   }
 
-  // Target XLSX submit
-  async function submitTargetCSV() {
-    if (!uploadFile || !token) return
-    setUploading(true); setUploadResult(null)
-    try {
-      const buffer = await readFileAsArrayBuffer(uploadFile)
-      const parsed = parseXLSX(buffer)
-      const { rows, errors } = validateTargetRows(parsed)
-      if (errors.length) { setUploadErrors(errors) }
-      if (!rows.length) { setUploading(false); return }
-
-      const month = rows[0].month
-      const year  = rows[0].year
-      const res = await window.api.uploadTargets(token, rows, {
-        branchId: effectiveBranchId,
-        uploadType: 'target',
-        filename: uploadFile.name,
-        recordsCount: rows.length,
-        month, year,
-      })
-      if (res.success) {
-        setUploadResult(`✓ Imported ${res.count} targets for ${MONTHS[month - 1]} ${year} from "${uploadFile.name}". Supersedes previous targets.`)
-        setUploadErrors(errors)
-        resetUpload()
-      } else {
-        setUploadErrors([res.error ?? 'Upload failed'])
-      }
-    } finally { setUploading(false) }
-  }
 
   // Template downloads (XLSX)
   async function downloadDailyTemplate() {
@@ -157,12 +124,6 @@ export default function DailyEntry() {
     downloadXLSX(`daily_template_${branchName.replace(/\s+/g,'_')}_${date}.xlsx`, data)
   }
 
-  async function downloadTargetTemplate() {
-    if (!token) return
-    const salesmen = await window.api.getSalesmenForTemplate(token, effectiveBranchId) as Array<{ id: number; full_name: string; branch_id: number; branch_code: string }>
-    const data = generateTargetTemplateXLSX(salesmen, selectedYear, selectedMonth)
-    downloadXLSX(`target_template_${branchName.replace(/\s+/g,'_')}_${selectedYear}_${MONTHS[selectedMonth-1]}.xlsx`, data)
-  }
 
   const totals = entries.reduce((a, e) => ({ j: a.j + (e.jewelry_weight_g ?? 0), b: a.b + (e.bar_weight_g ?? 0), q: a.q + (e.quantity ?? 0) }), { j: 0, b: 0, q: 0 })
   const filled = entries.filter(e => e.jewelry_weight_g > 0 || e.bar_weight_g > 0 || e.quantity > 0).length
@@ -194,7 +155,6 @@ export default function DailyEntry() {
         {([
           { key: 'manual',     label: 'Manual Entry',     icon: 'edit_document' },
           { key: 'daily-csv',  label: 'Daily XLSX Upload',  icon: 'upload_file' },
-          { key: 'target-csv', label: 'Target XLSX Upload', icon: 'flag' },
         ] as const).map(t => (
           <button key={t.key} onClick={() => { setActiveTab(t.key); resetUpload() }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-label-md text-label-md transition-all ${activeTab === t.key ? 'bg-white shadow-sm text-primary font-bold' : 'text-on-surface-variant hover:text-primary'}`}>
@@ -212,14 +172,14 @@ export default function DailyEntry() {
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="bg-surface-container-highest/50 border-b border-black/5">
-                    {['Salesman','Position','Target Jewelry (g)','Jewelry (g)','Target Bar (g)','Bar (g)','Target Qty','Qty','Status'].map(h => (
+                    {['Salesman','Position','Jewelry (g)','Bar (g)','Qty','Status'].map(h => (
                       <th key={h} className="px-5 py-4 text-left font-label-md text-label-md text-on-surface-variant uppercase whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/5">
                   {loadingEntries ? (
-                    <tr><td colSpan={9} className="py-10 text-center text-on-surface-variant">
+                    <tr><td colSpan={6} className="py-10 text-center text-on-surface-variant">
                       <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>Loading...
                     </td></tr>
                   ) : entries.map(e => {
@@ -239,11 +199,8 @@ export default function DailyEntry() {
                           </div>
                         </td>
                         <td className="px-5 py-compact-row text-body-sm text-on-surface-variant">{e.position}</td>
-                        <td className="px-5 py-compact-row text-right font-tabular-nums text-body-sm text-on-surface-variant">{fmt(e.target_jewelry ?? 0)}</td>
                         <EditCell value={e.jewelry_weight_g} onBlur={v => handleCellChange(e.salesman_id, effectiveBranchId, 'jewelry_weight_g', v)} />
-                        <td className="px-5 py-compact-row text-right font-tabular-nums text-body-sm text-on-surface-variant">{fmt(e.target_bar ?? 0)}</td>
                         <EditCell value={e.bar_weight_g} onBlur={v => handleCellChange(e.salesman_id, effectiveBranchId, 'bar_weight_g', v)} />
-                        <td className="px-5 py-compact-row text-right font-tabular-nums text-body-sm text-on-surface-variant">{e.target_qty ?? 0}</td>
                         <EditCell value={e.quantity} onBlur={v => handleCellChange(e.salesman_id, effectiveBranchId, 'quantity', v)} isInt />
                         <td className="px-5 py-compact-row text-center">
                           {isSaving ? <span className="material-symbols-outlined text-secondary text-lg animate-spin-slow">sync</span>
@@ -298,29 +255,6 @@ export default function DailyEntry() {
         />
       )}
 
-      {/* ── Tab: Target CSV Upload ── */}
-      {activeTab === 'target-csv' && (
-        <CSVUploadPanel
-          title="Monthly Target Upload"
-          description={`Upload monthly targets for ${MONTHS[selectedMonth-1]} ${selectedYear}. Uploading again replaces previous targets (latest file wins).`}
-          templateNote="Format: Staff_ID, Full_Name, Branch_ID, Year, Month, Jewelry_Target_g, Bar_Target_g, Quantity_Target"
-          onDownloadTemplate={downloadTargetTemplate}
-          templateFilename={`target_template_${selectedYear}_${MONTHS[selectedMonth-1]}.xlsx`}
-          onFilePick={handleFilePick}
-          uploadFile={uploadFile}
-          uploading={uploading}
-          preview={preview}
-          errors={uploadErrors}
-          result={uploadResult}
-          onSubmit={submitTargetCSV}
-          onReset={resetUpload}
-          isDragging={isDragging}
-          setIsDragging={setIsDragging}
-          fileRef={targetFileRef}
-          submitLabel="Import Targets"
-          accent="secondary"
-        />
-      )}
 
       {/* Sticky footer for manual entry */}
       {activeTab === 'manual' && (

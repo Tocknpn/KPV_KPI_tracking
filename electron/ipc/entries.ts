@@ -44,8 +44,6 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('entry:getEntries', async (_e, token: string, branchId: number, date: string) => {
     requireAuth(token)
-    const year = new Date(date).getFullYear()
-    const month = new Date(date).getMonth() + 1
     return prepare(getDb(), `
       SELECT
         de.id, de.salesman_id, de.entry_date,
@@ -53,16 +51,12 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
         COALESCE(de.bar_weight_g, 0)     AS bar_weight_g,
         COALESCE(de.quantity, 0)         AS quantity,
         COALESCE(de.synced, 0)           AS synced,
-        s.full_name AS salesman_name, s.nickname, s.position,
-        COALESCE(t.jewelry_weight_g, 0) AS target_jewelry,
-        COALESCE(t.bar_weight_g, 0)     AS target_bar,
-        COALESCE(t.quantity, 0)         AS target_qty
+        s.full_name AS salesman_name, s.nickname, s.position
       FROM salesmen s
       LEFT JOIN daily_entries de ON de.salesman_id = s.id AND de.entry_date = ?
-      LEFT JOIN targets t ON t.salesman_id = s.id AND t.year = ? AND t.month = ?
       WHERE s.branch_id = ? AND s.active = 1
       ORDER BY s.full_name
-    `).all(date, year, month, branchId)
+    `).all(date, branchId)
   })
 
   ipcMain.handle('entry:getEntriesByMonth', async (_e, token: string, branchId: number, year: number, month: number) => {

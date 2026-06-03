@@ -6,6 +6,8 @@ import type { KpiMetric, KpiTierConfig, KpiTier } from '../../types'
 
 interface EditableTier { id?: number; threshold_pct: number; score: number }
 
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
 export default function KpiSettings() {
   const { token, branches } = useAuthStore()
   const [metrics, setMetrics] = useState<KpiMetric[]>([])
@@ -21,9 +23,16 @@ export default function KpiSettings() {
   const [toast, setToast] = useState('')
   // Points-per-unit editor (Jewelry/Bar)
   const [multiplierEdit, setMultiplierEdit] = useState('')
-  // Branch KPI point targets
-  const [branchTargets, setBranchTargets] = useState<Record<number, string>>({})
-  const [savingTarget, setSavingTarget] = useState<number | null>(null)
+  // Monthly branch KPI targets
+  const [targetYear, setTargetYear]   = useState(new Date().getFullYear())
+  const [targetMonth, setTargetMonth] = useState(new Date().getMonth() + 1)
+  const [monthlyTargets, setMonthlyTargets] = useState<Array<{
+    id: number; name: string; code: string; kpi_point_target: number
+    monthly_target: number | null; effective_target: number
+  }>>([])
+  const [targetEdits, setTargetEdits] = useState<Record<number, string>>({})
+  const [savingTargets, setSavingTargets] = useState(false)
+  const [targetSaved, setTargetSaved]     = useState(false)
   // Simulator
   const [simActual, setSimActual] = useState('')
   const [simBranch, setSimBranch] = useState<number | null>(null)
@@ -39,23 +48,38 @@ export default function KpiSettings() {
       if (first) setMultiplierEdit(String(first.points_per_unit))
     })
     window.api.getKpiConfigs(token).then(setConfigs)
-    // Init branch target edit values from current branch data
-    setBranchTargets(Object.fromEntries(branches.map(b => [b.id, String(b.kpi_point_target)])))
   }, [token])
 
-  // Keep branch targets in sync when branches load (they may load after token)
+  // Load monthly targets whenever month/year changes
   useEffect(() => {
-    setBranchTargets(Object.fromEntries(branches.map(b => [b.id, String(b.kpi_point_target)])))
-  }, [branches])
-
-  async function saveBranchTarget(branchId: number) {
     if (!token) return
-    const val = parseFloat(branchTargets[branchId] ?? '')
-    if (isNaN(val) || val <= 0) { showToast('Enter a valid positive number.'); return }
-    setSavingTarget(branchId)
-    await window.api.saveBranchKpiTarget(token, branchId, val)
-    showToast('Branch target saved.')
-    setSavingTarget(null)
+    window.api.getMonthlyBranchTargets(token, targetYear, targetMonth).then(data => {
+      setMonthlyTargets(data)
+      setTargetEdits(Object.fromEntries(data.map(b => [b.id, String(b.effective_target)])))
+      setTargetSaved(false)
+    })
+  }, [token, targetYear, targetMonth])
+
+  async function saveMonthlyTargets() {
+    if (!token) return
+    setSavingTargets(true)
+    const targets = monthlyTargets.map(b => ({
+      branchId: b.id,
+      target: parseFloat(targetEdits[b.id] ?? '') || b.effective_target,
+    }))
+    await window.api.saveMonthlyBranchTargets(token, targetYear, targetMonth, targets)
+    // Reload to confirm
+    const fresh = await window.api.getMonthlyBranchTargets(token, targetYear, targetMonth)
+    setMonthlyTargets(fresh)
+    setTargetEdits(Object.fromEntries(fresh.map(b => [b.id, String(b.effective_target)])))
+    setSavingTargets(false)
+    setTargetSaved(true)
+    showToast(`Targets saved for ${MONTH_NAMES[targetMonth - 1]} ${targetYear}.`)
+  }
+
+  function copyFromDefaults() {
+    setTargetEdits(Object.fromEntries(monthlyTargets.map(b => [b.id, String(b.kpi_point_target)])))
+    setTargetSaved(false)
   }
 
   const selectedMetricObj = metrics.find(m => m.id === selectedMetric)
@@ -215,49 +239,98 @@ export default function KpiSettings() {
         </div>
       </GlassCard>
 
-      {/* Branch KPI Point Targets */}
+      {/* Monthly Branch KPI Point Targets */}
       <GlassCard elevated className="p-5 mb-6">
-        <div className="mb-4">
-          <h4 className="font-headline-md text-headline-md text-on-surface">Branch KPI Point Targets</h4>
-          <p className="text-body-sm text-on-surface-variant mt-0.5">
-            KPI % = (Total Score ÷ Branch Target) × 100 &nbsp;·&nbsp; 100% = target hit
-          </p>
+        <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
+          <div>
+            <h4 className="font-headline-md text-headline-md text-on-surface">Monthly KPI Point Targets</h4>
+            <p className="text-body-sm text-on-surface-variant mt-0.5">
+              KPI % = (Total Score ÷ Branch Target) × 100 &nbsp;·&nbsp; Targets saved per month
+            </p>
+          </div>
+          {/* Month / Year picker */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={targetMonth}
+              onChange={e => setTargetMonth(Number(e.target.value))}
+              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none"
+            >
+              {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+            </select>
+            <input
+              type="number"
+              value={targetYear}
+              onChange={e => setTargetYear(Number(e.target.value))}
+              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none w-24"
+            />
+            <button
+              onClick={copyFromDefaults}
+              className="text-on-surface-variant border border-outline-variant px-3 py-2 rounded-lg text-body-sm hover:bg-surface-container transition-colors flex items-center gap-1"
+              title="Copy branch defaults to this month"
+            >
+              <span className="material-symbols-outlined text-sm">content_copy</span>
+              Use Defaults
+            </button>
+          </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {branches.map(b => (
-            <div key={b.id} className="bg-surface-container rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
-                  {b.code}
+
+        {/* Per-branch target inputs */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          {monthlyTargets.map(b => {
+            const hasOverride = b.monthly_target !== null
+            return (
+              <div key={b.id} className={`rounded-xl p-4 border ${hasOverride ? 'bg-primary/5 border-primary/20' : 'bg-surface-container border-transparent'}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
+                    {b.code}
+                  </div>
+                  <div>
+                    <p className="font-label-md text-label-md text-on-surface">{b.name}</p>
+                    {hasOverride && (
+                      <p className="text-[9px] text-primary font-bold uppercase">Monthly override</p>
+                    )}
+                  </div>
                 </div>
-                <span className="font-label-md text-label-md text-on-surface">{b.name}</span>
-              </div>
-              <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">
-                Target (pts/person)
-              </label>
-              <div className="flex gap-2 items-center">
+                <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">
+                  Target (pts/person)
+                </label>
                 <input
                   type="number" min="100" step="100"
-                  value={branchTargets[b.id] ?? b.kpi_point_target}
-                  onChange={e => setBranchTargets(prev => ({ ...prev, [b.id]: e.target.value }))}
-                  className="flex-1 bg-white border-b-2 border-primary px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold text-primary min-w-0"
+                  value={targetEdits[b.id] ?? b.effective_target}
+                  onChange={e => {
+                    setTargetEdits(prev => ({ ...prev, [b.id]: e.target.value }))
+                    setTargetSaved(false)
+                  }}
+                  className="w-full bg-white border-b-2 border-primary px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold text-primary"
                 />
-                <button
-                  onClick={() => saveBranchTarget(b.id)}
-                  disabled={savingTarget === b.id}
-                  className="p-1.5 bg-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50 flex-shrink-0"
-                  title="Save"
-                >
-                  <span className="material-symbols-outlined text-sm">
-                    {savingTarget === b.id ? 'sync' : 'save'}
-                  </span>
-                </button>
+                <p className="text-[10px] text-on-surface-variant mt-1.5">
+                  Default: <strong>{b.kpi_point_target.toLocaleString()} pts</strong>
+                </p>
               </div>
-              <p className="text-[10px] text-on-surface-variant mt-1.5">
-                Current: <strong>{b.kpi_point_target.toLocaleString()} pts</strong>
-              </p>
+            )
+          })}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={saveMonthlyTargets}
+            disabled={savingTargets}
+            className="bg-primary text-white px-6 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 disabled:opacity-50 shadow-primary"
+          >
+            <span className={`material-symbols-outlined text-sm ${savingTargets ? 'animate-spin-slow' : ''}`}>
+              {savingTargets ? 'sync' : 'save'}
+            </span>
+            {savingTargets ? 'Saving...' : `Save for ${MONTH_NAMES[targetMonth - 1]} ${targetYear}`}
+          </button>
+          {targetSaved && (
+            <div className="flex items-center gap-1.5 text-tertiary text-body-sm">
+              <span className="material-symbols-outlined text-sm">check_circle</span>
+              Saved
             </div>
-          ))}
+          )}
+          <p className="text-[11px] text-on-surface-variant italic ml-auto">
+            Branches without a monthly override use their default target
+          </p>
         </div>
       </GlassCard>
 

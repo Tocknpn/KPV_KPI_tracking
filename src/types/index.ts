@@ -38,9 +38,6 @@ export interface DailyEntry {
   jewelry_weight_g: number
   bar_weight_g: number
   quantity: number
-  target_jewelry: number
-  target_bar: number
-  target_qty: number
   synced: number
 }
 

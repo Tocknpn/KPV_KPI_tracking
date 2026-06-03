@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 5
+const SCHEMA_VERSION = 6
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -87,6 +87,14 @@ const BASE_TABLES = `
     threshold_pct REAL    NOT NULL,
     score         REAL    NOT NULL,
     tier_order    INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS branch_kpi_monthly_targets (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    branch_id        INTEGER NOT NULL REFERENCES branches(id),
+    year             INTEGER NOT NULL,
+    month            INTEGER NOT NULL,
+    kpi_point_target REAL    NOT NULL DEFAULT 0,
+    UNIQUE(branch_id, year, month)
   );
   CREATE TABLE IF NOT EXISTS sync_logs (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -180,6 +188,20 @@ export function applySchema(db: Database): boolean {
     db.prepare(`UPDATE branches SET kpi_point_target = 6000 WHERE code = 'IT'`).run()
     db.prepare(`UPDATE branches SET kpi_point_target = 7000 WHERE code = 'VT'`).run()
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '5')`).run()
+  }
+
+  if (currentVersion < 6) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS branch_kpi_monthly_targets (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        branch_id        INTEGER NOT NULL REFERENCES branches(id),
+        year             INTEGER NOT NULL,
+        month            INTEGER NOT NULL,
+        kpi_point_target REAL    NOT NULL DEFAULT 0,
+        UNIQUE(branch_id, year, month)
+      )
+    `)
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '6')`).run()
   }
 
   return false // Existing DB — no seeding needed
