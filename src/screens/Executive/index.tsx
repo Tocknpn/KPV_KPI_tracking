@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList, CartesianGrid, Legend, ReferenceLine } from 'recharts'
 import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { RadialGauge } from '../../components/ui/RadialGauge'
@@ -28,13 +28,18 @@ export default function Executive() {
   const totalTargetWeight = rows.reduce((s, r) => s + r.target_jewelry + r.target_bar, 0)
   const overallPct = totalTargetWeight > 0 ? (totalActualWeight / totalTargetWeight) * 100 : 0
 
-  const chartData = rows.map(r => ({
-    name: r.code,
-    'Jewelry MTD': r.actual_jewelry,
-    'Bar MTD': r.actual_bar,
-    'Jewelry Target': r.target_jewelry,
-    'Bar Target': r.target_bar,
-  }))
+  const chartData = rows.map(r => {
+    const actual = r.actual_jewelry + r.actual_bar
+    const target = r.target_jewelry + r.target_bar
+    const pct    = target > 0 ? (actual / target) * 100 : 0
+    return {
+      name:       r.code,
+      branchName: r.branch_name,
+      actual,
+      target,
+      pct,
+    }
+  })
 
   return (
     <AppShell title="SalesTrack Pro" allowedRoles={['admin','executive']}>
@@ -116,28 +121,61 @@ export default function Executive() {
             </div>
           </GlassCard>
 
-          {/* Branch KPI Bar Chart */}
+          {/* Branch KPI Comparison — cleaner 2-bar grouped chart */}
           <GlassCard elevated className="col-span-12 p-8">
-            <div className="flex justify-between items-center mb-8">
+            <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="font-headline-md text-on-surface">Branch KPI Comparison</h3>
-                <p className="text-on-surface-variant text-body-sm">MTD weight vs. target across all branches</p>
+                <p className="text-on-surface-variant text-body-sm">Total weight MTD vs. target — Jewelry + Bar combined</p>
               </div>
-              <div className="flex gap-4 text-xs">
-                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-primary" /><span>MTD</span></div>
-                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-secondary-container" /><span>Target</span></div>
+              <div className="flex gap-4 text-xs items-center">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-4 h-4 rounded bg-primary" />
+                  <span className="font-medium">Actual MTD</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-4 h-4 rounded bg-primary/20 border border-primary/30" />
+                  <span className="font-medium">Target</span>
+                </div>
               </div>
             </div>
-            <div className="h-64">
+
+            {/* % hit mini-badges per branch */}
+            <div className="grid grid-cols-4 gap-4 mb-6">
+              {chartData.map((d, i) => (
+                <div key={d.name} className={`rounded-xl px-4 py-3 text-center ${d.pct >= 100 ? 'bg-green-50' : d.pct >= 50 ? 'bg-blue-50' : 'bg-red-50'}`}>
+                  <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-1">{d.branchName}</p>
+                  <p className={`text-xl font-bold tabular-nums ${d.pct >= 100 ? 'text-green-600' : d.pct >= 50 ? 'text-primary' : 'text-red-500'}`}>
+                    {d.pct.toFixed(1)}%
+                  </p>
+                  <p className="text-[10px] text-on-surface-variant mt-0.5">
+                    {(d.actual / 1000).toFixed(2)} / {(d.target / 1000).toFixed(2)} kg
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
-                  <XAxis dataKey="name" tick={{ fontSize: 12, fontWeight: 600 }} />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={(v: number) => `${v.toLocaleString()} g`} />
-                  <Bar dataKey="Jewelry MTD"    fill="#004f96" radius={[3,3,0,0]} />
-                  <Bar dataKey="Jewelry Target" fill="#d5e3ff" radius={[3,3,0,0]} />
-                  <Bar dataKey="Bar MTD"        fill="#735c00" radius={[3,3,0,0]} />
-                  <Bar dataKey="Bar Target"     fill="#ffe088" radius={[3,3,0,0]} />
+                <BarChart data={chartData} margin={{ top: 20, right: 16, bottom: 4, left: 4 }} barCategoryGap="30%">
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e0e0" />
+                  <XAxis dataKey="name" tick={{ fontSize: 13, fontWeight: 700 }} />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+                  <Tooltip
+                    formatter={(v: number, name: string) => [`${(v/1000).toFixed(2)} kg  (${v.toLocaleString()} g)`, name]}
+                    labelFormatter={(label, payload) => payload?.[0]?.payload?.branchName ?? label}
+                    contentStyle={{ borderRadius: 10, fontSize: 12 }}
+                  />
+                  <Legend iconType="square" iconSize={12} />
+                  <Bar dataKey="actual" name="Actual MTD" fill="#004f96" radius={[4,4,0,0]} maxBarSize={64}>
+                    <LabelList
+                      dataKey="pct"
+                      position="top"
+                      formatter={(v: number) => `${v.toFixed(1)}%`}
+                      style={{ fontSize: 11, fontWeight: 700, fill: '#004f96' }}
+                    />
+                  </Bar>
+                  <Bar dataKey="target" name="Target" fill="#004f96" fillOpacity={0.18} radius={[4,4,0,0]} maxBarSize={64} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

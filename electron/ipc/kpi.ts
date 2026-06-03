@@ -127,6 +127,12 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     return { success: true }
   })
 
+  ipcMain.handle('kpi:saveBranchKpiTarget', async (_e, token: string, branchId: number, target: number) => {
+    requireAdmin(token)
+    prepare(getDb(), `UPDATE branches SET kpi_point_target = ? WHERE id = ?`).run(target, branchId)
+    return { success: true }
+  })
+
   ipcMain.handle('kpi:getFormula', async (_e, token: string) => {
     requireAuth(token)
     const db = getDb()

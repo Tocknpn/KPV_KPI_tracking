@@ -12,6 +12,9 @@ import type { DashboardStats } from '../../types'
 function fmt(n: number, decimals = 1) {
   return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
+function fmtPts(n: number) {
+  return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+}
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -27,11 +30,11 @@ function BranchDropdown({ branches, selectedIds, onChange }: BranchDropdownProps
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
+    function onOut(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
-    document.addEventListener('mousedown', onClickOutside)
-    return () => document.removeEventListener('mousedown', onClickOutside)
+    document.addEventListener('mousedown', onOut)
+    return () => document.removeEventListener('mousedown', onOut)
   }, [])
 
   const isAll = selectedIds.length === 0
@@ -42,19 +45,10 @@ function BranchDropdown({ branches, selectedIds, onChange }: BranchDropdownProps
     : `${selectedIds.length} Branches`
 
   function toggleBranch(id: number) {
-    if (isAll) {
-      // Currently "all" — clicking one branch selects only it
-      onChange([id])
-    } else if (selectedIds.includes(id)) {
-      const next = selectedIds.filter(x => x !== id)
-      onChange(next)  // empty = all
-    } else {
-      const next = [...selectedIds, id]
-      onChange(next.length === branches.length ? [] : next)
-    }
+    if (isAll) { onChange([id]); return }
+    const next = selectedIds.includes(id) ? selectedIds.filter(x => x !== id) : [...selectedIds, id]
+    onChange(next.length === branches.length ? [] : next)
   }
-
-  function selectAll() { onChange([]) }
 
   return (
     <div ref={ref} className="relative">
@@ -69,27 +63,21 @@ function BranchDropdown({ branches, selectedIds, onChange }: BranchDropdownProps
         </span>
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-2 bg-white/95 backdrop-blur-xl shadow-xl rounded-xl border border-white/40 z-50 min-w-52 py-1 overflow-hidden">
-          {/* All Branches */}
-          <label className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer transition-colors">
-            <input
-              type="checkbox"
-              checked={isAll}
-              onChange={selectAll}
-              className="accent-primary rounded"
-            />
-            <span className="font-label-md text-label-md text-on-surface">All Branches</span>
+        <div className="absolute right-0 top-full mt-2 bg-white/95 backdrop-blur-xl shadow-xl rounded-xl border border-white/40 z-50 min-w-52 py-1">
+          <label className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer">
+            <input type="checkbox" checked={isAll} onChange={() => onChange([])} className="accent-primary rounded" />
+            <span className="font-label-md text-label-md">All Branches</span>
           </label>
           <div className="border-t border-black/5 my-1" />
           {branches.map(b => (
-            <label key={b.id} className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer transition-colors">
+            <label key={b.id} className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer">
               <input
                 type="checkbox"
                 checked={!isAll && selectedIds.includes(b.id)}
                 onChange={() => toggleBranch(b.id)}
                 className="accent-primary rounded"
               />
-              <span className="font-label-md text-label-md text-on-surface">{b.name}</span>
+              <span className="font-label-md text-label-md">{b.name}</span>
               <span className="ml-auto text-[10px] text-on-surface-variant font-mono">{b.code}</span>
             </label>
           ))}
@@ -106,7 +94,6 @@ export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Supervisor is locked to their own branch
   const effectiveBranchIds: number[] = user?.role === 'supervisor'
     ? [user.branchId ?? 1]
     : selectedBranchIds
@@ -120,18 +107,17 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
   }, [token, JSON.stringify(effectiveBranchIds), selectedYear, selectedMonth])
 
-  const pctJewelry = stats && stats.targets.target_jewelry > 0
-    ? (stats.mtd.total_jewelry / stats.targets.target_jewelry) * 100 : 0
-  const pctBar = stats && stats.targets.target_bar > 0
-    ? (stats.mtd.total_bar / stats.targets.target_bar) * 100 : 0
-  const pctQty = stats && stats.targets.target_qty > 0
-    ? (stats.mtd.total_qty / stats.targets.target_qty) * 100 : 0
+  const s = stats
 
-  // Label for selected scope
+  // KPI point contribution as % of total point target
+  const target = s?.kpiPointTarget ?? 0
+  const pctJewelry = target > 0 ? Math.min((s?.kpiScoreJewelry ?? 0) / target * 100, 999) : 0
+  const pctBar     = target > 0 ? Math.min((s?.kpiScoreBar     ?? 0) / target * 100, 999) : 0
+  const pctQty     = target > 0 ? Math.min((s?.kpiScoreQty     ?? 0) / target * 100, 999) : 0
+  const kpiPct     = s?.kpiPct ?? 0
+
   const scopeLabel = (() => {
-    if (user?.role === 'supervisor') {
-      return branches.find(b => b.id === user.branchId)?.name ?? 'My Branch'
-    }
+    if (user?.role === 'supervisor') return branches.find(b => b.id === user.branchId)?.name ?? 'My Branch'
     if (effectiveBranchIds.length === 0) return 'All Branches'
     if (effectiveBranchIds.length === 1) return branches.find(b => b.id === effectiveBranchIds[0])?.name ?? '1 Branch'
     return `${effectiveBranchIds.length} Branches`
@@ -147,7 +133,6 @@ export default function Dashboard() {
             {MONTH_NAMES[(selectedMonth - 1)]} {selectedYear} — {scopeLabel}
           </p>
         </div>
-        {/* Multi-select branch dropdown — admin/executive only */}
         {user?.role !== 'supervisor' && branches.length > 0 && (
           <BranchDropdown
             branches={branches}
@@ -163,11 +148,11 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
-          {/* ── KPI Hero Cards ── */}
+          {/* ── KPI Hero Cards — raw actuals ── */}
           <section className="grid grid-cols-1 md:grid-cols-3 gap-card-gap mb-8">
             <KpiCard
               label="Jewelry Weight (MTD)"
-              value={fmt(stats?.mtd.total_jewelry ?? 0)}
+              value={fmt(s?.mtd.total_jewelry ?? 0)}
               unit="g"
               delta={null}
               icon={<span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>diamond</span>}
@@ -177,7 +162,7 @@ export default function Dashboard() {
             />
             <KpiCard
               label="Bar Weight (MTD)"
-              value={fmt(stats?.mtd.total_bar ?? 0)}
+              value={fmt(s?.mtd.total_bar ?? 0)}
               unit="g"
               delta={null}
               icon={<span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>payments</span>}
@@ -187,7 +172,7 @@ export default function Dashboard() {
             />
             <KpiCard
               label="Quantity (MTD)"
-              value={String(stats?.mtd.total_qty ?? 0)}
+              value={String(s?.mtd.total_qty ?? 0)}
               unit="pcs"
               delta={null}
               icon={<span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>inventory_2</span>}
@@ -197,33 +182,53 @@ export default function Dashboard() {
             />
           </section>
 
-          {/* ── MTD Progress + Top Performers ── */}
+          {/* ── KPI Score Panel + Top Performers ── */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-card-gap">
-            {/* Radial Gauges */}
+            {/* KPI Point Score */}
             <GlassCard className="lg:col-span-5 p-8">
-              <div className="flex items-center justify-between mb-8">
-                <h4 className="font-headline-md text-headline-md font-bold text-on-surface">Month to Date % Hit</h4>
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="font-headline-md text-headline-md font-bold text-on-surface">KPI Score</h4>
                 <span className="px-3 py-1 bg-surface-container-high rounded-full font-label-md text-label-md text-primary">
                   {MONTH_NAMES[(selectedMonth - 1)]} {selectedYear}
                 </span>
               </div>
-              <div className="flex flex-wrap items-center justify-around gap-8">
-                <RadialGauge pct={pctJewelry} label="Jewelry" color="#004f96" />
-                <RadialGauge pct={pctBar}     label="Bar Weight" gold />
-                <RadialGauge pct={pctQty}     label="Quantity" color="#17575c" />
+
+              {/* Total KPI% — big central gauge */}
+              <div className="flex flex-col items-center mb-6">
+                <RadialGauge pct={Math.min(kpiPct, 100)} label="Total KPI" color="#004f96" size={120} />
+                <div className="text-center mt-3">
+                  <p className="font-display-xl text-2xl font-bold text-primary tabular-nums">
+                    {fmtPts(s?.kpiTotalScore ?? 0)} pts
+                  </p>
+                  <p className="text-body-sm text-on-surface-variant">
+                    of {fmtPts(target)} target
+                    {target > 0 && (
+                      <span className="ml-1 font-bold text-primary">{fmt(kpiPct, 1)}%</span>
+                    )}
+                  </p>
+                </div>
               </div>
-              {/* KPI Scores */}
-              <div className="mt-8 grid grid-cols-3 gap-4 pt-6 border-t border-outline-variant/20">
+
+              {/* 3 metric contribution gauges */}
+              <div className="flex justify-around gap-4 mb-6">
+                <RadialGauge pct={Math.min(pctJewelry, 100)} label="Jewelry" color="#004f96" />
+                <RadialGauge pct={Math.min(pctBar, 100)}     label="Bar"     gold />
+                <RadialGauge pct={Math.min(pctQty, 100)}     label="Qty"     color="#17575c" />
+              </div>
+
+              {/* Score breakdown */}
+              <div className="grid grid-cols-3 gap-3 pt-5 border-t border-outline-variant/20">
                 {[
-                  { label: 'Jewelry Score', score: stats?.kpiScoreJewelry ?? 0, color: 'text-primary' },
-                  { label: 'Bar Score',     score: stats?.kpiScoreBar ?? 0,     color: 'text-secondary' },
-                  { label: 'Qty Score',     score: stats?.kpiScoreQty ?? 0,     color: 'text-tertiary' },
+                  { label: 'Jewelry', score: s?.kpiScoreJewelry ?? 0, pct: pctJewelry, color: 'text-primary' },
+                  { label: 'Bar',     score: s?.kpiScoreBar     ?? 0, pct: pctBar,     color: 'text-secondary' },
+                  { label: 'Qty',     score: s?.kpiScoreQty     ?? 0, pct: pctQty,     color: 'text-tertiary' },
                 ].map(k => (
                   <div key={k.label} className="text-center">
                     <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{k.label}</p>
-                    <p className={`font-headline-md text-headline-md font-bold ${k.color} tabular-nums`}>
-                      {k.score.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    <p className={`font-headline-md font-bold ${k.color} tabular-nums`}>
+                      {fmtPts(k.score)}
                     </p>
+                    <p className="text-[10px] text-on-surface-variant">{fmt(k.pct, 1)}%</p>
                   </div>
                 ))}
               </div>
@@ -249,7 +254,7 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
-                    {(stats?.topPerformers ?? []).map((p, i) => {
+                    {(s?.topPerformers ?? []).map((p, i) => {
                       const tier = i === 0 ? 'gold' : i <= 2 ? 'warning' : 'neutral'
                       const tierLabel = i === 0 ? 'Gold Tier' : i <= 2 ? 'Silver Tier' : 'Standard'
                       return (
@@ -275,7 +280,7 @@ export default function Dashboard() {
                         </tr>
                       )
                     })}
-                    {!stats?.topPerformers?.length && (
+                    {!s?.topPerformers?.length && (
                       <tr>
                         <td colSpan={6} className="px-5 py-8 text-center text-on-surface-variant text-body-sm">
                           No entries for this period yet.

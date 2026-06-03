@@ -5,10 +5,10 @@ import { prepare, transaction } from './query'
 export function seedDatabase(db: Database): void {
   transaction(db, () => {
     // ── Branches (4 real branches) ────────────────────────────────────────
-    prepare(db, `INSERT INTO branches (name, code) VALUES (?, ?)`).run('Morning Market',    'MM')
-    prepare(db, `INSERT INTO branches (name, code) VALUES (?, ?)`).run('Vientiane Center',  'VC')
-    prepare(db, `INSERT INTO branches (name, code) VALUES (?, ?)`).run('ITecc',             'IT')
-    prepare(db, `INSERT INTO branches (name, code) VALUES (?, ?)`).run('VangThong',         'VT')
+    prepare(db, `INSERT INTO branches (name, code, kpi_point_target) VALUES (?, ?, ?)`).run('Morning Market',   'MM', 8000)
+    prepare(db, `INSERT INTO branches (name, code, kpi_point_target) VALUES (?, ?, ?)`).run('Vientiane Center', 'VC', 5500)
+    prepare(db, `INSERT INTO branches (name, code, kpi_point_target) VALUES (?, ?, ?)`).run('ITecc',            'IT', 6000)
+    prepare(db, `INSERT INTO branches (name, code, kpi_point_target) VALUES (?, ?, ?)`).run('VangThong',        'VT', 7000)
 
     // ── Users ─────────────────────────────────────────────────────────────
     const adminHash = bcrypt.hashSync('admin1234', 10)

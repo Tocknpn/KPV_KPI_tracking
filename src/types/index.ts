@@ -13,6 +13,7 @@ export interface Branch {
   id: number
   name: string
   code: string
+  kpi_point_target: number
 }
 
 export interface Salesman {
@@ -90,15 +91,14 @@ export interface KpiTier {
 // ── Reports ───────────────────────────────────────────────────────────────
 export interface DashboardStats {
   mtd: { total_jewelry: number; total_bar: number; total_qty: number }
-  targets: { target_jewelry: number; target_bar: number; target_qty: number }
-  projectedJewelry: number
-  projectedBar: number
-  projectedQty: number
   daysInMonth: number
   dayOfMonth: number
   kpiScoreJewelry: number
   kpiScoreBar: number
   kpiScoreQty: number
+  kpiTotalScore: number
+  kpiPointTarget: number
+  kpiPct: number
   topPerformers: Array<{
     id: number; full_name: string; nickname: string; position: string
     total_jewelry: number; total_bar: number; total_qty: number
@@ -115,6 +115,7 @@ export interface MonthlyReportRow {
   actual_jewelry: number
   actual_bar: number
   actual_qty: number
+  kpiPointTarget: number
   kpiScore: { jewelry: number; bar: number; qty: number; total: number; pct: number }
   eomKpiPct: number
 }

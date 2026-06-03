@@ -4,6 +4,11 @@ import { prepare } from '../db/query'
 import { requireAuth } from './auth'
 import { computeKpiScore } from './kpi'
 
+function getBranchPointTarget(db: import('sql.js').Database, branchId: number): number {
+  const row = prepare(db, `SELECT kpi_point_target FROM branches WHERE id = ?`).get(branchId) as { kpi_point_target: number } | undefined
+  return row?.kpi_point_target ?? 0
+}
+
 function buildBranchFilter(ids: number[]): { sql: string; params: number[] } {
   if (ids.length === 0) return { sql: '', params: [] }
   return {
@@ -70,19 +75,33 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       LIMIT 5
     `).all(year, month, ...sBranchParams)
 
-    // For KPI score: use single branch if one selected, else global (branchId=0 → falls back to null config)
+    // For KPI score: use single branch if one selected, else global (branchId=0)
     const kpiBranchId = effectiveBranchIds.length === 1 ? effectiveBranchIds[0] : 0
+
+    const kpiScoreJewelry = computeKpiScore(db, 1, kpiBranchId, mtd?.total_jewelry ?? 0, 0, today).score
+    const kpiScoreBar     = computeKpiScore(db, 2, kpiBranchId, mtd?.total_bar     ?? 0, 0, today).score
+    const kpiScoreQty     = computeKpiScore(db, 3, kpiBranchId, mtd?.total_qty     ?? 0, 0, today).score
+    const kpiTotalScore   = kpiScoreJewelry + kpiScoreBar + kpiScoreQty
+
+    // Aggregate point target: sum of kpi_point_target across all active salesmen in selected branches
+    const { sql: sBranchSqlT, params: sBranchParamsT } = buildSalesmenBranchFilter(effectiveBranchIds)
+    const ptRow = prepare(db, `
+      SELECT COALESCE(SUM(b.kpi_point_target), 0) AS total_target
+      FROM salesmen s JOIN branches b ON b.id = s.branch_id
+      WHERE s.active = 1 ${sBranchSqlT}
+    `).get(...sBranchParamsT) as { total_target: number }
+    const kpiPointTarget  = ptRow?.total_target ?? 0
+    const kpiPct          = kpiPointTarget > 0 ? (kpiTotalScore / kpiPointTarget) * 100 : 0
 
     return {
       mtd: mtd ?? { total_jewelry: 0, total_bar: 0, total_qty: 0 },
-      targets: targets ?? { target_jewelry: 0, target_bar: 0, target_qty: 0 },
-      projectedJewelry: (mtd?.total_jewelry ?? 0) * projFactor,
-      projectedBar:     (mtd?.total_bar     ?? 0) * projFactor,
-      projectedQty:     (mtd?.total_qty     ?? 0) * projFactor,
       daysInMonth, dayOfMonth,
-      kpiScoreJewelry: computeKpiScore(db, 1, kpiBranchId, mtd?.total_jewelry ?? 0, targets?.target_jewelry ?? 0, today).score,
-      kpiScoreBar:     computeKpiScore(db, 2, kpiBranchId, mtd?.total_bar     ?? 0, targets?.target_bar     ?? 0, today).score,
-      kpiScoreQty:     computeKpiScore(db, 3, kpiBranchId, mtd?.total_qty     ?? 0, targets?.target_qty     ?? 0, today).score,
+      kpiScoreJewelry,
+      kpiScoreBar,
+      kpiScoreQty,
+      kpiTotalScore,
+      kpiPointTarget,
+      kpiPct,
       topPerformers,
     }
   })
@@ -100,11 +119,9 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const dayOfMonth = (new Date(today).getMonth() + 1 === month) ? new Date(today).getDate() : daysInMonth
     const daysRemaining = Math.max(daysInMonth - dayOfMonth, 0)
 
-    // Read KPI total formula settings
-    const baseRow   = prepare(db, `SELECT value FROM app_settings WHERE key='kpi_total_base'`).get()   as { value: string } | undefined
-    const weightRow = prepare(db, `SELECT value FROM app_settings WHERE key='kpi_total_weight'`).get() as { value: string } | undefined
-    const kpiBase   = parseFloat(baseRow?.value   ?? '8000')
-    const kpiWeight = parseFloat(weightRow?.value ?? '50')
+    // Branch point targets (fetched once for efficiency)
+    const branchTargetRows = prepare(db, `SELECT id, kpi_point_target FROM branches`).all() as Array<{ id: number; kpi_point_target: number }>
+    const branchTargetMap = new Map(branchTargetRows.map(r => [r.id, r.kpi_point_target]))
 
     const { sql: sBranchSql, params: sBranchParams } = buildSalesmenBranchFilter(effectiveBranchIds)
 
@@ -131,16 +148,18 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       const js = computeKpiScore(db, 1, r.branch_id, r.actual_jewelry, 0, today).score
       const bs = computeKpiScore(db, 2, r.branch_id, r.actual_bar,     0, today).score
       const qs = computeKpiScore(db, 3, r.branch_id, r.actual_qty,     0, today).score
-      const totalRaw = js + bs + qs
-      const kpiPct   = kpiBase > 0 ? (totalRaw / kpiBase) * kpiWeight : 0
-      const eomKpiPct = dayOfMonth > 0 ? (kpiPct / dayOfMonth) * daysInMonth : 0
+      const totalRaw     = js + bs + qs
+      const branchTarget = branchTargetMap.get(r.branch_id) ?? 0
+      const kpiPct       = branchTarget > 0 ? (totalRaw / branchTarget) * 100 : 0
+      const eomKpiPct    = dayOfMonth > 0 ? (kpiPct / dayOfMonth) * daysInMonth : 0
       return {
         ...r,
+        kpiPointTarget: branchTarget,
         kpiScore: { jewelry: js, bar: bs, qty: qs, total: totalRaw, pct: kpiPct },
         eomKpiPct,
       }
     })
-    return { rows: enriched, daysInMonth, dayOfMonth, daysRemaining, kpiBase, kpiWeight }
+    return { rows: enriched, daysInMonth, dayOfMonth, daysRemaining }
   })
 
   ipcMain.handle('report:executive', async (_e, token: string, year: number, month: number) => {

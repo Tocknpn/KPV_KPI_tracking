@@ -36,13 +36,14 @@ interface Window {
     saveKpiConfig(token: string, config: unknown, tiers: unknown[]): Promise<{ success: boolean; id: number }>
     deleteKpiConfig(token: string, configId: number): Promise<{ success: boolean }>
     saveKpiMetricMultiplier(token: string, metricId: number, pointsPerUnit: number): Promise<{ success: boolean }>
+    saveBranchKpiTarget(token: string, branchId: number, target: number): Promise<{ success: boolean }>
     getKpiFormula(token: string): Promise<{ base: number; weight: number }>
     saveKpiFormula(token: string, base: number, weight: number): Promise<{ success: boolean }>
     simulateKpiScore(token: string, metricId: number, branchId: number | null, actual: number, target: number): Promise<{ score: number; pct: number; tierId: number | null }>
 
     // Reports
     getDashboardStats(token: string, branchIds: number[], year: number, month: number): Promise<import('./types').DashboardStats>
-    getMonthlyReport(token: string, branchIds: number[], year: number, month: number): Promise<{ rows: import('./types').MonthlyReportRow[]; daysInMonth: number; dayOfMonth: number; daysRemaining: number; kpiBase: number; kpiWeight: number }>
+    getMonthlyReport(token: string, branchIds: number[], year: number, month: number): Promise<{ rows: import('./types').MonthlyReportRow[]; daysInMonth: number; dayOfMonth: number; daysRemaining: number }>
     getExecutiveReport(token: string, year: number, month: number): Promise<import('./types').ExecutiveBranchRow[]>
     getBranchAnalytics(token: string, year: number, month: number): Promise<{ dailyTotals: unknown[]; branchContrib: unknown[] }>
 

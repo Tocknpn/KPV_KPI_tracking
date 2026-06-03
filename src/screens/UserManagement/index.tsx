@@ -30,6 +30,7 @@ export default function UserManagement() {
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState('')
   const [toast, setToast]     = useState('')
+  const [showPwd, setShowPwd] = useState(false)
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
@@ -44,15 +45,15 @@ export default function UserManagement() {
   useEffect(() => { load() }, [token])
 
   function openCreate() {
-    setForm(EMPTY_FORM); setEditId(null); setError(''); setModal('create')
+    setForm(EMPTY_FORM); setEditId(null); setError(''); setShowPwd(false); setModal('create')
   }
 
   function openEdit(u: UserRow) {
     setForm({ username: u.username, password: '', fullName: u.full_name, role: u.role, branchId: String(u.branch_id ?? ''), active: u.active })
-    setEditId(u.id); setError(''); setModal('edit')
+    setEditId(u.id); setError(''); setShowPwd(false); setModal('edit')
   }
 
-  function closeModal() { setModal(null); setError('') }
+  function closeModal() { setModal(null); setError(''); setShowPwd(false) }
 
   function setField<K extends keyof FormState>(k: K, v: FormState[K]) {
     setForm(prev => ({ ...prev, [k]: v }))
@@ -276,13 +277,25 @@ export default function UserManagement() {
                 <label className="font-label-md text-label-md block mb-1 text-primary">
                   Password {modal === 'edit' && <span className="text-on-surface-variant font-normal">(leave blank to keep current)</span>}
                 </label>
-                <input
-                  type="password"
-                  value={form.password}
-                  onChange={e => setField('password', e.target.value)}
-                  className="w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none"
-                  placeholder={modal === 'create' ? 'Set a password' : '••••••• (unchanged)'}
-                />
+                <div className="relative">
+                  <input
+                    type={showPwd ? 'text' : 'password'}
+                    value={form.password}
+                    onChange={e => setField('password', e.target.value)}
+                    className="w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 pr-10 text-body-sm outline-none"
+                    placeholder={modal === 'create' ? 'Set a password' : '••••••• (unchanged)'}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd(v => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-primary transition-colors"
+                    tabIndex={-1}
+                  >
+                    <span className="material-symbols-outlined text-sm">
+                      {showPwd ? 'visibility_off' : 'visibility'}
+                    </span>
+                  </button>
+                </div>
               </div>
 
               {/* Role */}
@@ -324,10 +337,11 @@ export default function UserManagement() {
                 <div className="flex items-center justify-between">
                   <span className="font-label-md text-label-md text-primary">Active Account</span>
                   <button
+                    type="button"
                     onClick={() => setField('active', form.active ? 0 : 1)}
-                    className={`w-12 h-6 rounded-full transition-colors relative ${form.active ? 'bg-primary' : 'bg-surface-container-highest'}`}
+                    className={`relative w-12 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${form.active ? 'bg-primary' : 'bg-surface-container-highest'}`}
                   >
-                    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${form.active ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                    <span className={`absolute top-[3px] w-[18px] h-[18px] rounded-full bg-white shadow-sm transition-all duration-200 ${form.active ? 'left-[27px]' : 'left-[3px]'}`} />
                   </button>
                 </div>
               )}

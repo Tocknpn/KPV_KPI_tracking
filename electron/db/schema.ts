@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -8,9 +8,10 @@ const BASE_TABLES = `
     value TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS branches (
-    id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    code TEXT UNIQUE NOT NULL
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    name             TEXT    NOT NULL,
+    code             TEXT    UNIQUE NOT NULL,
+    kpi_point_target REAL    NOT NULL DEFAULT 0
   );
   CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -169,6 +170,16 @@ export function applySchema(db: Database): boolean {
     db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('kpi_total_base', '8000')`).run()
     db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('kpi_total_weight', '50')`).run()
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '4')`).run()
+  }
+
+  if (currentVersion < 5) {
+    try { db.run(`ALTER TABLE branches ADD COLUMN kpi_point_target REAL NOT NULL DEFAULT 0`) } catch { /* already exists */ }
+    // Set per-branch KPI point targets
+    db.prepare(`UPDATE branches SET kpi_point_target = 8000 WHERE code = 'MM'`).run()
+    db.prepare(`UPDATE branches SET kpi_point_target = 5500 WHERE code = 'VC'`).run()
+    db.prepare(`UPDATE branches SET kpi_point_target = 6000 WHERE code = 'IT'`).run()
+    db.prepare(`UPDATE branches SET kpi_point_target = 7000 WHERE code = 'VT'`).run()
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '5')`).run()
   }
 
   return false // Existing DB — no seeding needed
