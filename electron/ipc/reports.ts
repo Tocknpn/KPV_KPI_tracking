@@ -100,58 +100,47 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const dayOfMonth = (new Date(today).getMonth() + 1 === month) ? new Date(today).getDate() : daysInMonth
     const daysRemaining = Math.max(daysInMonth - dayOfMonth, 0)
 
+    // Read KPI total formula settings
+    const baseRow   = prepare(db, `SELECT value FROM app_settings WHERE key='kpi_total_base'`).get()   as { value: string } | undefined
+    const weightRow = prepare(db, `SELECT value FROM app_settings WHERE key='kpi_total_weight'`).get() as { value: string } | undefined
+    const kpiBase   = parseFloat(baseRow?.value   ?? '8000')
+    const kpiWeight = parseFloat(weightRow?.value ?? '50')
+
     const { sql: sBranchSql, params: sBranchParams } = buildSalesmenBranchFilter(effectiveBranchIds)
 
     const rows = prepare(db, `
       SELECT s.id, s.full_name, s.nickname, s.position, s.branch_id,
         b.name AS branch_name,
-        COALESCE(t.jewelry_weight_g,0) AS target_jewelry,
-        COALESCE(t.bar_weight_g,0)     AS target_bar,
-        COALESCE(t.quantity,0)         AS target_qty,
         COALESCE(SUM(de.jewelry_weight_g),0) AS actual_jewelry,
         COALESCE(SUM(de.bar_weight_g),0)     AS actual_bar,
         COALESCE(SUM(de.quantity),0)         AS actual_qty
       FROM salesmen s
       LEFT JOIN branches b ON b.id = s.branch_id
-      LEFT JOIN targets t ON t.salesman_id=s.id AND t.year=? AND t.month=?
       LEFT JOIN daily_entries de ON de.salesman_id=s.id
         AND CAST(strftime('%Y',de.entry_date) AS INTEGER)=?
         AND CAST(strftime('%m',de.entry_date) AS INTEGER)=?
       WHERE s.active=1 ${sBranchSql}
       GROUP BY s.id ORDER BY s.branch_id, s.full_name
-    `).all(year, month, year, month, ...sBranchParams) as Array<{
+    `).all(year, month, ...sBranchParams) as Array<{
       id: number; full_name: string; nickname: string; position: string
       branch_id: number; branch_name: string
-      target_jewelry: number; target_bar: number; target_qty: number
       actual_jewelry: number; actual_bar: number; actual_qty: number
     }>
 
-    const projFactor = daysInMonth / Math.max(dayOfMonth, 1)
     const enriched = rows.map(r => {
-      const pctJewelry = r.target_jewelry > 0 ? (r.actual_jewelry / r.target_jewelry) * 100 : 0
-      const pctBar     = r.target_bar > 0     ? (r.actual_bar     / r.target_bar)     * 100 : 0
-      const pctQty     = r.target_qty > 0     ? (r.actual_qty     / r.target_qty)     * 100 : 0
+      const js = computeKpiScore(db, 1, r.branch_id, r.actual_jewelry, 0, today).score
+      const bs = computeKpiScore(db, 2, r.branch_id, r.actual_bar,     0, today).score
+      const qs = computeKpiScore(db, 3, r.branch_id, r.actual_qty,     0, today).score
+      const totalRaw = js + bs + qs
+      const kpiPct   = kpiBase > 0 ? (totalRaw / kpiBase) * kpiWeight : 0
+      const eomKpiPct = dayOfMonth > 0 ? (kpiPct / dayOfMonth) * daysInMonth : 0
       return {
-        ...r, pctJewelry, pctBar, pctQty,
-        avgPct: (pctJewelry + pctBar + pctQty) / 3,
-        dailyNeeded: daysRemaining > 0 ? {
-          jewelry: (r.target_jewelry - r.actual_jewelry) / daysRemaining,
-          bar:     (r.target_bar     - r.actual_bar)     / daysRemaining,
-          qty:     Math.ceil((r.target_qty - r.actual_qty) / daysRemaining),
-        } : { jewelry: 0, bar: 0, qty: 0 },
-        eomProjected: {
-          jewelry: r.actual_jewelry * projFactor,
-          bar:     r.actual_bar     * projFactor,
-          qty:     r.actual_qty     * projFactor,
-        },
-        kpiScore: {
-          jewelry: computeKpiScore(db, 1, r.branch_id, r.actual_jewelry, r.target_jewelry, today).score,
-          bar:     computeKpiScore(db, 2, r.branch_id, r.actual_bar,     r.target_bar,     today).score,
-          qty:     computeKpiScore(db, 3, r.branch_id, r.actual_qty,     r.target_qty,     today).score,
-        },
+        ...r,
+        kpiScore: { jewelry: js, bar: bs, qty: qs, total: totalRaw, pct: kpiPct },
+        eomKpiPct,
       }
     })
-    return { rows: enriched, daysInMonth, dayOfMonth, daysRemaining }
+    return { rows: enriched, daysInMonth, dayOfMonth, daysRemaining, kpiBase, kpiWeight }
   })
 
   ipcMain.handle('report:executive', async (_e, token: string, year: number, month: number) => {

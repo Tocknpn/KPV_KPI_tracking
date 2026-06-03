@@ -127,6 +127,25 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     return { success: true }
   })
 
+  ipcMain.handle('kpi:getFormula', async (_e, token: string) => {
+    requireAuth(token)
+    const db = getDb()
+    const baseRow   = prepare(db, `SELECT value FROM app_settings WHERE key='kpi_total_base'`).get()   as { value: string } | undefined
+    const weightRow = prepare(db, `SELECT value FROM app_settings WHERE key='kpi_total_weight'`).get() as { value: string } | undefined
+    return {
+      base:   parseFloat(baseRow?.value   ?? '8000'),
+      weight: parseFloat(weightRow?.value ?? '50'),
+    }
+  })
+
+  ipcMain.handle('kpi:saveFormula', async (_e, token: string, base: number, weight: number) => {
+    requireAdmin(token)
+    const db = getDb()
+    prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('kpi_total_base', ?)`  ).run(String(base))
+    prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('kpi_total_weight', ?)`).run(String(weight))
+    return { success: true }
+  })
+
   ipcMain.handle('kpi:simulate', async (_e, token: string, metricId: number, branchId: number | null, actual: number, target: number) => {
     requireAuth(token)
     const today = new Date().toISOString().split('T')[0]

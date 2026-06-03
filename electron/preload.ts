@@ -57,6 +57,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('kpi:deleteConfig', token, configId),
   saveKpiMetricMultiplier: (token: string, metricId: number, pointsPerUnit: number) =>
     ipcRenderer.invoke('kpi:saveMetricMultiplier', token, metricId, pointsPerUnit),
+  getKpiFormula: (token: string) =>
+    ipcRenderer.invoke('kpi:getFormula', token),
+  saveKpiFormula: (token: string, base: number, weight: number) =>
+    ipcRenderer.invoke('kpi:saveFormula', token, base, weight),
   simulateKpiScore: (token: string, metricId: number, branchId: number | null, actual: number, target: number) =>
     ipcRenderer.invoke('kpi:simulate', token, metricId, branchId, actual, target),
 

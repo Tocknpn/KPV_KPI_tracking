@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -163,6 +163,12 @@ export function applySchema(db: Database): boolean {
     db.prepare(`UPDATE kpi_metrics SET points_per_unit = 15 WHERE id = 1`).run()
     db.prepare(`UPDATE kpi_metrics SET points_per_unit = 7.5 WHERE id = 2`).run()
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '3')`).run()
+  }
+
+  if (currentVersion < 4) {
+    db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('kpi_total_base', '8000')`).run()
+    db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('kpi_total_weight', '50')`).run()
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '4')`).run()
   }
 
   return false // Existing DB — no seeding needed

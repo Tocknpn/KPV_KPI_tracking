@@ -99,6 +99,8 @@ export function seedDatabase(db: Database): void {
     prepare(db, `INSERT OR IGNORE INTO app_settings (key, value) VALUES (?,?)`).run('sheets_id', '')
     prepare(db, `INSERT OR IGNORE INTO app_settings (key, value) VALUES (?,?)`).run('service_account_path', '')
     prepare(db, `INSERT OR IGNORE INTO app_settings (key, value) VALUES (?,?)`).run('last_synced_at', '')
+    prepare(db, `INSERT OR IGNORE INTO app_settings (key, value) VALUES (?,?)`).run('kpi_total_base',   '8000')
+    prepare(db, `INSERT OR IGNORE INTO app_settings (key, value) VALUES (?,?)`).run('kpi_total_weight', '50')
   })
 }
 

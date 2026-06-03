@@ -112,12 +112,11 @@ export interface MonthlyReportRow {
   position: string
   branch_id: number
   branch_name: string
-  target_jewelry: number; target_bar: number; target_qty: number
-  actual_jewelry: number; actual_bar: number; actual_qty: number
-  pctJewelry: number; pctBar: number; pctQty: number; avgPct: number
-  dailyNeeded: { jewelry: number; bar: number; qty: number }
-  eomProjected: { jewelry: number; bar: number; qty: number }
-  kpiScore: { jewelry: number; bar: number; qty: number }
+  actual_jewelry: number
+  actual_bar: number
+  actual_qty: number
+  kpiScore: { jewelry: number; bar: number; qty: number; total: number; pct: number }
+  eomKpiPct: number
 }
 
 export interface ExecutiveBranchRow {

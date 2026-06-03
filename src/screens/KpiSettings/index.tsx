@@ -21,6 +21,10 @@ export default function KpiSettings() {
   const [toast, setToast] = useState('')
   // Points-per-unit editor (Jewelry/Bar)
   const [multiplierEdit, setMultiplierEdit] = useState('')
+  // Total KPI formula
+  const [formulaBase, setFormulaBase] = useState('8000')
+  const [formulaWeight, setFormulaWeight] = useState('50')
+  const [savingFormula, setSavingFormula] = useState(false)
   // Simulator
   const [simActual, setSimActual] = useState('')
   const [simBranch, setSimBranch] = useState<number | null>(null)
@@ -36,7 +40,24 @@ export default function KpiSettings() {
       if (first) setMultiplierEdit(String(first.points_per_unit))
     })
     window.api.getKpiConfigs(token).then(setConfigs)
+    window.api.getKpiFormula(token).then(f => {
+      setFormulaBase(String(f.base))
+      setFormulaWeight(String(f.weight))
+    })
   }, [token])
+
+  async function saveFormula() {
+    if (!token) return
+    const base   = parseFloat(formulaBase)
+    const weight = parseFloat(formulaWeight)
+    if (isNaN(base) || base <= 0 || isNaN(weight) || weight <= 0) {
+      showToast('Base and Weight must be positive numbers.'); return
+    }
+    setSavingFormula(true)
+    await window.api.saveKpiFormula(token, base, weight)
+    showToast('Total KPI formula saved.')
+    setSavingFormula(false)
+  }
 
   const selectedMetricObj = metrics.find(m => m.id === selectedMetric)
   const isWeightMetric = (selectedMetricObj?.points_per_unit ?? 0) > 0
@@ -183,12 +204,63 @@ export default function KpiSettings() {
       </div>
 
       {/* Formula info banner */}
-      <GlassCard className="p-4 mb-6 flex items-start gap-3">
+      <GlassCard className="p-4 mb-4 flex items-start gap-3">
         <span className="material-symbols-outlined text-primary text-sm mt-0.5">info</span>
         <div className="text-body-sm text-on-surface-variant space-y-0.5">
           <p><strong className="text-primary">Jewelry Score</strong> = Actual Weight (g) × Points/g multiplier</p>
           <p><strong className="text-secondary">Bar Score</strong> = Actual Weight (g) × Points/g multiplier</p>
-          <p><strong className="text-tertiary">Qty Score</strong> = Actual Qty × Tier Multiplier (based on absolute qty threshold per branch)</p>
+          <p><strong className="text-tertiary">Qty Score</strong> = Actual Qty × Tier Multiplier (absolute qty threshold per branch)</p>
+          <p className="pt-1 border-t border-black/5 mt-1">
+            <strong className="text-on-surface">Total KPI %</strong> = (Jewelry Score + Bar Score + Qty Score) ÷ Base × Weight
+          </p>
+        </div>
+      </GlassCard>
+
+      {/* Total KPI Score Formula editor */}
+      <GlassCard elevated className="p-5 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h4 className="font-headline-md text-headline-md text-on-surface">Total KPI Score % Formula</h4>
+            <p className="text-body-sm text-on-surface-variant mt-0.5">
+              KPI % = (Jewelry + Bar + Qty Score) ÷ <strong>Base</strong> × <strong>Weight</strong>
+            </p>
+          </div>
+        </div>
+        <div className="flex items-end gap-6 flex-wrap">
+          <div>
+            <label className="font-label-md text-label-md block mb-1 text-primary">Base (divisor)</label>
+            <input
+              type="number" min="1" step="100"
+              value={formulaBase}
+              onChange={e => setFormulaBase(e.target.value)}
+              className="w-32 bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none font-tabular-nums font-bold"
+            />
+          </div>
+          <div className="text-2xl text-on-surface-variant font-light mb-2">×</div>
+          <div>
+            <label className="font-label-md text-label-md block mb-1 text-primary">Weight (multiplier)</label>
+            <input
+              type="number" min="1" step="1"
+              value={formulaWeight}
+              onChange={e => setFormulaWeight(e.target.value)}
+              className="w-24 bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none font-tabular-nums font-bold"
+            />
+          </div>
+          <button
+            onClick={saveFormula}
+            disabled={savingFormula}
+            className="bg-primary text-white px-5 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 disabled:opacity-50 shadow-primary mb-0.5"
+          >
+            <span className="material-symbols-outlined text-sm">save</span>
+            {savingFormula ? 'Saving...' : 'Save Formula'}
+          </button>
+          <div className="bg-primary/5 px-4 py-2.5 rounded-xl mb-0.5">
+            <p className="text-[10px] text-primary uppercase font-bold mb-0.5">Example (score=8000)</p>
+            <p className="font-tabular-nums font-bold text-primary">
+              8000 ÷ {formulaBase || '8000'} × {formulaWeight || '50'} =&nbsp;
+              {(8000 / (parseFloat(formulaBase) || 8000) * (parseFloat(formulaWeight) || 50)).toFixed(1)}%
+            </p>
+          </div>
         </div>
       </GlassCard>
 
