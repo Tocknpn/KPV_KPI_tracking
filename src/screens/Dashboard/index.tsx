@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { AppShell } from '../../components/layout/AppShell'
 import { KpiCard } from '../../components/ui/KpiCard'
 import { RadialGauge } from '../../components/ui/RadialGauge'
@@ -14,25 +15,110 @@ function fmt(n: number, decimals = 1) {
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
+// ── Multi-select branch dropdown ──────────────────────────────────────────
+interface BranchDropdownProps {
+  branches: Array<{ id: number; name: string; code: string }>
+  selectedIds: number[]
+  onChange: (ids: number[]) => void
+}
+
+function BranchDropdown({ branches, selectedIds, onChange }: BranchDropdownProps) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [])
+
+  const isAll = selectedIds.length === 0
+  const label = isAll
+    ? 'All Branches'
+    : selectedIds.length === 1
+    ? branches.find(b => b.id === selectedIds[0])?.name ?? '1 Branch'
+    : `${selectedIds.length} Branches`
+
+  function toggleBranch(id: number) {
+    if (isAll) {
+      // Currently "all" — clicking one branch selects only it
+      onChange([id])
+    } else if (selectedIds.includes(id)) {
+      const next = selectedIds.filter(x => x !== id)
+      onChange(next)  // empty = all
+    } else {
+      const next = [...selectedIds, id]
+      onChange(next.length === branches.length ? [] : next)
+    }
+  }
+
+  function selectAll() { onChange([]) }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high transition-colors border border-white/20 shadow-sm"
+      >
+        <span className="material-symbols-outlined text-sm text-primary">corporate_fare</span>
+        {label}
+        <span className="material-symbols-outlined text-sm text-on-surface-variant">
+          {open ? 'expand_less' : 'expand_more'}
+        </span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-2 bg-white/95 backdrop-blur-xl shadow-xl rounded-xl border border-white/40 z-50 min-w-52 py-1 overflow-hidden">
+          {/* All Branches */}
+          <label className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer transition-colors">
+            <input
+              type="checkbox"
+              checked={isAll}
+              onChange={selectAll}
+              className="accent-primary rounded"
+            />
+            <span className="font-label-md text-label-md text-on-surface">All Branches</span>
+          </label>
+          <div className="border-t border-black/5 my-1" />
+          {branches.map(b => (
+            <label key={b.id} className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer transition-colors">
+              <input
+                type="checkbox"
+                checked={!isAll && selectedIds.includes(b.id)}
+                onChange={() => toggleBranch(b.id)}
+                className="accent-primary rounded"
+              />
+              <span className="font-label-md text-label-md text-on-surface">{b.name}</span>
+              <span className="ml-auto text-[10px] text-on-surface-variant font-mono">{b.code}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { token, user, branches } = useAuthStore()
-  const { selectedBranchId, selectedYear, selectedMonth, setSelectedBranch } = useAppStore()
+  const { selectedBranchIds, selectedYear, selectedMonth, setSelectedBranchIds } = useAppStore()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Determine effective branch
-  const effectiveBranchId = user?.role === 'supervisor'
-    ? (user.branchId ?? 1)
-    : (selectedBranchId ?? branches[0]?.id ?? 1)
+  // Supervisor is locked to their own branch
+  const effectiveBranchIds: number[] = user?.role === 'supervisor'
+    ? [user.branchId ?? 1]
+    : selectedBranchIds
 
   useEffect(() => {
     if (!token) return
     setLoading(true)
-    window.api.getDashboardStats(token, effectiveBranchId, selectedYear, selectedMonth)
+    window.api.getDashboardStats(token, effectiveBranchIds, selectedYear, selectedMonth)
       .then(setStats)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [token, effectiveBranchId, selectedYear, selectedMonth])
+  }, [token, JSON.stringify(effectiveBranchIds), selectedYear, selectedMonth])
 
   const pctJewelry = stats && stats.targets.target_jewelry > 0
     ? (stats.mtd.total_jewelry / stats.targets.target_jewelry) * 100 : 0
@@ -41,6 +127,16 @@ export default function Dashboard() {
   const pctQty = stats && stats.targets.target_qty > 0
     ? (stats.mtd.total_qty / stats.targets.target_qty) * 100 : 0
 
+  // Label for selected scope
+  const scopeLabel = (() => {
+    if (user?.role === 'supervisor') {
+      return branches.find(b => b.id === user.branchId)?.name ?? 'My Branch'
+    }
+    if (effectiveBranchIds.length === 0) return 'All Branches'
+    if (effectiveBranchIds.length === 1) return branches.find(b => b.id === effectiveBranchIds[0])?.name ?? '1 Branch'
+    return `${effectiveBranchIds.length} Branches`
+  })()
+
   return (
     <AppShell title="SalesTrack Pro">
       {/* Page header */}
@@ -48,28 +144,16 @@ export default function Dashboard() {
         <div>
           <h2 className="font-headline-lg text-headline-lg text-on-surface">Dashboard Overview</h2>
           <p className="text-on-surface-variant text-body-md">
-            {MONTH_NAMES[(selectedMonth - 1)]} {selectedYear} — {
-              branches.find(b => b.id === effectiveBranchId)?.name ?? 'All Branches'
-            }
+            {MONTH_NAMES[(selectedMonth - 1)]} {selectedYear} — {scopeLabel}
           </p>
         </div>
-        {/* Branch selector for admin/executive */}
+        {/* Multi-select branch dropdown — admin/executive only */}
         {user?.role !== 'supervisor' && branches.length > 0 && (
-          <div className="flex gap-2">
-            {branches.map(b => (
-              <button
-                key={b.id}
-                onClick={() => setSelectedBranch(b.id)}
-                className={`px-4 py-1.5 rounded-lg font-label-md text-label-md transition-all ${
-                  effectiveBranchId === b.id
-                    ? 'bg-primary text-white shadow-primary'
-                    : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
-                }`}
-              >
-                {b.code}
-              </button>
-            ))}
-          </div>
+          <BranchDropdown
+            branches={branches}
+            selectedIds={selectedBranchIds}
+            onChange={setSelectedBranchIds}
+          />
         )}
       </div>
 
@@ -137,7 +221,9 @@ export default function Dashboard() {
                 ].map(k => (
                   <div key={k.label} className="text-center">
                     <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{k.label}</p>
-                    <p className={`font-headline-md text-headline-md font-bold ${k.color} tabular-nums`}>{k.score}</p>
+                    <p className={`font-headline-md text-headline-md font-bold ${k.color} tabular-nums`}>
+                      {k.score.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -147,9 +233,9 @@ export default function Dashboard() {
             <GlassCard className="lg:col-span-7 overflow-hidden flex flex-col">
               <div className="p-6 border-b border-white/20 flex items-center justify-between">
                 <h4 className="font-headline-md text-headline-md font-bold text-on-surface">Top 5 Performers</h4>
-                <a href="/reports" className="text-primary font-label-md text-label-md hover:underline">
+                <Link to="/reports" className="text-primary font-label-md text-label-md hover:underline">
                   View All →
-                </a>
+                </Link>
               </div>
               <div className="flex-1 overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -164,7 +250,6 @@ export default function Dashboard() {
                   </thead>
                   <tbody className="divide-y divide-white/10">
                     {(stats?.topPerformers ?? []).map((p, i) => {
-                      const totalWeight = p.total_jewelry + p.total_bar
                       const tier = i === 0 ? 'gold' : i <= 2 ? 'warning' : 'neutral'
                       const tierLabel = i === 0 ? 'Gold Tier' : i <= 2 ? 'Silver Tier' : 'Standard'
                       return (

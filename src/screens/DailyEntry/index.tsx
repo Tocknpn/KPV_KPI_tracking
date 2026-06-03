@@ -4,10 +4,11 @@ import { GlassCard } from '../../components/ui/GlassCard'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import type { DailyEntry } from '../../types'
+import { validateDailyRows, validateTargetRows } from '../../utils/csv'
 import {
-  parseCSV, validateDailyRows, validateTargetRows,
-  generateDailyTemplate, generateTargetTemplate, downloadCSV, readFileAsText,
-} from '../../utils/csv'
+  parseXLSX, readFileAsArrayBuffer,
+  generateDailyTemplateXLSX, generateTargetTemplateXLSX, downloadXLSX,
+} from '../../utils/xlsx'
 
 type Tab = 'manual' | 'daily-csv' | 'target-csv'
 
@@ -75,8 +76,8 @@ export default function DailyEntry() {
     resetUpload()
     setUploadFile(file)
     try {
-      const text    = await readFileAsText(file)
-      const parsed  = parseCSV(text)
+      const buffer = await readFileAsArrayBuffer(file)
+      const parsed = parseXLSX(buffer)
       setPreview({
         headers: parsed.headers,
         sample:  parsed.rows.slice(0, 3).map(r => parsed.headers.map(h => r[h] ?? '')),
@@ -87,13 +88,13 @@ export default function DailyEntry() {
     }
   }
 
-  // Daily CSV submit
+  // Daily XLSX submit
   async function submitDailyCSV() {
     if (!uploadFile || !token) return
     setUploading(true); setUploadResult(null)
     try {
-      const text   = await readFileAsText(uploadFile)
-      const parsed = parseCSV(text)
+      const buffer = await readFileAsArrayBuffer(uploadFile)
+      const parsed = parseXLSX(buffer)
       const { rows, errors } = validateDailyRows(parsed)
       if (errors.length) { setUploadErrors(errors) }
       if (!rows.length) { setUploading(false); return }
@@ -118,13 +119,13 @@ export default function DailyEntry() {
     } finally { setUploading(false) }
   }
 
-  // Target CSV submit
+  // Target XLSX submit
   async function submitTargetCSV() {
     if (!uploadFile || !token) return
     setUploading(true); setUploadResult(null)
     try {
-      const text   = await readFileAsText(uploadFile)
-      const parsed = parseCSV(text)
+      const buffer = await readFileAsArrayBuffer(uploadFile)
+      const parsed = parseXLSX(buffer)
       const { rows, errors } = validateTargetRows(parsed)
       if (errors.length) { setUploadErrors(errors) }
       if (!rows.length) { setUploading(false); return }
@@ -148,19 +149,19 @@ export default function DailyEntry() {
     } finally { setUploading(false) }
   }
 
-  // Template downloads
+  // Template downloads (XLSX)
   async function downloadDailyTemplate() {
     if (!token) return
     const salesmen = await window.api.getSalesmenForTemplate(token, effectiveBranchId) as Array<{ id: number; full_name: string; branch_id: number; branch_code: string }>
-    const content  = generateDailyTemplate(salesmen, date)
-    downloadCSV(`daily_template_${branchName.replace(/\s+/g,'_')}_${date}.csv`, content)
+    const data = generateDailyTemplateXLSX(salesmen, date)
+    downloadXLSX(`daily_template_${branchName.replace(/\s+/g,'_')}_${date}.xlsx`, data)
   }
 
   async function downloadTargetTemplate() {
     if (!token) return
     const salesmen = await window.api.getSalesmenForTemplate(token, effectiveBranchId) as Array<{ id: number; full_name: string; branch_id: number; branch_code: string }>
-    const content  = generateTargetTemplate(salesmen, selectedYear, selectedMonth)
-    downloadCSV(`target_template_${branchName.replace(/\s+/g,'_')}_${selectedYear}_${MONTHS[selectedMonth-1]}.csv`, content)
+    const data = generateTargetTemplateXLSX(salesmen, selectedYear, selectedMonth)
+    downloadXLSX(`target_template_${branchName.replace(/\s+/g,'_')}_${selectedYear}_${MONTHS[selectedMonth-1]}.xlsx`, data)
   }
 
   const totals = entries.reduce((a, e) => ({ j: a.j + (e.jewelry_weight_g ?? 0), b: a.b + (e.bar_weight_g ?? 0), q: a.q + (e.quantity ?? 0) }), { j: 0, b: 0, q: 0 })
@@ -192,8 +193,8 @@ export default function DailyEntry() {
       <div className="flex gap-1 mb-6 bg-surface-container rounded-xl p-1 w-fit">
         {([
           { key: 'manual',     label: 'Manual Entry',     icon: 'edit_document' },
-          { key: 'daily-csv',  label: 'Daily CSV Upload',  icon: 'upload_file' },
-          { key: 'target-csv', label: 'Target CSV Upload', icon: 'flag' },
+          { key: 'daily-csv',  label: 'Daily XLSX Upload',  icon: 'upload_file' },
+          { key: 'target-csv', label: 'Target XLSX Upload', icon: 'flag' },
         ] as const).map(t => (
           <button key={t.key} onClick={() => { setActiveTab(t.key); resetUpload() }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-label-md text-label-md transition-all ${activeTab === t.key ? 'bg-white shadow-sm text-primary font-bold' : 'text-on-surface-variant hover:text-primary'}`}>
@@ -280,7 +281,7 @@ export default function DailyEntry() {
           description="Upload daily KPI data for one or more dates. If same staff + date already exists, latest upload replaces it."
           templateNote="Format: Date (YYYY-MM-DD), Staff_ID, Full_Name, Branch_ID, KPI_1 (Jewelry g), KPI_2 (Bar g), KPI_3 (Quantity)"
           onDownloadTemplate={downloadDailyTemplate}
-          templateFilename={`daily_template_${date}.csv`}
+          templateFilename={`daily_template_${date}.xlsx`}
           onFilePick={handleFilePick}
           uploadFile={uploadFile}
           uploading={uploading}
@@ -304,7 +305,7 @@ export default function DailyEntry() {
           description={`Upload monthly targets for ${MONTHS[selectedMonth-1]} ${selectedYear}. Uploading again replaces previous targets (latest file wins).`}
           templateNote="Format: Staff_ID, Full_Name, Branch_ID, Year, Month, Jewelry_Target_g, Bar_Target_g, Quantity_Target"
           onDownloadTemplate={downloadTargetTemplate}
-          templateFilename={`target_template_${selectedYear}_${MONTHS[selectedMonth-1]}.csv`}
+          templateFilename={`target_template_${selectedYear}_${MONTHS[selectedMonth-1]}.xlsx`}
           onFilePick={handleFilePick}
           uploadFile={uploadFile}
           uploading={uploading}
@@ -402,11 +403,11 @@ function CSVUploadPanel({ title, description, templateNote, onDownloadTemplate, 
           onClick={() => fileRef.current?.click()}
           className={`border-2 border-dashed rounded-2xl h-44 flex flex-col items-center justify-center cursor-pointer transition-all ${isDragging ? `${accentBorder} bg-primary/5` : 'border-outline-variant/50 bg-white/40 hover:border-primary/40'}`}
         >
-          <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) onFilePick(f) }} />
           <span className="material-symbols-outlined text-4xl text-on-surface-variant/40 mb-3">upload_file</span>
-          <p className="font-label-md text-label-md text-on-surface-variant">Drop CSV file here or click to browse</p>
-          <p className="text-[11px] text-on-surface-variant/50 mt-1">Accepts .csv</p>
+          <p className="font-label-md text-label-md text-on-surface-variant">Drop XLSX file here or click to browse</p>
+          <p className="text-[11px] text-on-surface-variant/50 mt-1">Accepts .xlsx — supports Lao text</p>
         </div>
       )}
 

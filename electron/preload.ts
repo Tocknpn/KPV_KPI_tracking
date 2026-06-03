@@ -55,14 +55,16 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('kpi:saveConfig', token, config, tiers),
   deleteKpiConfig: (token: string, configId: number) =>
     ipcRenderer.invoke('kpi:deleteConfig', token, configId),
+  saveKpiMetricMultiplier: (token: string, metricId: number, pointsPerUnit: number) =>
+    ipcRenderer.invoke('kpi:saveMetricMultiplier', token, metricId, pointsPerUnit),
   simulateKpiScore: (token: string, metricId: number, branchId: number | null, actual: number, target: number) =>
     ipcRenderer.invoke('kpi:simulate', token, metricId, branchId, actual, target),
 
   // ── Reports ───────────────────────────────────────────────────────────
-  getMonthlyReport: (token: string, branchId: number, year: number, month: number) =>
-    ipcRenderer.invoke('report:monthly', token, branchId, year, month),
-  getDashboardStats: (token: string, branchId: number, year: number, month: number) =>
-    ipcRenderer.invoke('report:dashboard', token, branchId, year, month),
+  getMonthlyReport: (token: string, branchIds: number[], year: number, month: number) =>
+    ipcRenderer.invoke('report:monthly', token, branchIds, year, month),
+  getDashboardStats: (token: string, branchIds: number[], year: number, month: number) =>
+    ipcRenderer.invoke('report:dashboard', token, branchIds, year, month),
   getExecutiveReport: (token: string, year: number, month: number) =>
     ipcRenderer.invoke('report:executive', token, year, month),
   getBranchAnalytics: (token: string, year: number, month: number) =>

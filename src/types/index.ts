@@ -63,6 +63,7 @@ export interface KpiMetric {
   color_token: string
   active: number
   display_order: number
+  points_per_unit: number
 }
 
 export interface KpiTierConfig {
@@ -109,6 +110,8 @@ export interface MonthlyReportRow {
   full_name: string
   nickname: string
   position: string
+  branch_id: number
+  branch_name: string
   target_jewelry: number; target_bar: number; target_qty: number
   actual_jewelry: number; actual_bar: number; actual_qty: number
   pctJewelry: number; pctBar: number; pctQty: number; avgPct: number

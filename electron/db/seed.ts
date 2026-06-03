@@ -35,26 +35,64 @@ export function seedDatabase(db: Database): void {
       .run('ceo', ceoHash, 'Chief Executive Officer', 'executive', null)
 
     // ── KPI Metrics (3 core) ──────────────────────────────────────────────
-    prepare(db, `INSERT INTO kpi_metrics (name, unit, color_token, active, display_order) VALUES (?,?,?,1,?)`).run('Jewelry Weight', 'g', 'primary',   1)
-    prepare(db, `INSERT INTO kpi_metrics (name, unit, color_token, active, display_order) VALUES (?,?,?,1,?)`).run('Bar Weight',     'g', 'secondary', 2)
-    prepare(db, `INSERT INTO kpi_metrics (name, unit, color_token, active, display_order) VALUES (?,?,?,1,?)`).run('Quantity',      'pcs', 'tertiary',  3)
+    // Jewelry: score = actual_weight × 15;  Bar: score = actual_weight × 7.5
+    // Quantity: score = actual_qty × multiplier (tier per branch)
+    prepare(db, `INSERT INTO kpi_metrics (name, unit, color_token, active, display_order, points_per_unit) VALUES (?,?,?,1,?,?)`).run('Jewelry Weight', 'g',   'primary',   1, 15)
+    prepare(db, `INSERT INTO kpi_metrics (name, unit, color_token, active, display_order, points_per_unit) VALUES (?,?,?,1,?,?)`).run('Bar Weight',     'g',   'secondary', 2, 7.5)
+    prepare(db, `INSERT INTO kpi_metrics (name, unit, color_token, active, display_order, points_per_unit) VALUES (?,?,?,1,?,?)`).run('Quantity',       'pcs', 'tertiary',  3, 0)
 
-    // ── Default KPI Tier Configs (Global, all branches) ───────────────────
+    // ── Qty tier configs per branch ───────────────────────────────────────
+    // threshold_pct stores absolute qty threshold; score stores the multiplier
     const today = new Date().toISOString().split('T')[0]
-    const defaultTiers = [
-      { pct: 100, score: 100 }, { pct: 80, score: 80 },
-      { pct: 60,  score: 60  }, { pct: 40, score: 40 },
-      { pct: 20,  score: 20  }, { pct: 0,  score: 0  },
+
+    // ITecc (3) & VangThong (4) & Vientiane Center (2): same tier table
+    const tierA = [
+      { pct: 900, score: 5   },
+      { pct: 700, score: 4.5 },
+      { pct: 500, score: 4   },
+      { pct: 350, score: 3.5 },
+      { pct: 200, score: 3   },
+      { pct: 100, score: 2.5 },
+      { pct: 50,  score: 2   },
+      { pct: 1,   score: 1.5 },
     ]
-    for (let metricId = 1; metricId <= 3; metricId++) {
+    // Morning Market (1): higher multipliers
+    const tierMM = [
+      { pct: 900, score: 6.5 },
+      { pct: 700, score: 6   },
+      { pct: 500, score: 5   },
+      { pct: 350, score: 4   },
+      { pct: 200, score: 3   },
+      { pct: 100, score: 2.5 },
+      { pct: 50,  score: 2   },
+      { pct: 1,   score: 1.5 },
+    ]
+
+    const qtyMetricId = 3
+    const branchTiers: Array<{ branchId: number; label: string; tiers: typeof tierA }> = [
+      { branchId: 1, label: 'Morning Market Qty Tiers',     tiers: tierMM },
+      { branchId: 2, label: 'Vientiane Center Qty Tiers',   tiers: tierA  },
+      { branchId: 3, label: 'ITecc Qty Tiers',              tiers: tierA  },
+      { branchId: 4, label: 'VangThong Qty Tiers',          tiers: tierA  },
+    ]
+    for (const { branchId, label, tiers } of branchTiers) {
       const { lastInsertRowid } = prepare(db,
-        `INSERT INTO kpi_tier_configs (metric_id, branch_id, label, effective_from, effective_to, is_active) VALUES (?,NULL,?,?,NULL,1)`
-      ).run(metricId, 'Default Config', today)
-      defaultTiers.forEach((t, i) => {
+        `INSERT INTO kpi_tier_configs (metric_id, branch_id, label, effective_from, effective_to, is_active) VALUES (?,?,?,?,NULL,1)`
+      ).run(qtyMetricId, branchId, label, today)
+      tiers.forEach((t, i) => {
         prepare(db, `INSERT INTO kpi_tiers (config_id, threshold_pct, score, tier_order) VALUES (?,?,?,?)`)
           .run(lastInsertRowid, t.pct, t.score, i + 1)
       })
     }
+
+    // Global fallback qty config (branch_id NULL) using tier A multipliers
+    const { lastInsertRowid: globalQtyConfigId } = prepare(db,
+      `INSERT INTO kpi_tier_configs (metric_id, branch_id, label, effective_from, effective_to, is_active) VALUES (?,NULL,?,?,NULL,1)`
+    ).run(qtyMetricId, 'Global Qty Tiers (Fallback)', today)
+    tierA.forEach((t, i) => {
+      prepare(db, `INSERT INTO kpi_tiers (config_id, threshold_pct, score, tier_order) VALUES (?,?,?,?)`)
+        .run(globalQtyConfigId, t.pct, t.score, i + 1)
+    })
 
     // ── App defaults ──────────────────────────────────────────────────────
     prepare(db, `INSERT INTO email_config (id) VALUES (1)`).run()

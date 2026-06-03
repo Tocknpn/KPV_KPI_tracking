@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -63,12 +63,13 @@ const BASE_TABLES = `
     UNIQUE(salesman_id, entry_date)
   );
   CREATE TABLE IF NOT EXISTS kpi_metrics (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    name          TEXT    NOT NULL,
-    unit          TEXT    NOT NULL,
-    color_token   TEXT    NOT NULL DEFAULT 'primary',
-    active        INTEGER NOT NULL DEFAULT 1,
-    display_order INTEGER NOT NULL DEFAULT 0
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT    NOT NULL,
+    unit            TEXT    NOT NULL,
+    color_token     TEXT    NOT NULL DEFAULT 'primary',
+    active          INTEGER NOT NULL DEFAULT 1,
+    display_order   INTEGER NOT NULL DEFAULT 0,
+    points_per_unit REAL    NOT NULL DEFAULT 0
   );
   CREATE TABLE IF NOT EXISTS kpi_tier_configs (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,6 +108,11 @@ const BASE_TABLES = `
     metrics       TEXT    NOT NULL DEFAULT '["jewelry","bar","quantity"]',
     enabled       INTEGER NOT NULL DEFAULT 0
   );
+`
+
+// Added in v3
+const V3_MIGRATIONS = `
+  ALTER TABLE kpi_metrics ADD COLUMN points_per_unit REAL NOT NULL DEFAULT 0;
 `
 
 // Added in v2
@@ -150,6 +156,13 @@ export function applySchema(db: Database): boolean {
   if (currentVersion < 2) {
     db.run(V2_TABLES)
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '2')`).run()
+  }
+
+  if (currentVersion < 3) {
+    try { db.run(V3_MIGRATIONS) } catch { /* column may already exist */ }
+    db.prepare(`UPDATE kpi_metrics SET points_per_unit = 15 WHERE id = 1`).run()
+    db.prepare(`UPDATE kpi_metrics SET points_per_unit = 7.5 WHERE id = 2`).run()
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '3')`).run()
   }
 
   return false // Existing DB — no seeding needed

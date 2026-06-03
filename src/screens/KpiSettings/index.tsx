@@ -11,7 +11,7 @@ export default function KpiSettings() {
   const [metrics, setMetrics] = useState<KpiMetric[]>([])
   const [configs, setConfigs] = useState<KpiTierConfig[]>([])
   const [selectedMetric, setSelectedMetric] = useState<number>(1)
-  const [selectedBranch, setSelectedBranch] = useState<number | null>(null) // null = global
+  const [selectedBranch, setSelectedBranch] = useState<number | null>(null)
   const [tiers, setTiers] = useState<EditableTier[]>([])
   const [configLabel, setConfigLabel] = useState('Default Config')
   const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().split('T')[0])
@@ -19,20 +19,39 @@ export default function KpiSettings() {
   const [editingConfigId, setEditingConfigId] = useState<number | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [toast, setToast] = useState('')
+  // Points-per-unit editor (Jewelry/Bar)
+  const [multiplierEdit, setMultiplierEdit] = useState('')
   // Simulator
   const [simActual, setSimActual] = useState('')
-  const [simTarget, setSimTarget] = useState('')
+  const [simBranch, setSimBranch] = useState<number | null>(null)
   const [simResult, setSimResult] = useState<{ score: number; pct: number } | null>(null)
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3500) }
 
   useEffect(() => {
     if (!token) return
-    window.api.getKpiMetrics(token).then(setMetrics)
+    window.api.getKpiMetrics(token).then(m => {
+      setMetrics(m)
+      const first = m[0]
+      if (first) setMultiplierEdit(String(first.points_per_unit))
+    })
     window.api.getKpiConfigs(token).then(setConfigs)
   }, [token])
 
-  // Filter configs for selected metric + branch
+  const selectedMetricObj = metrics.find(m => m.id === selectedMetric)
+  const isWeightMetric = (selectedMetricObj?.points_per_unit ?? 0) > 0
+
+  // When switching metric: reset multiplier field and tier state
+  function switchMetric(id: number) {
+    setSelectedMetric(id)
+    setEditingConfigId(null)
+    setTiers([])
+    setSimResult(null)
+    const m = metrics.find(x => x.id === id)
+    if (m) setMultiplierEdit(String(m.points_per_unit))
+  }
+
+  // Filter configs — only for qty metric (metric_id=3), grouped by branch
   const filteredConfigs = configs.filter(c =>
     c.metric_id === selectedMetric &&
     (selectedBranch === null ? c.branch_id === null : c.branch_id === selectedBranch)
@@ -54,12 +73,14 @@ export default function KpiSettings() {
     setEffectiveFrom(new Date().toISOString().split('T')[0])
     setEffectiveTo('')
     setTiers([
-      { threshold_pct: 100, score: 100 },
-      { threshold_pct: 80,  score: 80  },
-      { threshold_pct: 60,  score: 60  },
-      { threshold_pct: 40,  score: 40  },
-      { threshold_pct: 20,  score: 20  },
-      { threshold_pct: 0,   score: 0   },
+      { threshold_pct: 900, score: 5   },
+      { threshold_pct: 700, score: 4.5 },
+      { threshold_pct: 500, score: 4   },
+      { threshold_pct: 350, score: 3.5 },
+      { threshold_pct: 200, score: 3   },
+      { threshold_pct: 100, score: 2.5 },
+      { threshold_pct: 50,  score: 2   },
+      { threshold_pct: 1,   score: 1.5 },
     ])
     setSimResult(null)
   }
@@ -84,12 +105,24 @@ export default function KpiSettings() {
     setTiers(prev => [...prev].sort((a, b) => b.threshold_pct - a.threshold_pct))
   }
 
+  async function saveMultiplier() {
+    if (!token) return
+    const val = parseFloat(multiplierEdit)
+    if (isNaN(val) || val <= 0) { showToast('Enter a valid positive number.'); return }
+    setIsSaving(true)
+    await window.api.saveKpiMetricMultiplier(token, selectedMetric, val)
+    const updated = await window.api.getKpiMetrics(token)
+    setMetrics(updated)
+    showToast('Multiplier saved.')
+    setIsSaving(false)
+  }
+
   async function saveConfig() {
     if (!token || tiers.length === 0) return
     setIsSaving(true)
     const sortedTiers = [...tiers]
       .sort((a, b) => b.threshold_pct - a.threshold_pct)
-      .map((t, i) => ({ ...t, tierOrder: i + 1 }))
+      .map((t, i) => ({ thresholdPct: t.threshold_pct, score: t.score, tierOrder: i + 1 }))
 
     const cfgPayload = {
       id: editingConfigId ?? undefined,
@@ -100,7 +133,7 @@ export default function KpiSettings() {
     }
     const res = await window.api.saveKpiConfig(token, cfgPayload, sortedTiers)
     if (res.success) {
-      showToast('KPI config saved successfully.')
+      showToast('KPI config saved.')
       const updated = await window.api.getKpiConfigs(token)
       setConfigs(updated)
       setEditingConfigId(res.id)
@@ -121,12 +154,9 @@ export default function KpiSettings() {
   async function simulate() {
     if (!token) return
     const actual = parseFloat(simActual) || 0
-    const target = parseFloat(simTarget) || 1
-    const result = await window.api.simulateKpiScore(token, selectedMetric, selectedBranch, actual, target)
+    const result = await window.api.simulateKpiScore(token, selectedMetric, simBranch, actual, actual)
     setSimResult(result)
   }
-
-  const selectedMetricObj = metrics.find(m => m.id === selectedMetric)
 
   return (
     <AppShell title="KPI Settings" allowedRoles={['admin']}>
@@ -144,7 +174,7 @@ export default function KpiSettings() {
             <span className="text-primary">KPI Settings</span>
           </nav>
           <h2 className="font-headline-lg text-headline-lg text-on-surface">KPI Scoring Configuration</h2>
-          <p className="text-on-surface-variant text-body-md mt-1">Configure tier tables per KPI metric and per branch.</p>
+          <p className="text-on-surface-variant text-body-md mt-1">Configure scoring per KPI metric and branch.</p>
         </div>
         <div className="flex items-center gap-2 px-3 py-2 bg-error-container/30 rounded-xl">
           <span className="material-symbols-outlined text-error text-sm">admin_panel_settings</span>
@@ -152,17 +182,26 @@ export default function KpiSettings() {
         </div>
       </div>
 
+      {/* Formula info banner */}
+      <GlassCard className="p-4 mb-6 flex items-start gap-3">
+        <span className="material-symbols-outlined text-primary text-sm mt-0.5">info</span>
+        <div className="text-body-sm text-on-surface-variant space-y-0.5">
+          <p><strong className="text-primary">Jewelry Score</strong> = Actual Weight (g) × Points/g multiplier</p>
+          <p><strong className="text-secondary">Bar Score</strong> = Actual Weight (g) × Points/g multiplier</p>
+          <p><strong className="text-tertiary">Qty Score</strong> = Actual Qty × Tier Multiplier (based on absolute qty threshold per branch)</p>
+        </div>
+      </GlassCard>
+
       <div className="grid grid-cols-12 gap-card-gap">
-        {/* Left: Config Selector */}
+        {/* Left: Metric + Branch selector */}
         <div className="col-span-12 lg:col-span-4 space-y-4">
-          {/* KPI Metric Selector */}
           <GlassCard className="p-5">
             <h4 className="font-label-md text-label-md text-on-surface-variant uppercase mb-3">KPI Metric</h4>
             <div className="space-y-1">
               {metrics.map(m => (
                 <button
                   key={m.id}
-                  onClick={() => { setSelectedMetric(m.id); setEditingConfigId(null); setTiers([]) }}
+                  onClick={() => switchMetric(m.id)}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors font-label-md text-label-md ${selectedMetric === m.id ? 'bg-primary/10 text-primary font-bold border-l-4 border-primary' : 'text-on-surface-variant hover:bg-surface-variant/30'}`}
                 >
                   <span className="material-symbols-outlined text-sm">
@@ -175,207 +214,249 @@ export default function KpiSettings() {
             </div>
           </GlassCard>
 
-          {/* Branch Scope */}
-          <GlassCard className="p-5">
-            <h4 className="font-label-md text-label-md text-on-surface-variant uppercase mb-3">Scope / Branch</h4>
-            <div className="space-y-1">
-              <button
-                onClick={() => setSelectedBranch(null)}
-                className={`w-full flex items-center gap-2 px-4 py-2.5 rounded-lg text-left text-body-sm transition-colors ${selectedBranch === null ? 'bg-primary/10 text-primary font-bold' : 'text-on-surface-variant hover:bg-surface-variant/30'}`}
-              >
-                <span className="material-symbols-outlined text-sm">public</span>
-                Global (All Branches)
-              </button>
-              {branches.map(b => (
+          {/* Branch scope — only relevant for qty metric */}
+          {!isWeightMetric && (
+            <GlassCard className="p-5">
+              <h4 className="font-label-md text-label-md text-on-surface-variant uppercase mb-3">Scope / Branch</h4>
+              <div className="space-y-1">
                 <button
-                  key={b.id}
-                  onClick={() => setSelectedBranch(b.id)}
-                  className={`w-full flex items-center gap-2 px-4 py-2.5 rounded-lg text-left text-body-sm transition-colors ${selectedBranch === b.id ? 'bg-primary/10 text-primary font-bold' : 'text-on-surface-variant hover:bg-surface-variant/30'}`}
+                  onClick={() => setSelectedBranch(null)}
+                  className={`w-full flex items-center gap-2 px-4 py-2.5 rounded-lg text-left text-body-sm transition-colors ${selectedBranch === null ? 'bg-primary/10 text-primary font-bold' : 'text-on-surface-variant hover:bg-surface-variant/30'}`}
                 >
-                  <span className="material-symbols-outlined text-sm">store</span>
-                  {b.name}
+                  <span className="material-symbols-outlined text-sm">public</span>
+                  Global (Fallback)
                 </button>
-              ))}
-            </div>
-          </GlassCard>
+                {branches.map(b => (
+                  <button
+                    key={b.id}
+                    onClick={() => setSelectedBranch(b.id)}
+                    className={`w-full flex items-center gap-2 px-4 py-2.5 rounded-lg text-left text-body-sm transition-colors ${selectedBranch === b.id ? 'bg-primary/10 text-primary font-bold' : 'text-on-surface-variant hover:bg-surface-variant/30'}`}
+                  >
+                    <span className="material-symbols-outlined text-sm">store</span>
+                    {b.name}
+                  </button>
+                ))}
+              </div>
+            </GlassCard>
+          )}
 
-          {/* Existing Configs */}
-          <GlassCard className="p-5">
-            <div className="flex justify-between items-center mb-3">
-              <h4 className="font-label-md text-label-md text-on-surface-variant uppercase">Saved Configs</h4>
-              <button onClick={newConfig} className="text-primary font-label-md text-label-md flex items-center gap-1 hover:underline">
-                <span className="material-symbols-outlined text-sm">add</span> New
-              </button>
-            </div>
-            <div className="space-y-1">
-              {filteredConfigs.length === 0 ? (
-                <p className="text-body-sm text-on-surface-variant text-center py-3">No configs for this scope.</p>
-              ) : filteredConfigs.map(cfg => (
-                <div
-                  key={cfg.id}
-                  onClick={() => loadConfig(cfg)}
-                  className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-colors ${editingConfigId === cfg.id ? 'bg-primary/10 border border-primary/20' : 'hover:bg-surface-variant/30'}`}
-                >
-                  <div>
-                    <p className="font-label-md text-label-md text-on-surface">{cfg.label}</p>
-                    <p className="text-[10px] text-on-surface-variant">From {cfg.effective_from}</p>
+          {/* Saved configs — only for qty metric */}
+          {!isWeightMetric && (
+            <GlassCard className="p-5">
+              <div className="flex justify-between items-center mb-3">
+                <h4 className="font-label-md text-label-md text-on-surface-variant uppercase">Saved Configs</h4>
+                <button onClick={newConfig} className="text-primary font-label-md text-label-md flex items-center gap-1 hover:underline">
+                  <span className="material-symbols-outlined text-sm">add</span> New
+                </button>
+              </div>
+              <div className="space-y-1">
+                {filteredConfigs.length === 0 ? (
+                  <p className="text-body-sm text-on-surface-variant text-center py-3">No configs for this scope.</p>
+                ) : filteredConfigs.map(cfg => (
+                  <div
+                    key={cfg.id}
+                    onClick={() => loadConfig(cfg)}
+                    className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-colors ${editingConfigId === cfg.id ? 'bg-primary/10 border border-primary/20' : 'hover:bg-surface-variant/30'}`}
+                  >
+                    <div>
+                      <p className="font-label-md text-label-md text-on-surface">{cfg.label}</p>
+                      <p className="text-[10px] text-on-surface-variant">From {cfg.effective_from}</p>
+                    </div>
+                    <span className={`w-2 h-2 rounded-full ${cfg.is_active ? 'bg-tertiary' : 'bg-outline-variant'}`} />
                   </div>
-                  <div className="flex items-center gap-1">
-                    {cfg.is_active ? (
-                      <span className="w-2 h-2 rounded-full bg-tertiary" />
-                    ) : (
-                      <span className="w-2 h-2 rounded-full bg-outline-variant" />
+                ))}
+              </div>
+            </GlassCard>
+          )}
+        </div>
+
+        {/* Right: Editor */}
+        <div className="col-span-12 lg:col-span-8 space-y-4">
+
+          {/* ── Weight metric: points-per-unit editor ── */}
+          {isWeightMetric && (
+            <GlassCard elevated className="p-6">
+              <h4 className="font-headline-md text-headline-md text-on-surface mb-1">
+                Points per gram — {selectedMetricObj?.name}
+              </h4>
+              <p className="text-body-sm text-on-surface-variant mb-5">
+                Score = Actual weight (g) × this multiplier.
+                {selectedMetricObj?.id === 1 && ' Default: 15 pts/g'}
+                {selectedMetricObj?.id === 2 && ' Default: 7.5 pts/g'}
+              </p>
+              <div className="flex items-end gap-4">
+                <div>
+                  <label className="font-label-md text-label-md block mb-1 text-primary">
+                    Multiplier (pts/{selectedMetricObj?.unit})
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={multiplierEdit}
+                    onChange={e => setMultiplierEdit(e.target.value)}
+                    className="w-36 bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none font-tabular-nums text-lg font-bold text-primary"
+                  />
+                </div>
+                <button
+                  onClick={saveMultiplier}
+                  disabled={isSaving}
+                  className="bg-primary text-white px-6 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 disabled:opacity-50 shadow-primary"
+                >
+                  <span className="material-symbols-outlined text-sm">save</span>
+                  {isSaving ? 'Saving...' : 'Save Multiplier'}
+                </button>
+              </div>
+              <div className="mt-6 p-4 bg-primary/5 rounded-xl">
+                <p className="text-body-sm text-on-surface-variant">
+                  Current: <strong className="text-primary">{selectedMetricObj?.points_per_unit} pts/{selectedMetricObj?.unit}</strong>
+                </p>
+                <p className="text-body-sm text-on-surface-variant mt-1">
+                  Example: 500g × {selectedMetricObj?.points_per_unit} = <strong className="text-primary">{(500 * (selectedMetricObj?.points_per_unit ?? 0)).toLocaleString()} pts</strong>
+                </p>
+              </div>
+            </GlassCard>
+          )}
+
+          {/* ── Qty metric: tier config editor ── */}
+          {!isWeightMetric && (
+            <>
+              <GlassCard elevated className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                  <div>
+                    <label className="font-label-md text-label-md block mb-1 text-primary">Config Label</label>
+                    <input
+                      type="text"
+                      value={configLabel}
+                      onChange={e => setConfigLabel(e.target.value)}
+                      className="w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-label-md text-label-md block mb-1 text-primary">Effective From</label>
+                    <input
+                      type="date"
+                      value={effectiveFrom}
+                      onChange={e => setEffectiveFrom(e.target.value)}
+                      className="w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Effective To (optional)</label>
+                    <input
+                      type="date"
+                      value={effectiveTo}
+                      onChange={e => setEffectiveTo(e.target.value)}
+                      className="w-full bg-surface-container-low border-b-2 border-outline-variant px-3 py-2 text-body-sm outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-body-sm text-on-surface-variant bg-surface-container rounded-lg p-3">
+                  <span className="material-symbols-outlined text-sm text-primary">info</span>
+                  Editing <strong className="text-primary">Quantity Tiers</strong> for{' '}
+                  <strong className="text-primary">
+                    {selectedBranch === null ? 'Global (Fallback)' : branches.find(b => b.id === selectedBranch)?.name}
+                  </strong>
+                </div>
+              </GlassCard>
+
+              <GlassCard elevated className="overflow-hidden">
+                <div className="p-5 border-b border-outline-variant/10 flex justify-between items-center">
+                  <div>
+                    <h4 className="font-headline-md text-headline-md text-on-surface">Qty Tier Table</h4>
+                    <p className="text-body-sm text-on-surface-variant mt-0.5">Score = Actual Qty × Multiplier</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={sortTiers} className="text-on-surface-variant flex items-center gap-1 text-body-sm hover:text-primary">
+                      <span className="material-symbols-outlined text-sm">sort</span> Sort
+                    </button>
+                    <button onClick={addTier} className="bg-primary/10 text-primary px-3 py-1.5 rounded-lg font-label-md text-label-md flex items-center gap-1 hover:bg-primary/20 transition-colors">
+                      <span className="material-symbols-outlined text-sm">add</span> Add Tier
+                    </button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-surface-container-low/50">
+                        <th className="px-5 py-3 text-left font-label-md text-label-md text-on-surface-variant uppercase">#</th>
+                        <th className="px-5 py-3 text-left font-label-md text-label-md text-on-surface-variant uppercase">Tier</th>
+                        <th className="px-5 py-3 text-right font-label-md text-label-md text-on-surface-variant uppercase">If Qty ≥</th>
+                        <th className="px-5 py-3 text-right font-label-md text-label-md text-on-surface-variant uppercase">Multiplier (×)</th>
+                        <th className="px-5 py-3" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant/10">
+                      {tiers.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-5 py-10 text-center text-on-surface-variant text-body-sm">
+                            No tiers yet. Click "Add Tier" or select a saved config to edit.
+                          </td>
+                        </tr>
+                      ) : tiers.map((tier, i) => (
+                        <tr key={i} className="hover:bg-primary/[0.02] transition-colors group">
+                          <td className="px-5 py-3 font-bold text-on-surface-variant text-body-sm">{i + 1}</td>
+                          <td className="px-5 py-3 text-body-sm text-on-surface-variant">Tier {i + 1}</td>
+                          <td className="px-5 py-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="text-on-surface-variant text-body-sm">≥</span>
+                              <input
+                                type="number" min="0" step="1"
+                                value={tier.threshold_pct}
+                                onChange={e => updateTier(i, 'threshold_pct', e.target.value)}
+                                className="w-24 text-right bg-surface-container border-none rounded px-2 py-1 font-tabular-nums text-body-sm outline-none focus:ring-2 focus:ring-primary/20"
+                              />
+                              <span className="text-on-surface-variant text-body-sm">pcs</span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="text-on-surface-variant text-body-sm">×</span>
+                              <input
+                                type="number" min="0" step="0.5"
+                                value={tier.score}
+                                onChange={e => updateTier(i, 'score', e.target.value)}
+                                className="w-24 text-right bg-surface-container border-none rounded px-2 py-1 font-tabular-nums font-bold text-primary text-body-sm outline-none focus:ring-2 focus:ring-primary/20"
+                              />
+                            </div>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <button
+                              onClick={() => removeTier(i)}
+                              className="opacity-0 group-hover:opacity-100 text-error hover:bg-error-container p-1 rounded transition-all"
+                            >
+                              <span className="material-symbols-outlined text-sm">delete</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="p-4 border-t border-outline-variant/10 flex justify-between">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={saveConfig}
+                      disabled={isSaving || tiers.length === 0}
+                      className="bg-primary text-white px-6 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shadow-primary"
+                    >
+                      <span className="material-symbols-outlined text-sm">save</span>
+                      {isSaving ? 'Saving...' : editingConfigId ? 'Update Config' : 'Create Config'}
+                    </button>
+                    {editingConfigId && (
+                      <button
+                        onClick={() => deleteConfig(editingConfigId)}
+                        className="text-error border border-error/30 px-4 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:bg-error-container/20 transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-sm">delete</span>
+                        Delete
+                      </button>
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
-          </GlassCard>
-        </div>
-
-        {/* Right: Tier Editor */}
-        <div className="col-span-12 lg:col-span-8 space-y-4">
-          {/* Config Metadata */}
-          <GlassCard elevated className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-              <div>
-                <label className="font-label-md text-label-md block mb-1 text-primary">Config Label</label>
-                <input
-                  type="text"
-                  value={configLabel}
-                  onChange={e => setConfigLabel(e.target.value)}
-                  className="w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none"
-                />
-              </div>
-              <div>
-                <label className="font-label-md text-label-md block mb-1 text-primary">Effective From</label>
-                <input
-                  type="date"
-                  value={effectiveFrom}
-                  onChange={e => setEffectiveFrom(e.target.value)}
-                  className="w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none"
-                />
-              </div>
-              <div>
-                <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Effective To (optional)</label>
-                <input
-                  type="date"
-                  value={effectiveTo}
-                  onChange={e => setEffectiveTo(e.target.value)}
-                  className="w-full bg-surface-container-low border-b-2 border-outline-variant px-3 py-2 text-body-sm outline-none"
-                  placeholder="Leave blank = no end"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-body-sm text-on-surface-variant bg-surface-container rounded-lg p-3">
-              <span className="material-symbols-outlined text-sm text-primary">info</span>
-              Editing <strong className="text-primary">{selectedMetricObj?.name ?? '—'}</strong> for{' '}
-              <strong className="text-primary">{selectedBranch === null ? 'All Branches (Global)' : branches.find(b => b.id === selectedBranch)?.name}</strong>
-            </div>
-          </GlassCard>
-
-          {/* Tier Table Editor */}
-          <GlassCard elevated className="overflow-hidden">
-            <div className="p-5 border-b border-outline-variant/10 flex justify-between items-center">
-              <h4 className="font-headline-md text-headline-md text-on-surface">Tier Table</h4>
-              <div className="flex gap-2">
-                <button onClick={sortTiers} className="text-on-surface-variant flex items-center gap-1 text-body-sm hover:text-primary">
-                  <span className="material-symbols-outlined text-sm">sort</span> Sort
-                </button>
-                <button onClick={addTier} className="bg-primary/10 text-primary px-3 py-1.5 rounded-lg font-label-md text-label-md flex items-center gap-1 hover:bg-primary/20 transition-colors">
-                  <span className="material-symbols-outlined text-sm">add</span> Add Tier
-                </button>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-surface-container-low/50">
-                    <th className="px-5 py-3 text-left font-label-md text-label-md text-on-surface-variant uppercase">#</th>
-                    <th className="px-5 py-3 text-left font-label-md text-label-md text-on-surface-variant uppercase">Condition</th>
-                    <th className="px-5 py-3 text-right font-label-md text-label-md text-on-surface-variant uppercase">If (actual/target) ≥ X%</th>
-                    <th className="px-5 py-3 text-right font-label-md text-label-md text-on-surface-variant uppercase">Award Score</th>
-                    <th className="px-5 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-outline-variant/10">
-                  {tiers.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-5 py-10 text-center text-on-surface-variant text-body-sm">
-                        No tiers yet. Click "Add Tier" or select a saved config to edit.
-                      </td>
-                    </tr>
-                  ) : tiers.map((tier, i) => (
-                    <tr key={i} className="hover:bg-primary/[0.02] transition-colors group">
-                      <td className="px-5 py-3 font-bold text-on-surface-variant text-body-sm">{i + 1}</td>
-                      <td className="px-5 py-3 text-body-sm text-on-surface-variant">
-                        {i === tiers.length - 1 && tier.threshold_pct === 0
-                          ? 'Otherwise (fallback)'
-                          : `Tier ${i + 1}`}
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <span className="text-on-surface-variant text-body-sm">≥</span>
-                          <input
-                            type="number"
-                            min="0"
-                            max="1000"
-                            step="1"
-                            value={tier.threshold_pct}
-                            onChange={e => updateTier(i, 'threshold_pct', e.target.value)}
-                            className="w-20 text-right bg-surface-container border-none rounded px-2 py-1 font-tabular-nums text-body-sm outline-none focus:ring-2 focus:ring-primary/20"
-                          />
-                          <span className="text-on-surface-variant text-body-sm">%</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={tier.score}
-                            onChange={e => updateTier(i, 'score', e.target.value)}
-                            className="w-24 text-right bg-surface-container border-none rounded px-2 py-1 font-tabular-nums font-bold text-primary text-body-sm outline-none focus:ring-2 focus:ring-primary/20"
-                          />
-                          <span className="text-on-surface-variant text-body-sm">pts</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        <button
-                          onClick={() => removeTier(i)}
-                          className="opacity-0 group-hover:opacity-100 text-error hover:bg-error-container p-1 rounded transition-all"
-                        >
-                          <span className="material-symbols-outlined text-sm">delete</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="p-4 border-t border-outline-variant/10 flex justify-between">
-              <div className="flex gap-2">
-                <button
-                  onClick={saveConfig}
-                  disabled={isSaving || tiers.length === 0}
-                  className="bg-primary text-white px-6 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shadow-primary"
-                >
-                  <span className="material-symbols-outlined text-sm">save</span>
-                  {isSaving ? 'Saving...' : editingConfigId ? 'Update Config' : 'Create Config'}
-                </button>
-                {editingConfigId && (
-                  <button
-                    onClick={() => deleteConfig(editingConfigId)}
-                    className="text-error border border-error/30 px-4 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:bg-error-container/20 transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-sm">delete</span>
-                    Delete
-                  </button>
-                )}
-              </div>
-            </div>
-          </GlassCard>
+              </GlassCard>
+            </>
+          )}
 
           {/* Score Simulator */}
           <GlassCard className="p-6">
@@ -384,25 +465,34 @@ export default function KpiSettings() {
               <h4 className="font-headline-md text-headline-md text-on-surface !text-lg">Score Simulator</h4>
             </div>
             <p className="text-body-sm text-on-surface-variant mb-4">
-              Test what score a rep would get with these tier settings.
+              {isWeightMetric
+                ? `Enter actual weight to preview: weight × ${selectedMetricObj?.points_per_unit} pts`
+                : 'Enter actual qty to preview score from current tier table.'}
             </p>
-            <div className="flex gap-4 items-end">
+            <div className="flex gap-4 items-end flex-wrap">
               <div>
-                <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Actual ({selectedMetricObj?.unit})</label>
+                <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">
+                  Actual ({selectedMetricObj?.unit})
+                </label>
                 <input
                   type="number" value={simActual} onChange={e => setSimActual(e.target.value)}
                   className="bg-surface-container border-b-2 border-primary px-3 py-2 w-32 outline-none font-tabular-nums"
-                  placeholder="e.g. 800"
+                  placeholder="e.g. 500"
                 />
               </div>
-              <div>
-                <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Target ({selectedMetricObj?.unit})</label>
-                <input
-                  type="number" value={simTarget} onChange={e => setSimTarget(e.target.value)}
-                  className="bg-surface-container border-b-2 border-primary px-3 py-2 w-32 outline-none font-tabular-nums"
-                  placeholder="e.g. 1000"
-                />
-              </div>
+              {!isWeightMetric && (
+                <div>
+                  <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Branch</label>
+                  <select
+                    value={simBranch ?? ''}
+                    onChange={e => setSimBranch(e.target.value ? Number(e.target.value) : null)}
+                    className="bg-surface-container border-b-2 border-primary px-3 py-2 outline-none text-body-sm"
+                  >
+                    <option value="">Global</option>
+                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </div>
+              )}
               <button
                 onClick={simulate}
                 className="bg-secondary text-white px-5 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 transition-opacity"
@@ -411,10 +501,15 @@ export default function KpiSettings() {
                 Simulate
               </button>
               {simResult && (
-                <div className="ml-4 bg-primary/10 px-5 py-2.5 rounded-lg">
+                <div className="ml-4 bg-primary/10 px-5 py-2.5 rounded-xl">
                   <p className="text-[10px] text-primary uppercase font-bold">Result</p>
-                  <p className="font-display-xl text-[28px] text-primary tabular-nums">{simResult.score}<span className="text-label-md ml-1">pts</span></p>
-                  <p className="text-[10px] text-on-surface-variant">{simResult.pct.toFixed(1)}% of target</p>
+                  <p className="font-display-xl text-[28px] text-primary tabular-nums">
+                    {simResult.score.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}
+                    <span className="text-label-md ml-1">pts</span>
+                  </p>
+                  {!isWeightMetric && (
+                    <p className="text-[10px] text-on-surface-variant">{simResult.pct.toFixed(1)}% of target</p>
+                  )}
                 </div>
               )}
             </div>

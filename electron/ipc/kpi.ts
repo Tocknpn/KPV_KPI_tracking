@@ -12,9 +12,19 @@ export function computeKpiScore(
   target: number,
   date: string = new Date().toISOString().split('T')[0]
 ): { score: number; pct: number; tierId: number | null } {
-  if (target <= 0) return { score: 0, pct: 0, tierId: null }
-  const pct = (actual / target) * 100
+  const pct = target > 0 ? (actual / target) * 100 : 0
 
+  // Fetch metric to check scoring mode
+  const metric = prepare(db, `SELECT points_per_unit FROM kpi_metrics WHERE id = ?`).get(metricId) as
+    | { points_per_unit: number }
+    | undefined
+
+  // Jewelry / Bar: direct weight × multiplier (no target percentage needed)
+  if (metric && metric.points_per_unit > 0) {
+    return { score: actual * metric.points_per_unit, pct, tierId: null }
+  }
+
+  // Quantity: find tier by absolute qty threshold; score is the multiplier
   // Branch-specific config wins over global (NULL branch_id)
   const config = prepare(db, `
     SELECT id FROM kpi_tier_configs
@@ -35,7 +45,9 @@ export function computeKpiScore(
   `).all(config.id) as { id: number; threshold_pct: number; score: number }[]
 
   for (const tier of tiers) {
-    if (pct >= tier.threshold_pct) return { score: tier.score, pct, tierId: tier.id }
+    if (actual >= tier.threshold_pct) {
+      return { score: actual * tier.score, pct, tierId: tier.id }
+    }
   }
   return { score: 0, pct, tierId: null }
 }
@@ -106,6 +118,12 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
       prepare(db, `DELETE FROM kpi_tiers WHERE config_id = ?`).run(configId)
       prepare(db, `DELETE FROM kpi_tier_configs WHERE id = ?`).run(configId)
     })
+    return { success: true }
+  })
+
+  ipcMain.handle('kpi:saveMetricMultiplier', async (_e, token: string, metricId: number, pointsPerUnit: number) => {
+    requireAdmin(token)
+    prepare(getDb(), `UPDATE kpi_metrics SET points_per_unit = ? WHERE id = ?`).run(pointsPerUnit, metricId)
     return { success: true }
   })
 

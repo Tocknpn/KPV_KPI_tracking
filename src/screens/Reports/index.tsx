@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
@@ -24,37 +24,121 @@ function pctLabel(pct: number) {
 
 function fmt(n: number, d = 1) { return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) }
 
+// ── Multi-select branch dropdown (same as Dashboard) ─────────────────────
+interface BranchDropdownProps {
+  branches: Array<{ id: number; name: string; code: string }>
+  selectedIds: number[]
+  onChange: (ids: number[]) => void
+}
+
+function BranchDropdown({ branches, selectedIds, onChange }: BranchDropdownProps) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [])
+
+  const isAll = selectedIds.length === 0
+  const label = isAll
+    ? 'All Branches'
+    : selectedIds.length === 1
+    ? branches.find(b => b.id === selectedIds[0])?.name ?? '1 Branch'
+    : `${selectedIds.length} Branches`
+
+  function toggleBranch(id: number) {
+    if (isAll) {
+      onChange([id])
+    } else if (selectedIds.includes(id)) {
+      onChange(selectedIds.filter(x => x !== id))
+    } else {
+      const next = [...selectedIds, id]
+      onChange(next.length === branches.length ? [] : next)
+    }
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-container text-on-surface text-body-sm hover:bg-surface-container-high transition-colors border border-white/20"
+      >
+        <span className="material-symbols-outlined text-sm text-primary">corporate_fare</span>
+        {label}
+        <span className="material-symbols-outlined text-sm text-on-surface-variant">
+          {open ? 'expand_less' : 'expand_more'}
+        </span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-2 bg-white/95 backdrop-blur-xl shadow-xl rounded-xl border border-white/40 z-50 min-w-52 py-1">
+          <label className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer transition-colors">
+            <input type="checkbox" checked={isAll} onChange={() => onChange([])} className="accent-primary rounded" />
+            <span className="text-body-sm text-on-surface">All Branches</span>
+          </label>
+          <div className="border-t border-black/5 my-1" />
+          {branches.map(b => (
+            <label key={b.id} className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer transition-colors">
+              <input
+                type="checkbox"
+                checked={!isAll && selectedIds.includes(b.id)}
+                onChange={() => toggleBranch(b.id)}
+                className="accent-primary rounded"
+              />
+              <span className="text-body-sm text-on-surface">{b.name}</span>
+              <span className="ml-auto text-[10px] text-on-surface-variant font-mono">{b.code}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Reports() {
   const { token, user, branches } = useAuthStore()
-  const { selectedBranchId, selectedYear, selectedMonth, setSelectedBranch, setSelectedPeriod } = useAppStore()
+  const { selectedBranchIds, selectedYear, selectedMonth, setSelectedBranchIds, setSelectedPeriod } = useAppStore()
   const [rows, setRows] = useState<MonthlyReportRow[]>([])
   const [meta, setMeta] = useState({ daysInMonth: 30, dayOfMonth: 1, daysRemaining: 29 })
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
-  const effectiveBranchId = user?.role === 'supervisor'
-    ? (user.branchId ?? 1)
-    : (selectedBranchId ?? branches[0]?.id ?? 1)
+  // Supervisor: locked to their own branch
+  const effectiveBranchIds: number[] = user?.role === 'supervisor'
+    ? [user.branchId ?? 1]
+    : selectedBranchIds
 
   useEffect(() => {
     if (!token) return
     setLoading(true)
-    window.api.getMonthlyReport(token, effectiveBranchId, selectedYear, selectedMonth)
+    window.api.getMonthlyReport(token, effectiveBranchIds, selectedYear, selectedMonth)
       .then(data => { setRows(data.rows); setMeta({ daysInMonth: data.daysInMonth, dayOfMonth: data.dayOfMonth, daysRemaining: data.daysRemaining }) })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [token, effectiveBranchId, selectedYear, selectedMonth])
+  }, [token, JSON.stringify(effectiveBranchIds), selectedYear, selectedMonth])
 
   const filtered = rows.filter(r =>
     r.full_name.toLowerCase().includes(search.toLowerCase()) ||
     r.position.toLowerCase().includes(search.toLowerCase())
   )
 
-  // Summary stats
+  // Show branch column when multiple branches shown
+  const isMultiBranch = effectiveBranchIds.length !== 1
+
   const totalTarget = rows.reduce((s, r) => s + r.target_jewelry + r.target_bar, 0)
   const totalMtd    = rows.reduce((s, r) => s + r.actual_jewelry + r.actual_bar, 0)
   const avgPct      = rows.length ? rows.reduce((s, r) => s + r.avgPct, 0) / rows.length : 0
   const eomPct      = totalTarget > 0 ? (totalMtd / meta.dayOfMonth * meta.daysInMonth / totalTarget) * 100 : 0
+
+  const scopeLabel = (() => {
+    if (user?.role === 'supervisor') return branches.find(b => b.id === user.branchId)?.name ?? 'My Branch'
+    if (effectiveBranchIds.length === 0) return 'All Branches'
+    if (effectiveBranchIds.length === 1) return branches.find(b => b.id === effectiveBranchIds[0])?.name ?? '1 Branch'
+    return `${effectiveBranchIds.length} Branches`
+  })()
 
   return (
     <AppShell title="SalesTrack Pro">
@@ -68,7 +152,7 @@ export default function Reports() {
           </nav>
           <h2 className="font-headline-lg text-headline-lg text-on-surface">Monthly Tracking Report</h2>
           <p className="text-on-surface-variant text-body-md mt-1">
-            {branches.find(b => b.id === effectiveBranchId)?.name} — {MONTHS[selectedMonth - 1]} {selectedYear}
+            {scopeLabel} — {MONTHS[selectedMonth - 1]} {selectedYear}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -86,15 +170,13 @@ export default function Reports() {
             onChange={e => setSelectedPeriod(Number(e.target.value), selectedMonth)}
             className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm text-on-surface w-24 outline-none"
           />
-          {/* Branch selector */}
+          {/* Multi-select branch dropdown — admin/executive only */}
           {user?.role !== 'supervisor' && (
-            <select
-              value={effectiveBranchId}
-              onChange={e => setSelectedBranch(Number(e.target.value))}
-              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm text-on-surface outline-none"
-            >
-              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
+            <BranchDropdown
+              branches={branches}
+              selectedIds={selectedBranchIds}
+              onChange={setSelectedBranchIds}
+            />
           )}
         </div>
       </div>
@@ -132,7 +214,12 @@ export default function Reports() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-surface-variant/20 border-b border-white/40">
-                {['Representative','Jewelry Target','Jewelry MTD','Bar Target','Bar MTD','Qty Target','Qty MTD','Avg %','EOM Proj.','KPI Score'].map(h => (
+                {[
+                  'Representative',
+                  ...(isMultiBranch ? ['Branch'] : []),
+                  'Jewelry Target','Jewelry MTD','Bar Target','Bar MTD',
+                  'Qty Target','Qty MTD','Avg %','EOM Proj.','KPI Score',
+                ].map(h => (
                   <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">
                     {h}
                   </th>
@@ -141,7 +228,7 @@ export default function Reports() {
             </thead>
             <tbody className="divide-y divide-white/20">
               {loading ? (
-                <tr><td colSpan={10} className="py-12 text-center text-on-surface-variant">
+                <tr><td colSpan={isMultiBranch ? 11 : 10} className="py-12 text-center text-on-surface-variant">
                   <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>
                   Loading report...
                 </td></tr>
@@ -161,6 +248,9 @@ export default function Reports() {
                         </div>
                       </div>
                     </td>
+                    {isMultiBranch && (
+                      <td className="px-5 py-3 text-body-sm text-on-surface-variant whitespace-nowrap">{r.branch_name}</td>
+                    )}
                     <td className="px-5 py-3 font-tabular-nums text-body-sm">{fmt(r.target_jewelry)}g</td>
                     <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{fmt(r.actual_jewelry)}g</td>
                     <td className="px-5 py-3 font-tabular-nums text-body-sm">{fmt(r.target_bar)}g</td>
@@ -190,7 +280,7 @@ export default function Reports() {
                 )
               })}
               {!loading && !filtered.length && (
-                <tr><td colSpan={10} className="py-8 text-center text-on-surface-variant text-body-sm">No results found.</td></tr>
+                <tr><td colSpan={isMultiBranch ? 11 : 10} className="py-8 text-center text-on-surface-variant text-body-sm">No results found.</td></tr>
               )}
             </tbody>
           </table>
