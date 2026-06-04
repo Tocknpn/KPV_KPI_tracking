@@ -191,4 +191,16 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     const today = new Date().toISOString().split('T')[0]
     return computeKpiScore(getDb(), metricId, branchId ?? 0, actual, target, today)
   })
+
+  ipcMain.handle('kpi:getSupKpiPct', async (_e, token: string) => {
+    requireAuth(token)
+    const row = prepare(getDb(), `SELECT value FROM app_settings WHERE key='sup_kpi_pct'`).get() as { value: string } | undefined
+    return { pct: parseFloat(row?.value ?? '30') }
+  })
+
+  ipcMain.handle('kpi:saveSupKpiPct', async (_e, token: string, pct: number) => {
+    requireAdmin(token)
+    prepare(getDb(), `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('sup_kpi_pct', ?)`).run(String(pct))
+    return { success: true }
+  })
 }

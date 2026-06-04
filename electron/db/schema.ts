@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 6
+const SCHEMA_VERSION = 7
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -95,6 +95,14 @@ const BASE_TABLES = `
     month            INTEGER NOT NULL,
     kpi_point_target REAL    NOT NULL DEFAULT 0,
     UNIQUE(branch_id, year, month)
+  );
+  CREATE TABLE IF NOT EXISTS supervisors (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    full_name  TEXT    NOT NULL,
+    nickname   TEXT    NOT NULL DEFAULT '',
+    branch_id  INTEGER NOT NULL REFERENCES branches(id),
+    active     INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
   );
   CREATE TABLE IF NOT EXISTS sync_logs (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -202,6 +210,22 @@ export function applySchema(db: Database): boolean {
       )
     `)
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '6')`).run()
+  }
+
+  if (currentVersion < 7) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS supervisors (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        full_name  TEXT    NOT NULL,
+        nickname   TEXT    NOT NULL DEFAULT '',
+        branch_id  INTEGER NOT NULL REFERENCES branches(id),
+        active     INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+    try { db.run(`ALTER TABLE salesmen ADD COLUMN supervisor_id INTEGER REFERENCES supervisors(id)`) } catch { /* already exists */ }
+    db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('sup_kpi_pct', '30')`).run()
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '7')`).run()
   }
 
   return false // Existing DB — no seeding needed

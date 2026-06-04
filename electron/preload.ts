@@ -69,6 +69,22 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('kpi:saveFormula', token, base, weight),
   simulateKpiScore: (token: string, metricId: number, branchId: number | null, actual: number, target: number) =>
     ipcRenderer.invoke('kpi:simulate', token, metricId, branchId, actual, target),
+  getSupKpiPct: (token: string) =>
+    ipcRenderer.invoke('kpi:getSupKpiPct', token),
+  saveSupKpiPct: (token: string, pct: number) =>
+    ipcRenderer.invoke('kpi:saveSupKpiPct', token, pct),
+
+  // ── Supervisors ────────────────────────────────────────────────────────
+  getSupervisors: (token: string, branchId?: number) =>
+    ipcRenderer.invoke('supervisor:getAll', token, branchId),
+  saveSupervisor: (token: string, data: unknown) =>
+    ipcRenderer.invoke('supervisor:save', token, data),
+  deleteSupervisor: (token: string, id: number) =>
+    ipcRenderer.invoke('supervisor:delete', token, id),
+  assignSalesmen: (token: string, supervisorId: number, salesmanIds: number[]) =>
+    ipcRenderer.invoke('supervisor:assignSalesmen', token, supervisorId, salesmanIds),
+  getSalesmenForBranch: (token: string, branchId: number) =>
+    ipcRenderer.invoke('supervisor:getSalesmenForBranch', token, branchId),
 
   // ── Reports ───────────────────────────────────────────────────────────
   getMonthlyReport: (token: string, branchIds: number[], year: number, month: number, dateFrom: string, dateTo: string) =>
@@ -79,6 +95,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('report:executive', token, year, month, dateFrom, dateTo),
   getBranchAnalytics: (token: string, year: number, month: number, dateFrom: string, dateTo: string) =>
     ipcRenderer.invoke('report:branchAnalytics', token, year, month, dateFrom, dateTo),
+  getTeamPerformance: (token: string, branchIds: number[], year: number, month: number, dateFrom: string, dateTo: string) =>
+    ipcRenderer.invoke('report:teamPerformance', token, branchIds, year, month, dateFrom, dateTo),
 
   // ── Google Sheets Sync ────────────────────────────────────────────────
   syncToCloud: (token: string) =>

@@ -5,6 +5,7 @@ import DailyEntry from './screens/DailyEntry'
 import Reports from './screens/Reports'
 import Analytics from './screens/Analytics'
 import Executive from './screens/Executive'
+import TeamPerformance from './screens/TeamPerformance'
 import Settings from './screens/Settings'
 import KpiSettings from './screens/KpiSettings'
 import UserManagement from './screens/UserManagement'
@@ -19,6 +20,7 @@ export default function App() {
       <Route path="/reports"      element={<Reports />} />
       <Route path="/analytics"    element={<Analytics />} />
       <Route path="/executive"    element={<Executive />} />
+      <Route path="/team"         element={<TeamPerformance />} />
       <Route path="/settings"     element={<Settings />} />
       <Route path="/kpi-settings"    element={<KpiSettings />} />
       <Route path="/users"          element={<UserManagement />} />

@@ -104,72 +104,132 @@ export function seedDatabase(db: Database): void {
   })
 }
 
-/** Seed realistic test salesmen, targets, and 10 days of entries for all branches. */
+/**
+ * Seed realistic-scale test data: 3 supervisors × 9 reps = 27 reps per branch.
+ *
+ * ── STRUCTURE ──────────────────────────────────────────────────────────────
+ *   4 branches × 3 supervisors × 9 reps = 108 reps total
+ *   All entries on day 1 of current month → MTD = entry value exactly
+ *
+ * ── PERFORMANCE TIERS (per supervisor team) ───────────────────────────────
+ *   ALPHA (high): J=250g  B=350g  Qty=130  → J-pts=3750 B-pts=2625 Q-pts=325 Total=6700
+ *     VC: 6700÷5500=121.8%  IT: 6700÷6000=111.7%  VT: 6700÷7000=95.7%  MM: 6700÷8000=83.8%
+ *
+ *   BETA (mid):  J=140g  B=200g  Qty=80   → J-pts=2100 B-pts=1500 Q-pts=200 Total=3800
+ *     VC: 3800÷5500=69.1%  IT: 3800÷6000=63.3%  VT: 3800÷7000=54.3%  MM: 3800÷8000=47.5%
+ *
+ *   GAMMA (low): J=70g   B=100g  Qty=35   → J-pts=1050 B-pts=750  Q-pts=70  Total=1870
+ *     VC: 1870÷5500=34.0%  IT: 1870÷6000=31.2%  VT: 1870÷7000=26.7%  MM: 1870÷8000=23.4%
+ *
+ *   Qty tier ×2.5 (≥100) used for Alpha, ×2.5 for Beta (≥50→×2), ×2 for Gamma (≥1→×1.5×35)
+ *   Qty multipliers: Alpha 130×2.5=325, Beta 80×2.5=200, Gamma 35×2=70
+ *
+ * ── SUPERVISOR KPI (30% rate) ──────────────────────────────────────────────
+ *   Alpha sup team score = 9×6700=60300 → sup score=60300×30%=18090
+ *   Beta  sup team score = 9×3800=34200 → sup score=34200×30%=10260
+ *   Gamma sup team score = 9×1870=16830 → sup score=16830×30%=5049
+ */
 export function seedTestData(db: Database): void {
   const year  = new Date().getFullYear()
   const month = new Date().getMonth() + 1
+  const pad   = (n: number) => String(n).padStart(2, '0')
+  const day1  = `${year}-${pad(month)}-01`
 
-  const salesmenByBranch: Record<number, string[][]> = {
-    1: [ // Morning Market
-      ['Somchai Phommachan', 'Som'],
-      ['Khamla Sengdara',    'Kham'],
-      ['Boupha Vilayvong',   'Bou'],
-      ['Naly Souvannaphoum', 'Naly'],
-      ['Daovy Phetchanpheng','Dao'],
-    ],
-    2: [ // Vientiane Center
-      ['Savanh Keovongsa',   'Van'],
-      ['Phonesavanh Siha',   'Phone'],
-      ['Manivone Keovilay',  'Mani'],
-      ['Bounmy Phonsavath',  'Boun'],
-      ['Thida Vongsay',      'Thi'],
-    ],
-    3: [ // ITecc
-      ['Khamphone Simoung',  'Khamp'],
-      ['Soukanh Vongkhamphanh','Souk'],
-      ['Lattana Phommasack', 'Lat'],
-      ['Boualoy Chanthavong','Boua'],
-      ['Vilasack Keobounma', 'Vila'],
-    ],
-    4: [ // VangThong
-      ['Phouthong Chansouk', 'Phong'],
-      ['Souliya Phimmasone', 'Soul'],
-      ['Khamsouk Sivilay',   'Ksouk'],
-      ['Nong Phommasith',    'Nong'],
-      ['Chanthaly Sitthideth','Chan'],
-    ],
+  // ── Supervisors (3 per branch) ────────────────────────────────────────────
+  const SUPERVISORS: Array<{ branchId: number; fullName: string; nick: string; tier: 'alpha' | 'beta' | 'gamma' }> = [
+    // Morning Market (1)
+    { branchId: 1, fullName: 'Somvang Phongsavanh',     nick: 'Somvang',  tier: 'alpha' },
+    { branchId: 1, fullName: 'Khamphanh Soulisak',      nick: 'Khamphanh',tier: 'beta'  },
+    { branchId: 1, fullName: 'Phengsy Manivong',        nick: 'Phengsy',  tier: 'gamma' },
+    // Vientiane Center (2)
+    { branchId: 2, fullName: 'Bounlam Phetsavanh',      nick: 'Bounlam',  tier: 'alpha' },
+    { branchId: 2, fullName: 'Khamtane Douangdao',      nick: 'Khamtane', tier: 'beta'  },
+    { branchId: 2, fullName: 'Viengphet Keovongsa',     nick: 'Viengphet',tier: 'gamma' },
+    // ITecc (3)
+    { branchId: 3, fullName: 'Sithong Phommasack',      nick: 'Sithong',  tier: 'alpha' },
+    { branchId: 3, fullName: 'Bounthavy Keovilay',      nick: 'Bounthavy',tier: 'beta'  },
+    { branchId: 3, fullName: 'Chansamone Sengdara',     nick: 'Chansamone',tier:'gamma' },
+    // VangThong (4)
+    { branchId: 4, fullName: 'Phetsamone Sivilay',      nick: 'Phetsamone',tier:'alpha' },
+    { branchId: 4, fullName: 'Khamsen Vongsavanh',      nick: 'Khamsen',  tier: 'beta'  },
+    { branchId: 4, fullName: 'Daokham Vongkhamphanh',   nick: 'Daokham',  tier: 'gamma' },
+  ]
+
+  // ── Sales reps: 9 per supervisor team (same names reused per branch) ──────
+  const TEAM_ALPHA: Array<[string, string]> = [
+    ['Somchai Phommachan',   'Som'],  ['Khamla Sengdara',       'Kham'],
+    ['Boupha Vilayvong',     'Bou'],  ['Naly Souvannaphoum',    'Naly'],
+    ['Daovy Phetchanpheng',  'Dao'],  ['Sengdara Vongsay',      'Seng'],
+    ['Phommasack Chanthavong','Phom'],['Simoung Vongkhamphanh', 'Si'],
+    ['Lattana Phommasith',   'Lat'],
+  ]
+  const TEAM_BETA: Array<[string, string]> = [
+    ['Savanh Keovongsa',     'Van'],  ['Phonesavanh Siha',      'Phone'],
+    ['Manivone Keovilay',    'Mani'], ['Bounmy Phonsavath',     'Boun'],
+    ['Thida Vongsay',        'Thi'],  ['Khamphone Simoung',     'Khamp'],
+    ['Soukanh Vongkhamphanh','Souk'], ['Boualoy Chanthavong',   'Boua'],
+    ['Vilasack Keobounma',   'Vila'],
+  ]
+  const TEAM_GAMMA: Array<[string, string]> = [
+    ['Phouthong Chansouk',   'Phong'],['Souliya Phimmasone',    'Soul'],
+    ['Khamsouk Sivilay',     'Ksouk'],['Nong Phommasith',       'Nong'],
+    ['Chanthaly Sitthideth', 'Chan'], ['Vilay Souvannaphoum',   'Vil'],
+    ['Douangdao Phommachan', 'Ddao'], ['Sombath Keovilay',      'Bat'],
+    ['Thong Sengdara',       'Thong'],
+  ]
+
+  // ── Performance values per tier ───────────────────────────────────────────
+  const TIER_VALS = {
+    alpha: { jewelry: 250, bar: 350, qty: 130, tJ: 200, tB: 300, tQ: 100 },
+    beta:  { jewelry: 140, bar: 200, qty:  80, tJ: 140, tB: 200, tQ:  80 },
+    gamma: { jewelry:  70, bar: 100, qty:  35, tJ: 100, tB: 150, tQ:  50 },
   }
 
+  // Build supervisor → { branchId, tier } map after insertion
+  const supIdsByBranchAndTier: Record<string, number> = {}
+
   transaction(db, () => {
-    for (const [branchIdStr, salesmen] of Object.entries(salesmenByBranch)) {
-      const branchId = Number(branchIdStr)
-      for (const [name, nick] of salesmen) {
-        // Insert salesman
-        const { lastInsertRowid: salesmanId } = prepare(db,
-          `INSERT OR IGNORE INTO salesmen (full_name, nickname, branch_id, position, department) VALUES (?,?,?,'Sales Representative','Sales')`
-        ).run(name, nick, branchId)
+    for (const sup of SUPERVISORS) {
+      const { lastInsertRowid } = prepare(db,
+        `INSERT OR IGNORE INTO supervisors (full_name, nickname, branch_id) VALUES (?,?,?)`
+      ).run(sup.fullName, sup.nick, sup.branchId)
+      if (lastInsertRowid) supIdsByBranchAndTier[`${sup.branchId}-${sup.tier}`] = lastInsertRowid as number
+    }
+  })
 
-        if (!salesmanId) continue
+  transaction(db, () => {
+    for (const branchId of [1, 2, 3, 4]) {
+      const tiers: Array<{ tier: 'alpha'|'beta'|'gamma'; names: Array<[string,string]> }> = [
+        { tier: 'alpha', names: TEAM_ALPHA },
+        { tier: 'beta',  names: TEAM_BETA  },
+        { tier: 'gamma', names: TEAM_GAMMA },
+      ]
 
-        // Monthly target (varies per branch performance level)
-        const targetJewelry = 800  + Math.floor(Math.random() * 400)   // 800–1200g
-        const targetBar     = 1200 + Math.floor(Math.random() * 800)   // 1200–2000g
-        const targetQty     = 15   + Math.floor(Math.random() * 20)    // 15–35 pcs
-        prepare(db,
-          `INSERT OR IGNORE INTO targets (salesman_id, branch_id, year, month, jewelry_weight_g, bar_weight_g, quantity) VALUES (?,?,?,?,?,?,?)`
-        ).run(salesmanId, branchId, year, month, targetJewelry, targetBar, targetQty)
+      for (const { tier, names } of tiers) {
+        const supId  = supIdsByBranchAndTier[`${branchId}-${tier}`]
+        const vals   = TIER_VALS[tier]
 
-        // 10 days of daily entries (days 1–10 of current month)
-        for (let day = 1; day <= 10; day++) {
-          const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`
-          // Performance at ~70–110% of daily target
-          const factor    = (70 + Math.floor(Math.random() * 40)) / 100
-          const dailyJewelry = Math.round((targetJewelry / 30) * factor * 10) / 10
-          const dailyBar     = Math.round((targetBar     / 30) * factor * 10) / 10
-          const dailyQty     = Math.max(0, Math.round((targetQty / 30) * factor))
+        for (const [fullName, nick] of names) {
+          // Suffix branch to make name unique across branches
+          const bSuffix = ['MM','VC','IT','VT'][branchId - 1]
+          const { lastInsertRowid: sid } = prepare(db,
+            `INSERT OR IGNORE INTO salesmen (full_name, nickname, branch_id, position, department, active, supervisor_id)
+             VALUES (?,?,?,'Sales Representative','Sales',1,?)`
+          ).run(`${fullName} (${bSuffix})`, nick, branchId, supId ?? null)
+
+          if (!sid) continue
+
+          // Monthly target
           prepare(db,
-            `INSERT OR IGNORE INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced) VALUES (?,?,?,?,?,?,0)`
-          ).run(salesmanId, branchId, dateStr, dailyJewelry, dailyBar, dailyQty)
+            `INSERT OR IGNORE INTO targets (salesman_id, branch_id, year, month, jewelry_weight_g, bar_weight_g, quantity)
+             VALUES (?,?,?,?,?,?,?)`
+          ).run(sid, branchId, year, month, vals.tJ, vals.tB, vals.tQ)
+
+          // MTD entry on day 1
+          prepare(db,
+            `INSERT OR IGNORE INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced)
+             VALUES (?,?,?,?,?,?,0)`
+          ).run(sid, branchId, day1, vals.jewelry, vals.bar, vals.qty)
         }
       }
     }

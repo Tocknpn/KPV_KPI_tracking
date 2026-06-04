@@ -8,6 +8,7 @@ const navItems = [
   { to: '/reports',         icon: 'insert_chart',     label: 'Reports',         roles: ['admin','supervisor'] },
   { to: '/analytics',       icon: 'monitoring',       label: 'Analytics',       roles: ['admin','executive'] },
   { to: '/executive',       icon: 'leaderboard',      label: 'Executive View',  roles: ['admin','executive'] },
+  { to: '/team',            icon: 'supervisor_account', label: 'Team Performance', roles: ['admin','executive'] },
   { to: '/upload-history',  icon: 'history',          label: 'Upload History',  roles: ['admin','supervisor','executive'] },
   { to: '/settings',        icon: 'settings',         label: 'Settings',        roles: ['admin','supervisor','executive'] },
   { to: '/users',           icon: 'manage_accounts',  label: 'User Management', roles: ['admin'] },

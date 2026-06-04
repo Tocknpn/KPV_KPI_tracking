@@ -21,6 +21,10 @@ export default function KpiSettings() {
   const [editingConfigId, setEditingConfigId] = useState<number | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [toast, setToast] = useState('')
+  // Supervisor KPI %
+  const [supKpiPct, setSupKpiPct]   = useState(30)
+  const [supPctEdit, setSupPctEdit] = useState('30')
+  const [savingSupPct, setSavingSupPct] = useState(false)
   // Points-per-unit editor (Jewelry/Bar)
   const [multiplierEdit, setMultiplierEdit] = useState('')
   // Monthly branch KPI targets
@@ -48,6 +52,10 @@ export default function KpiSettings() {
       if (first) setMultiplierEdit(String(first.points_per_unit))
     })
     window.api.getKpiConfigs(token).then(setConfigs)
+    window.api.getSupKpiPct(token).then(({ pct }) => {
+      setSupKpiPct(pct)
+      setSupPctEdit(String(pct))
+    })
   }, [token])
 
   // Load monthly targets whenever month/year changes
@@ -236,6 +244,50 @@ export default function KpiSettings() {
           <p className="pt-1 border-t border-black/5 mt-1">
             <strong className="text-on-surface">Total KPI %</strong> = (Jewelry Score + Bar Score + Qty Score) ÷ <em>Branch Point Target</em> × 100
           </p>
+        </div>
+      </GlassCard>
+
+      {/* Supervisor KPI % Setting */}
+      <GlassCard className="p-5 mb-6 border-l-4 border-secondary">
+        <div className="flex flex-wrap items-end justify-between gap-5">
+          <div>
+            <h4 className="font-headline-md text-on-surface flex items-center gap-2">
+              <span className="material-symbols-outlined text-secondary">supervisor_account</span>
+              Supervisor Performance Rate
+            </h4>
+            <p className="text-body-sm text-on-surface-variant mt-1">
+              Supervisor KPI Score = <strong className="text-secondary">{supKpiPct}%</strong> × Sum of team's total KPI points.
+              This score is then measured against the branch point target for Sup KPI %.
+            </p>
+          </div>
+          <div className="flex items-end gap-4">
+            <div>
+              <label className="font-label-md text-label-md block mb-1 text-secondary">Rate (%)</label>
+              <input
+                type="number" min="1" max="100" step="1"
+                value={supPctEdit}
+                onChange={e => setSupPctEdit(e.target.value)}
+                className="w-28 bg-surface-container-low border-b-2 border-secondary px-3 py-2 text-body-sm outline-none font-tabular-nums text-lg font-bold text-secondary"
+              />
+            </div>
+            <button
+              onClick={async () => {
+                if (!token) return
+                const val = parseFloat(supPctEdit)
+                if (isNaN(val) || val <= 0 || val > 100) { showToast('Enter 1–100.'); return }
+                setSavingSupPct(true)
+                await window.api.saveSupKpiPct(token, val)
+                setSupKpiPct(val)
+                showToast(`Supervisor rate set to ${val}%.`)
+                setSavingSupPct(false)
+              }}
+              disabled={savingSupPct}
+              className="bg-secondary text-white px-5 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-sm">save</span>
+              {savingSupPct ? 'Saving...' : 'Save Rate'}
+            </button>
+          </div>
         </div>
       </GlassCard>
 

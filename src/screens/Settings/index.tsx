@@ -12,7 +12,8 @@ const DEFAULT_EMAIL: EmailConfig = {
 
 export default function Settings() {
   const { token } = useAuthStore()
-  const [seeding, setSeeding]   = useState(false)
+  const [seeding, setSeeding]       = useState(false)
+  const [showKpiRef, setShowKpiRef] = useState(false)
   const [sheetsId, setSheetsId] = useState('')
   const [saPath, setSaPath] = useState('')
   const [lastSync, setLastSync] = useState('')
@@ -113,36 +114,141 @@ export default function Settings() {
         </button>
       </div>
 
-      {/* Test Data Panel — Admin only, dev/testing */}
+      {/* Test Data Panel — deterministic KPI verification data */}
       <GlassCard className="mb-6 p-6 border-l-4 border-secondary">
-        <div className="flex items-center justify-between">
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-secondary text-2xl">science</span>
             <div>
               <h4 className="font-headline-md text-on-surface !text-base">Test Data Loader</h4>
               <p className="text-body-sm text-on-surface-variant mt-0.5">
-                Seeds 20 salesmen (5 per branch), monthly targets, and 10 days of daily entries. Replaces existing test data.
+                10 salesmen per branch · fixed values on day 1 of current month · hand-verifiable KPI scores.
               </p>
             </div>
           </div>
-          <button
-            onClick={async () => {
-              if (!token) return
-              if (!confirm('This will DELETE all current salesmen/targets/entries and reload test data. Continue?')) return
-              setSeeding(true)
-              const res = await window.api.seedTestData(token)
-              showToast(res.success ? `✓ ${res.message}` : `Error: ${res.error}`)
-              setSeeding(false)
-            }}
-            disabled={seeding}
-            className="flex items-center gap-2 px-5 py-2 bg-secondary text-white rounded-lg font-label-md text-label-md hover:opacity-90 transition-all disabled:opacity-60 flex-shrink-0 ml-6"
-          >
-            <span className={`material-symbols-outlined text-sm ${seeding ? 'animate-spin-slow' : ''}`}>
-              {seeding ? 'sync' : 'play_arrow'}
-            </span>
-            {seeding ? 'Loading...' : 'Load Test Data'}
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => setShowKpiRef(v => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-secondary border border-secondary/30 rounded-lg font-label-md text-label-md hover:bg-secondary/5 transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">calculate</span>
+              {showKpiRef ? 'Hide' : 'KPI Reference'}
+            </button>
+            <button
+              onClick={async () => {
+                if (!token) return
+                if (!confirm('DELETE all current salesmen/targets/entries and reload test data?')) return
+                setSeeding(true)
+                const res = await window.api.seedTestData(token)
+                showToast(res.success ? `✓ ${res.message}` : `Error: ${res.error}`)
+                setSeeding(false)
+              }}
+              disabled={seeding}
+              className="flex items-center gap-2 px-5 py-2 bg-secondary text-white rounded-lg font-label-md text-label-md hover:opacity-90 transition-all disabled:opacity-60"
+            >
+              <span className={`material-symbols-outlined text-sm ${seeding ? 'animate-spin-slow' : ''}`}>
+                {seeding ? 'sync' : 'play_arrow'}
+              </span>
+              {seeding ? 'Loading...' : 'Load Test Data'}
+            </button>
+          </div>
         </div>
+
+        {/* KPI reference table — collapsible */}
+        {showKpiRef && (
+          <div className="mt-5 border-t border-outline-variant/20 pt-4">
+
+            {/* Formula strip */}
+            <div className="grid grid-cols-3 gap-3 mb-4 text-center">
+              {[
+                { label: 'Jewelry Score', formula: 'actual_g × 15',       color: 'bg-primary/8 text-primary' },
+                { label: 'Bar Score',     formula: 'actual_g × 7.5',      color: 'bg-secondary/10 text-secondary' },
+                { label: 'Qty Score',     formula: 'actual_pcs × tier ×', color: 'bg-tertiary/10 text-tertiary' },
+              ].map(f => (
+                <div key={f.label} className={`rounded-lg px-3 py-2 ${f.color}`}>
+                  <p className="text-[10px] uppercase font-bold tracking-wider mb-0.5">{f.label}</p>
+                  <p className="font-mono text-xs">{f.formula}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Qty tier table */}
+            <div className="mb-4 grid grid-cols-2 gap-3">
+              {[
+                {
+                  branch: 'Morning Market (MM)',
+                  tiers: '≥900→×6.5  ≥700→×6  ≥500→×5  ≥350→×4  ≥200→×3  ≥100→×2.5  ≥50→×2  ≥1→×1.5',
+                  target: '8,000 pts',
+                },
+                {
+                  branch: 'VC / IT / VT',
+                  tiers: '≥900→×5  ≥700→×4.5  ≥500→×4  ≥350→×3.5  ≥200→×3  ≥100→×2.5  ≥50→×2  ≥1→×1.5',
+                  target: 'VC 5,500 · IT 6,000 · VT 7,000',
+                },
+              ].map(r => (
+                <div key={r.branch} className="bg-surface-container rounded-lg px-3 py-2">
+                  <p className="font-bold text-[11px] text-on-surface mb-1">{r.branch} — target {r.target}</p>
+                  <p className="font-mono text-[10px] text-on-surface-variant">{r.tiers}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Expected scores table */}
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-2">
+              Expected KPI % — all entries on day 1 of current month
+            </p>
+            <div className="overflow-x-auto rounded-lg border border-outline-variant/20">
+              <table className="w-full text-left border-collapse text-[11px]">
+                <thead className="bg-surface-container">
+                  <tr>
+                    {['Salesman','J (g)','B (g)','Qty','J-pts','B-pts','Q-pts','Total','VC %','IT %','VT %','MM %'].map(h => (
+                      <th key={h} className="px-3 py-2 font-bold text-on-surface-variant whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant/10">
+                  {[
+                    ['T-Zero',       0,   0,    0,    0,    0,      0,       0, '0.0',   '0.0',  '0.0',  '0.0'],
+                    ['T-Jewelry300', 300, 0,    0,  4500,    0,      0,    4500, '81.8', '75.0', '64.3', '56.3'],
+                    ['T-Bar400',     0,   400,  0,    0,  3000,     0,    3000, '54.5', '50.0', '42.9', '37.5'],
+                    ['T-Qty50',      0,   0,   50,    0,    0,    100,     100,  '1.8',  '1.7',  '1.4',  '1.3'],
+                    ['T-Qty150',     0,   0,  150,    0,    0,    375,     375,  '6.8',  '6.3',  '5.4',  '4.7'],
+                    ['T-Qty350',     0,   0,  350,    0,    0,   1225,    1225, '22.3', '20.4', '17.5', '15.3'],
+                    ['T-Mix-Half', 100, 150,   50, 1500, 1125,    100,    2725, '49.5', '45.4', '38.9', '34.1'],
+                    ['T-Mix-Full', 200, 300,  100, 3000, 2250,    250,    5500,'100.0', '91.7', '78.6', '68.8'],
+                    ['T-Mix-Over', 300, 450,  200, 4500, 3375,    600,    8475,'154.1','141.3','121.1','105.9'],
+                    ['T-Mix-Exceed',400,600,  350, 6000, 4500,   1225,   11725,'213.2','195.4','167.5','146.6'],
+                  ].map((row, i) => {
+                    const isKeyRow = row[0] === 'T-Mix-Full'
+                    return (
+                      <tr key={i} className={isKeyRow ? 'bg-primary/5 font-bold' : 'hover:bg-surface-container/40'}>
+                        <td className={`px-3 py-1.5 font-mono ${isKeyRow ? 'text-primary' : 'text-on-surface'}`}>{row[0]}</td>
+                        {([1,2,3] as const).map(ci => (
+                          <td key={ci} className="px-3 py-1.5 text-on-surface-variant tabular-nums">{row[ci]}</td>
+                        ))}
+                        {([4,5,6] as const).map(ci => (
+                          <td key={ci} className="px-3 py-1.5 tabular-nums font-semibold text-on-surface">{Number(row[ci]).toLocaleString()}</td>
+                        ))}
+                        <td className="px-3 py-1.5 tabular-nums font-bold text-on-surface">{Number(row[7]).toLocaleString()}</td>
+                        {([8,9,10,11] as const).map(ci => (
+                          <td key={ci} className={`px-3 py-1.5 tabular-nums ${isKeyRow ? 'text-primary' : 'text-on-surface'}`}>
+                            {row[ci]}%
+                          </td>
+                        ))}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[10px] text-on-surface-variant/60 mt-2 italic">
+              KPI % = Total Score ÷ Branch Target × 100 &nbsp;·&nbsp;
+              T-Mix-Full hits exactly 100% for VC (5,500 ÷ 5,500) &nbsp;·&nbsp;
+              Each salesman created per branch, suffix [B1/B2/B3/B4]
+            </p>
+          </div>
+        )}
       </GlassCard>
 
       <div className="grid grid-cols-12 gap-card-gap">

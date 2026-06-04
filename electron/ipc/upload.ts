@@ -183,14 +183,18 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     })
   })
 
-  // ── Get salesmen list for template generation ─────────────────────────
+  // ── Get salesmen list for template generation (with supervisor info) ──
   ipcMain.handle('upload:getSalesmenForTemplate', async (_e, token: string, branchId: number) => {
     requireAuth(token)
     return prepare(db, `
-      SELECT s.id, s.full_name, s.nickname, s.branch_id, b.code AS branch_code
-      FROM salesmen s JOIN branches b ON b.id = s.branch_id
+      SELECT s.id, s.full_name, s.nickname, s.branch_id, b.code AS branch_code,
+             sv.id   AS supervisor_id,
+             sv.full_name AS supervisor_name
+      FROM salesmen s
+      JOIN branches b ON b.id = s.branch_id
+      LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
       WHERE s.branch_id = ? AND s.active = 1
-      ORDER BY s.full_name
+      ORDER BY sv.full_name NULLS LAST, s.full_name
     `).all(branchId)
   })
 }

@@ -199,6 +199,70 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     })
   })
 
+  ipcMain.handle('report:teamPerformance', async (_e,
+    token: string, branchIds: number[], year: number, month: number,
+    dateFrom: string, dateTo: string,
+  ) => {
+    requireAuth(token)
+    const db = getDb()
+
+    const pctRow = prepare(db, `SELECT value FROM app_settings WHERE key='sup_kpi_pct'`).get() as { value: string } | undefined
+    const supKpiPct = parseFloat(pctRow?.value ?? '30')
+
+    const { sql: bSql, params: bParams } = buildSalesmenBranchFilter(branchIds)
+    const supervisors = prepare(db, `
+      SELECT sv.id, sv.full_name, sv.nickname, sv.branch_id, b.name AS branch_name
+      FROM supervisors sv
+      JOIN branches b ON b.id = sv.branch_id
+      WHERE sv.active = 1 ${branchIds.length > 0 ? `AND sv.branch_id IN (${branchIds.map(() => '?').join(',')})` : ''}
+      ORDER BY sv.branch_id, sv.full_name
+    `).all(...bParams) as Array<{ id: number; full_name: string; nickname: string; branch_id: number; branch_name: string }>
+
+    return supervisors.map(sup => {
+      const reps = prepare(db, `
+        SELECT s.id, s.branch_id,
+          COALESCE(SUM(de.jewelry_weight_g), 0) AS total_jewelry,
+          COALESCE(SUM(de.bar_weight_g),     0) AS total_bar,
+          COALESCE(SUM(de.quantity),          0) AS total_qty
+        FROM salesmen s
+        LEFT JOIN daily_entries de ON de.salesman_id = s.id
+          AND de.entry_date >= ? AND de.entry_date <= ?
+        WHERE s.supervisor_id = ? AND s.active = 1
+        GROUP BY s.id
+      `).all(dateFrom, dateTo, sup.id) as Array<{
+        id: number; branch_id: number; total_jewelry: number; total_bar: number; total_qty: number
+      }>
+
+      let teamScore = 0
+      for (const r of reps) {
+        const js = computeKpiScore(db, 1, r.branch_id, r.total_jewelry, 0, dateTo).score
+        const bs = computeKpiScore(db, 2, r.branch_id, r.total_bar,     0, dateTo).score
+        const qs = computeKpiScore(db, 3, r.branch_id, r.total_qty,     0, dateTo).score
+        teamScore += js + bs + qs
+      }
+
+      const supScore      = teamScore * supKpiPct / 100
+      const branchTarget  = getBranchPointTarget(db, sup.branch_id, year, month)
+      const teamKpiPct    = branchTarget > 0 ? (teamScore / branchTarget) * 100 : 0
+      const supKpiPctAch  = branchTarget > 0 ? (supScore  / branchTarget) * 100 : 0
+
+      return {
+        id: sup.id,
+        full_name: sup.full_name,
+        nickname:  sup.nickname,
+        branch_id: sup.branch_id,
+        branch_name: sup.branch_name,
+        rep_count:        reps.length,
+        team_total_score: teamScore,
+        team_kpi_pct:     teamKpiPct,
+        sup_kpi_pct:      supKpiPct,
+        sup_score:        supScore,
+        sup_kpi_pct_ach:  supKpiPctAch,
+        branch_target:    branchTarget,
+      }
+    })
+  })
+
   ipcMain.handle('report:branchAnalytics', async (_e,
     token: string, year: number, month: number,
     dateFrom: string, dateTo: string,

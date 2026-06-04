@@ -15,7 +15,7 @@ export function registerAdminHandlers(ipcMain: IpcMain): void {
       prepare(db, `DELETE FROM targets`).run()
       prepare(db, `DELETE FROM salesmen`).run()
       seedTestData(db)
-      return { success: true, message: '20 salesmen (5 per branch), targets & 10 days of entries loaded.' }
+      return { success: true, message: '108 reps + 12 supervisors loaded — 3 teams (Alpha/Beta/Gamma) × 9 reps × 4 branches. All entries on day 1 of current month.' }
     } catch (e: unknown) {
       return { success: false, error: e instanceof Error ? e.message : String(e) }
     }

@@ -141,20 +141,27 @@ export function validateTargetRows(parsed: ParseResult): { rows: TargetRowRaw[];
 }
 
 // ── Template generators ───────────────────────────────────────────────────
-interface SalesmanStub { id: number; full_name: string; branch_id: number; branch_code: string }
+interface SalesmanStub {
+  id: number
+  full_name: string
+  branch_id: number
+  branch_code: string
+  supervisor_id?: number | null
+  supervisor_name?: string | null
+}
 
 export function generateDailyTemplate(salesmen: SalesmanStub[], date: string): string {
-  const header = 'Date,Staff_ID,Full_Name,Branch_ID,KPI_1 (Jewelry Weight g),KPI_2 (Bar Weight g),KPI_3 (Quantity)'
+  const header = 'Date,Staff_ID,Full_Name,Branch_ID,Supervisor_ID,Supervisor_Name,KPI_1 (Jewelry Weight g),KPI_2 (Bar Weight g),KPI_3 (Quantity)'
   const rows = salesmen.map(s =>
-    `${date},${s.id},"${s.full_name}",${s.branch_id},0,0,0`
+    `${date},${s.id},"${s.full_name}",${s.branch_id},${s.supervisor_id ?? ''},"${s.supervisor_name ?? 'Unassigned'}",0,0,0`
   )
   return [header, ...rows].join('\n')
 }
 
 export function generateTargetTemplate(salesmen: SalesmanStub[], year: number, month: number): string {
-  const header = 'Staff_ID,Full_Name,Branch_ID,Year,Month,Jewelry_Target_g,Bar_Target_g,Quantity_Target'
+  const header = 'Staff_ID,Full_Name,Branch_ID,Supervisor_ID,Supervisor_Name,Year,Month,Jewelry_Target_g,Bar_Target_g,Quantity_Target'
   const rows = salesmen.map(s =>
-    `${s.id},"${s.full_name}",${s.branch_id},${year},${month},0,0,0`
+    `${s.id},"${s.full_name}",${s.branch_id},${s.supervisor_id ?? ''},"${s.supervisor_name ?? 'Unassigned'}",${year},${month},0,0,0`
   )
   return [header, ...rows].join('\n')
 }

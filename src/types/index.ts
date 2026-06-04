@@ -129,6 +129,40 @@ export interface ExecutiveBranchRow {
   person_count: number
 }
 
+export interface Supervisor {
+  id: number
+  full_name: string
+  nickname: string
+  branch_id: number
+  branch_name: string
+  rep_count: number
+  active: number
+}
+
+export interface SalesmanBrief {
+  id: number
+  full_name: string
+  nickname: string
+  position: string
+  supervisor_id: number | null
+  supervisor_name: string | null
+}
+
+export interface TeamPerformanceRow {
+  id: number
+  full_name: string
+  nickname: string
+  branch_id: number
+  branch_name: string
+  rep_count: number
+  team_total_score: number
+  team_kpi_pct: number
+  sup_kpi_pct: number
+  sup_score: number
+  sup_kpi_pct_ach: number
+  branch_target: number
+}
+
 export interface SyncLog {
   id: number; synced_at: string; direction: string
   records_count: number; status: string; error_message: string | null

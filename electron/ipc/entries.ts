@@ -107,4 +107,77 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     const row = prepare(getDb(), `SELECT COUNT(*) as count FROM daily_entries WHERE synced = 0`).get() as { count: number }
     return row?.count ?? 0
   })
+
+  // ── Supervisor CRUD ───────────────────────────────────────────────────────
+
+  ipcMain.handle('supervisor:getAll', async (_e, token: string, branchId?: number) => {
+    requireAuth(token)
+    const db = getDb()
+    if (branchId) {
+      return prepare(db, `
+        SELECT sv.*, b.name AS branch_name,
+          (SELECT COUNT(*) FROM salesmen s WHERE s.supervisor_id = sv.id AND s.active = 1) AS rep_count
+        FROM supervisors sv
+        JOIN branches b ON b.id = sv.branch_id
+        WHERE sv.branch_id = ? ORDER BY sv.full_name
+      `).all(branchId)
+    }
+    return prepare(db, `
+      SELECT sv.*, b.name AS branch_name,
+        (SELECT COUNT(*) FROM salesmen s WHERE s.supervisor_id = sv.id AND s.active = 1) AS rep_count
+      FROM supervisors sv
+      JOIN branches b ON b.id = sv.branch_id
+      ORDER BY sv.branch_id, sv.full_name
+    `).all()
+  })
+
+  ipcMain.handle('supervisor:save', async (_e, token: string, data: {
+    id?: number; fullName: string; nickname: string; branchId: number; active?: number
+  }) => {
+    requireAuth(token)
+    const db = getDb()
+    if (data.id) {
+      prepare(db, `UPDATE supervisors SET full_name=?,nickname=?,branch_id=?,active=? WHERE id=?`)
+        .run(data.fullName, data.nickname, data.branchId, data.active ?? 1, data.id)
+      return { success: true, id: data.id }
+    }
+    const r = prepare(db, `INSERT INTO supervisors (full_name, nickname, branch_id) VALUES (?,?,?)`)
+      .run(data.fullName, data.nickname, data.branchId)
+    return { success: true, id: r.lastInsertRowid }
+  })
+
+  ipcMain.handle('supervisor:delete', async (_e, token: string, id: number) => {
+    requireAuth(token)
+    const db = getDb()
+    // Unlink reps before deactivating
+    prepare(db, `UPDATE salesmen SET supervisor_id = NULL WHERE supervisor_id = ?`).run(id)
+    prepare(db, `UPDATE supervisors SET active = 0 WHERE id = ?`).run(id)
+    return { success: true }
+  })
+
+  ipcMain.handle('supervisor:assignSalesmen', async (_e, token: string, supervisorId: number, salesmanIds: number[]) => {
+    requireAuth(token)
+    const db = getDb()
+    transaction(db, () => {
+      // Clear existing assignments for this supervisor
+      prepare(db, `UPDATE salesmen SET supervisor_id = NULL WHERE supervisor_id = ?`).run(supervisorId)
+      // Assign new list
+      for (const sid of salesmanIds) {
+        prepare(db, `UPDATE salesmen SET supervisor_id = ? WHERE id = ?`).run(supervisorId, sid)
+      }
+    })
+    return { success: true }
+  })
+
+  ipcMain.handle('supervisor:getSalesmenForBranch', async (_e, token: string, branchId: number) => {
+    requireAuth(token)
+    return prepare(getDb(), `
+      SELECT s.id, s.full_name, s.nickname, s.position, s.supervisor_id,
+        sv.full_name AS supervisor_name
+      FROM salesmen s
+      LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
+      WHERE s.branch_id = ? AND s.active = 1
+      ORDER BY s.full_name
+    `).all(branchId)
+  })
 }
