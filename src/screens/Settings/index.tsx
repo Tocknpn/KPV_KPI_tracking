@@ -53,8 +53,18 @@ export default function Settings() {
     if (!token) return
     setIsSyncing(true)
     const res = await window.api.syncToCloud(token)
-    if (res.success) showToast(`Synced ${res.count} records successfully.`)
+    if (res.success) showToast(res.message ?? `Pushed ${res.count} records to Sheets.`)
     else showToast(`Sync failed: ${res.error}`)
+    window.api.getSyncLogs(token).then(setSyncLogs)
+    setIsSyncing(false)
+  }
+
+  async function pullFromCloud() {
+    if (!token) return
+    setIsSyncing(true)
+    const res = await window.api.pullFromCloud(token)
+    if (res.success) showToast(res.message ?? `Pulled ${res.count} entries from Sheets.`)
+    else showToast(`Pull failed: ${res.error}`)
     window.api.getSyncLogs(token).then(setSyncLogs)
     setIsSyncing(false)
   }
@@ -390,7 +400,7 @@ export default function Settings() {
                   <p className="font-tabular-nums text-on-surface">{new Date(lastSync).toLocaleString()}</p>
                 </div>
               )}
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <button
                   onClick={saveSheets}
                   disabled={isSaving}
@@ -403,10 +413,22 @@ export default function Settings() {
                   disabled={isSyncing}
                   className="flex-1 py-2 bg-tertiary text-white rounded font-label-md text-label-md flex items-center justify-center gap-1 hover:opacity-90 disabled:opacity-60 transition-opacity"
                 >
-                  <span className={`material-symbols-outlined text-sm ${isSyncing ? 'animate-spin-slow' : ''}`}>sync</span>
-                  {isSyncing ? 'Syncing...' : 'Force Sync'}
+                  <span className={`material-symbols-outlined text-sm ${isSyncing ? 'animate-spin-slow' : ''}`}>cloud_upload</span>
+                  {isSyncing ? 'Working...' : 'Push to Sheets'}
+                </button>
+                <button
+                  onClick={pullFromCloud}
+                  disabled={isSyncing}
+                  className="flex-1 py-2 bg-primary text-white rounded font-label-md text-label-md flex items-center justify-center gap-1 hover:opacity-90 disabled:opacity-60 transition-opacity"
+                >
+                  <span className={`material-symbols-outlined text-sm ${isSyncing ? 'animate-spin-slow' : ''}`}>cloud_download</span>
+                  {isSyncing ? 'Working...' : 'Pull Entries'}
                 </button>
               </div>
+              <p className="text-[10px] text-on-surface-variant/60 italic">
+                Push → sends unsynced entries to Sheets &nbsp;·&nbsp;
+                Pull → imports all Sheets entries into local DB (for admin PC aggregation)
+              </p>
             </div>
           </GlassCard>
 

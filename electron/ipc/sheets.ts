@@ -78,15 +78,57 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
     const saPath   = getSetting('service_account_path')
     if (!sheetsId || !saPath) return { success: false, error: 'Google Sheets not configured.' }
     try {
-      const auth = getServiceAuth(saPath)
+      const auth   = getServiceAuth(saPath)
       const sheets = google.sheets({ version: 'v4', auth })
-      const res = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Roster!A:E' })
-      const count = res.data.values?.length ?? 0
+      const db     = getDb()
+
+      // ── Pull entries from Entries!A:G ─────────────────────────────────
+      // Columns: entry_date | branch_code | salesman_id | full_name | jewelry | bar | qty
+      const entryRes = await sheets.spreadsheets.values.get({
+        spreadsheetId: sheetsId,
+        range: 'Entries!A:G',
+      })
+      const allRows = entryRes.data.values ?? []
+      // Skip first row if it looks like a header (column A doesn't match YYYY-MM-DD)
+      const firstIsHeader = allRows[0] && !String(allRows[0][0]).match(/^\d{4}-\d{2}-\d{2}$/)
+      const rows = firstIsHeader ? allRows.slice(1) : allRows
+
+      // Build branch_code → branch_id map
+      const branches = prepare(db, `SELECT id, code FROM branches`).all() as Array<{ id: number; code: string }>
+      const branchMap = Object.fromEntries(branches.map(b => [b.code, b.id]))
+
+      let imported = 0
       const now = new Date().toISOString()
-      const db = getDb()
+
+      for (const row of rows) {
+        const [entryDate, branchCode, salesmanIdStr,, jewelryStr, barStr, qtyStr] = row as string[]
+        if (!entryDate || !salesmanIdStr) continue
+
+        const salesmanId = parseInt(salesmanIdStr)
+        const branchId   = branchMap[branchCode] ?? null
+        if (!salesmanId || !branchId) continue
+
+        // Verify salesman exists in this DB
+        const sm = prepare(db, `SELECT id FROM salesmen WHERE id = ? AND branch_id = ?`).get(salesmanId, branchId)
+        if (!sm) continue
+
+        const jewelry = parseFloat(jewelryStr) || 0
+        const bar     = parseFloat(barStr)     || 0
+        const qty     = parseInt(qtyStr)       || 0
+
+        // INSERT OR REPLACE — remote data wins for same (salesman, date)
+        prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(salesmanId, entryDate)
+        prepare(db, `
+          INSERT INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+        `).run(salesmanId, branchId, entryDate, jewelry, bar, qty, now)
+        imported++
+      }
+
       prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now)
-      prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('pull', ?, 'success')`).run(count)
-      return { success: true, count }
+      prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('pull', ?, 'success')`).run(imported)
+
+      return { success: true, count: imported, message: `Pulled ${imported} entries from Google Sheets.` }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       prepare(getDb(), `INSERT INTO sync_logs (direction, records_count, status, error_message) VALUES ('pull', 0, 'error', ?)`).run(msg)
