@@ -71,14 +71,14 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('kpi:simulate', token, metricId, branchId, actual, target),
 
   // ── Reports ───────────────────────────────────────────────────────────
-  getMonthlyReport: (token: string, branchIds: number[], year: number, month: number) =>
-    ipcRenderer.invoke('report:monthly', token, branchIds, year, month),
-  getDashboardStats: (token: string, branchIds: number[], year: number, month: number) =>
-    ipcRenderer.invoke('report:dashboard', token, branchIds, year, month),
-  getExecutiveReport: (token: string, year: number, month: number) =>
-    ipcRenderer.invoke('report:executive', token, year, month),
-  getBranchAnalytics: (token: string, year: number, month: number) =>
-    ipcRenderer.invoke('report:branchAnalytics', token, year, month),
+  getMonthlyReport: (token: string, branchIds: number[], year: number, month: number, dateFrom: string, dateTo: string) =>
+    ipcRenderer.invoke('report:monthly', token, branchIds, year, month, dateFrom, dateTo),
+  getDashboardStats: (token: string, branchIds: number[], year: number, month: number, dateFrom: string, dateTo: string) =>
+    ipcRenderer.invoke('report:dashboard', token, branchIds, year, month, dateFrom, dateTo),
+  getExecutiveReport: (token: string, year: number, month: number, dateFrom: string, dateTo: string) =>
+    ipcRenderer.invoke('report:executive', token, year, month, dateFrom, dateTo),
+  getBranchAnalytics: (token: string, year: number, month: number, dateFrom: string, dateTo: string) =>
+    ipcRenderer.invoke('report:branchAnalytics', token, year, month, dateFrom, dateTo),
 
   // ── Google Sheets Sync ────────────────────────────────────────────────
   syncToCloud: (token: string) =>

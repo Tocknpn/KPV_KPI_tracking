@@ -1,8 +1,10 @@
 import { useEffect, useState, useRef } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
+import { MonthDropdown, DateRangeBar } from '../../components/ui/PeriodFilter'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
+import { getDefaultDateRange } from '../../utils/dates'
 import type { MonthlyReportRow } from '../../types'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -110,13 +112,29 @@ function SortTh({ label, col, sortCol, sortDir, onSort, className = '' }: {
 
 export default function Reports() {
   const { token, user, branches } = useAuthStore()
-  const { selectedBranchIds, selectedYear, selectedMonth, setSelectedBranchIds, setSelectedPeriod } = useAppStore()
+  const { selectedBranchIds, setSelectedBranchIds } = useAppStore()
   const [rows, setRows] = useState<MonthlyReportRow[]>([])
-  const [meta, setMeta] = useState({ daysInMonth: 30, dayOfMonth: 1, daysRemaining: 29, kpiBase: 8000, kpiWeight: 50 })
+  const [meta, setMeta] = useState({ daysInMonth: 30, dayOfMonth: 1, daysRemaining: 29 })
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [sortCol, setSortCol] = useState<SortCol>('kpiPct')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
+  // ── Local date state ──────────────────────────────────────────────────
+  const now = new Date()
+  const [year, setYear]   = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
+  const initRange = getDefaultDateRange(now.getFullYear(), now.getMonth() + 1)
+  const [dateFrom, setDateFrom] = useState(initRange.dateFrom)
+  const [dateTo, setDateTo]     = useState(initRange.dateTo)
+
+  function handleMonthChange(y: number, m: number) {
+    setYear(y); setMonth(m)
+    const { dateFrom: df, dateTo: dt } = getDefaultDateRange(y, m)
+    setDateFrom(df); setDateTo(dt)
+  }
+
+  const maxDate = getDefaultDateRange(year, month).dateTo
 
   const effectiveBranchIds: number[] = user?.role === 'supervisor'
     ? [user.branchId ?? 1]
@@ -125,20 +143,18 @@ export default function Reports() {
   useEffect(() => {
     if (!token) return
     setLoading(true)
-    window.api.getMonthlyReport(token, effectiveBranchIds, selectedYear, selectedMonth)
+    window.api.getMonthlyReport(token, effectiveBranchIds, year, month, dateFrom, dateTo)
       .then(data => {
         setRows(data.rows)
         setMeta({
-          daysInMonth: data.daysInMonth,
-          dayOfMonth: data.dayOfMonth,
-          daysRemaining: data.daysRemaining,
-          kpiBase: data.kpiBase,
-          kpiWeight: data.kpiWeight,
+          daysInMonth:    data.daysInMonth,
+          dayOfMonth:     data.dayOfMonth,
+          daysRemaining:  data.daysRemaining,
         })
       })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [token, JSON.stringify(effectiveBranchIds), selectedYear, selectedMonth])
+  }, [token, JSON.stringify(effectiveBranchIds), year, month, dateFrom, dateTo])
 
   function handleSort(col: SortCol) {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -165,7 +181,6 @@ export default function Reports() {
 
   const isMultiBranch = effectiveBranchIds.length !== 1
 
-  // Summary stats
   const avgKpiPct    = rows.length ? rows.reduce((s, r) => s + r.kpiScore.pct, 0) / rows.length : 0
   const avgEomKpiPct = rows.length ? rows.reduce((s, r) => s + r.eomKpiPct, 0) / rows.length : 0
   const totalJewelry = rows.reduce((s, r) => s + r.actual_jewelry, 0)
@@ -180,7 +195,7 @@ export default function Reports() {
   return (
     <AppShell title="SalesTrack Pro">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
         <div>
           <nav className="flex items-center gap-2 text-label-md text-on-surface-variant mb-2">
             <span>Reports</span>
@@ -189,21 +204,16 @@ export default function Reports() {
           </nav>
           <h2 className="font-headline-lg text-headline-lg text-on-surface">Monthly Tracking Report</h2>
           <p className="text-on-surface-variant text-body-md mt-1">
-            {scopeLabel} — {MONTHS[selectedMonth - 1]} {selectedYear}
+            {scopeLabel} — {MONTHS[month - 1]} {year}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <select
-            value={selectedMonth}
-            onChange={e => setSelectedPeriod(selectedYear, Number(e.target.value))}
-            className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none"
-          >
-            {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-          </select>
-          <input
-            type="number" value={selectedYear}
-            onChange={e => setSelectedPeriod(Number(e.target.value), selectedMonth)}
-            className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm w-24 outline-none"
+          <MonthDropdown year={year} month={month} onChange={handleMonthChange} />
+          <DateRangeBar
+            year={year} month={month}
+            dateFrom={dateFrom} dateTo={dateTo} maxDate={maxDate}
+            onDateFromChange={setDateFrom}
+            onDateToChange={setDateTo}
           />
           {user?.role !== 'supervisor' && (
             <BranchDropdown branches={branches} selectedIds={selectedBranchIds} onChange={setSelectedBranchIds} />
@@ -214,10 +224,10 @@ export default function Reports() {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-card-gap mb-8">
         {[
-          { label: 'Avg KPI Score %', value: fmtPct(avgKpiPct), color: 'border-primary', sub: `Base ${meta.kpiBase} × ${meta.kpiWeight}` },
-          { label: 'Avg Est. Month End', value: fmtPct(avgEomKpiPct), color: 'border-tertiary', sub: `Day ${meta.dayOfMonth} of ${meta.daysInMonth}` },
-          { label: 'Total Jewelry MTD', value: `${fmt(totalJewelry / 1000, 2)} kg`, color: 'border-secondary-container', sub: `${rows.length} reps` },
-          { label: 'Total Bar MTD',     value: `${fmt(totalBar / 1000, 2)} kg`,     color: 'border-outline-variant',    sub: `${meta.daysRemaining} days left` },
+          { label: 'Avg KPI Score %',   value: fmtPct(avgKpiPct),    color: 'border-primary',            sub: `Day ${meta.dayOfMonth} of ${meta.daysInMonth}` },
+          { label: 'Avg Est. Month End', value: fmtPct(avgEomKpiPct), color: 'border-tertiary',            sub: `${meta.daysRemaining} days remaining` },
+          { label: 'Total Jewelry MTD',  value: `${fmt(totalJewelry / 1000, 2)} kg`, color: 'border-secondary-container', sub: `${rows.length} reps` },
+          { label: 'Total Bar MTD',      value: `${fmt(totalBar / 1000, 2)} kg`,     color: 'border-outline-variant',    sub: `${dateFrom} → ${dateTo}` },
         ].map(k => (
           <GlassCard key={k.label} className={`p-5 border-l-4 ${k.color}`}>
             <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{k.label}</p>
@@ -237,9 +247,10 @@ export default function Reports() {
         />
       </div>
 
-      {/* KPI formula reminder */}
+      {/* Est. Month End note */}
       <p className="text-[11px] text-on-surface-variant/60 mb-3 italic">
-        KPI % = (Jewelry + Bar + Qty Score) ÷ {meta.kpiBase} × {meta.kpiWeight} &nbsp;·&nbsp; Est. Month End = KPI % ÷ Day {meta.dayOfMonth} × {meta.daysInMonth} days
+        KPI % = (Jewelry + Bar + Qty Score) ÷ branch point target &nbsp;·&nbsp;
+        Est. Month End = KPI % ÷ Day {meta.dayOfMonth} × {meta.daysInMonth} days
       </p>
 
       {/* Main Table */}
@@ -270,7 +281,6 @@ export default function Reports() {
                 const eomPct = r.eomKpiPct
                 return (
                   <tr key={r.id} className="hover:bg-primary/[0.02] transition-colors">
-                    {/* Representative */}
                     <td className="px-5 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold uppercase">
@@ -282,26 +292,20 @@ export default function Reports() {
                         </div>
                       </div>
                     </td>
-                    {/* Branch */}
                     {isMultiBranch && (
                       <td className="px-5 py-3 text-body-sm text-on-surface-variant whitespace-nowrap">{r.branch_name}</td>
                     )}
-                    {/* Actuals */}
                     <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{fmt(r.actual_jewelry)}g</td>
                     <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{fmt(r.actual_bar)}g</td>
                     <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{r.actual_qty}</td>
-                    {/* KPI Score % */}
                     <td className="px-5 py-3">
                       <div className={`inline-flex flex-col items-center px-3 py-1 rounded-lg ${kpiBg(pct)}`}>
-                        <span className={`font-tabular-nums font-bold text-body-sm ${kpiColor(pct)}`}>
-                          {fmtPct(pct)}
-                        </span>
+                        <span className={`font-tabular-nums font-bold text-body-sm ${kpiColor(pct)}`}>{fmtPct(pct)}</span>
                         <span className="text-[9px] text-on-surface-variant tabular-nums">
                           {r.kpiScore.total.toLocaleString('en-US', { maximumFractionDigits: 0 })} pts
                         </span>
                       </div>
                     </td>
-                    {/* Est. Month End */}
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-1 font-tabular-nums text-body-sm">
                         <span className={`material-symbols-outlined text-sm ${eomPct >= pct ? 'text-tertiary' : 'text-on-surface-variant'}`}>

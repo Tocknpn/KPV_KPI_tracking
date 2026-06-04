@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 
+
 interface Props {
   title: string
 }
@@ -10,7 +11,7 @@ interface Props {
 export function TopBar({ title }: Props) {
   const navigate = useNavigate()
   const { token, user, clearSession, branches } = useAuthStore()
-  const { unsyncedCount, isSyncing, setIsSyncing, setUnsyncedCount } = useAppStore()
+  const { unsyncedCount, isSyncing, setIsSyncing, setUnsyncedCount, sidebarCollapsed } = useAppStore()
   const [syncResult, setSyncResult] = useState<string | null>(null)
 
   async function handleSync() {
@@ -39,26 +40,19 @@ export function TopBar({ title }: Props) {
   }
 
   return (
-    <header className="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface/80 backdrop-blur-2xl border-b border-white/20 z-40 flex justify-between items-center px-gutter">
+    <header
+      className="fixed top-0 right-0 h-16 bg-surface/80 backdrop-blur-2xl border-b border-white/20 z-40 flex justify-between items-center px-gutter"
+      style={{
+        width: sidebarCollapsed ? 'calc(100% - 72px)' : 'calc(100% - 260px)',
+        transition: 'width 0.22s cubic-bezier(0.4,0,0.2,1)',
+      }}
+    >
       {/* Left */}
       <div className="flex items-center gap-8">
         <span className="font-headline-md text-headline-md font-extrabold text-primary">
           {title}
         </span>
-        {/* Branch pills for admin/executive */}
-        {(user?.role === 'admin' || user?.role === 'executive') && branches.length > 0 && (
-          <nav className="hidden md:flex items-center gap-1">
-            {branches.map(b => (
-              <button
-                key={b.id}
-                className="px-3 py-1 text-label-md font-label-md text-on-surface-variant hover:text-primary hover:bg-surface-container rounded-full transition-colors"
-              >
-                {b.code}
-              </button>
-            ))}
-          </nav>
-        )}
-      </div>
+        </div>
 
       {/* Right */}
       <div className="flex items-center gap-3">

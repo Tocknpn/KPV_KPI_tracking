@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList, Legend, Cell } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList, Cell } from 'recharts'
 import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { RadialGauge } from '../../components/ui/RadialGauge'
+import { MonthDropdown, DateRangeBar } from '../../components/ui/PeriodFilter'
 import { useAuthStore } from '../../store/auth.store'
-import { useAppStore } from '../../store/app.store'
+import { getDefaultDateRange } from '../../utils/dates'
 import type { ExecutiveBranchRow } from '../../types'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -21,26 +22,39 @@ function kpiColor(pct: number) {
 
 export default function Executive() {
   const { token } = useAuthStore()
-  const { selectedYear, selectedMonth, setSelectedPeriod } = useAppStore()
-  const [rows, setRows] = useState<ExecutiveBranchRow[]>([])
+  const [rows, setRows]     = useState<ExecutiveBranchRow[]>([])
   const [loading, setLoading] = useState(true)
+
+  // ── Local date state ──────────────────────────────────────────────────
+  const now = new Date()
+  const [year, setYear]   = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
+  const initRange = getDefaultDateRange(now.getFullYear(), now.getMonth() + 1)
+  const [dateFrom, setDateFrom] = useState(initRange.dateFrom)
+  const [dateTo, setDateTo]     = useState(initRange.dateTo)
+
+  function handleMonthChange(y: number, m: number) {
+    setYear(y); setMonth(m)
+    const { dateFrom: df, dateTo: dt } = getDefaultDateRange(y, m)
+    setDateFrom(df); setDateTo(dt)
+  }
+
+  const maxDate = getDefaultDateRange(year, month).dateTo
 
   useEffect(() => {
     if (!token) return
     setLoading(true)
-    window.api.getExecutiveReport(token, selectedYear, selectedMonth)
+    window.api.getExecutiveReport(token, year, month, dateFrom, dateTo)
       .then(setRows)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [token, selectedYear, selectedMonth])
+  }, [token, year, month, dateFrom, dateTo])
 
-  // Company-wide aggregates
   const totalScore    = rows.reduce((s, r) => s + r.kpi_total_score, 0)
   const totalTarget   = rows.reduce((s, r) => s + r.kpi_point_target, 0)
   const overallKpiPct = totalTarget > 0 ? (totalScore / totalTarget) * 100 : 0
   const totalPeople   = rows.reduce((s, r) => s + r.person_count, 0)
 
-  // Chart data — one bar per branch
   const chartData = rows.map(r => ({
     name:       r.code,
     branchName: r.branch_name,
@@ -49,23 +63,29 @@ export default function Executive() {
     target:     r.kpi_point_target,
   }))
 
-  // Sorted by KPI%
   const ranked = [...rows].sort((a, b) => b.kpi_pct - a.kpi_pct)
 
   return (
     <AppShell title="SalesTrack Pro" allowedRoles={['admin','executive']}>
-      <div className="flex justify-between items-end mb-8">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
         <div>
           <h2 className="font-headline-lg text-headline-lg text-on-background">Company Overview</h2>
-          <p className="text-on-surface-variant text-body-md">KPI performance analytics for all active branches</p>
+          <p className="text-on-surface-variant text-body-md">
+            KPI analytics · {MONTHS[month - 1]} {year}
+            {(dateFrom !== `${year}-${String(month).padStart(2,'0')}-01` || dateTo !== maxDate) && (
+              <span className="ml-2 text-[11px] font-mono bg-surface-container px-1.5 py-0.5 rounded">{dateFrom} → {dateTo}</span>
+            )}
+          </p>
         </div>
-        <select
-          value={selectedMonth}
-          onChange={e => setSelectedPeriod(selectedYear, Number(e.target.value))}
-          className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none"
-        >
-          {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m} {selectedYear}</option>)}
-        </select>
+        <div className="flex items-center gap-3 flex-wrap">
+          <MonthDropdown year={year} month={month} onChange={handleMonthChange} />
+          <DateRangeBar
+            year={year} month={month}
+            dateFrom={dateFrom} dateTo={dateTo} maxDate={maxDate}
+            onDateFromChange={setDateFrom}
+            onDateToChange={setDateTo}
+          />
+        </div>
       </div>
 
       {loading ? (
@@ -82,7 +102,7 @@ export default function Executive() {
               <div className="flex justify-between items-start mb-6">
                 <div>
                   <span className="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-[10px] uppercase tracking-widest mb-4 inline-block">
-                    KPI Score — {MONTHS[selectedMonth - 1]} {selectedYear}
+                    KPI Score — {MONTHS[month - 1]} {year}
                   </span>
                   <h3 className="font-display-xl text-display-xl text-primary tabular-nums">
                     {fmtPct(overallKpiPct)}
@@ -90,10 +110,12 @@ export default function Executive() {
                   <p className="text-on-surface-variant text-body-md mt-1">
                     {fmt(totalScore)} of {fmt(totalTarget)} pts across {totalPeople} staff
                   </p>
+                  <p className="text-[11px] text-on-surface-variant/60 mt-1 font-mono">
+                    {dateFrom} → {dateTo}
+                  </p>
                 </div>
                 <RadialGauge pct={Math.min(overallKpiPct, 100)} label="Overall KPI" size={120} color="#004f96" />
               </div>
-              {/* Per-branch quick stats */}
               <div className="grid grid-cols-4 gap-4 pt-6 border-t border-outline-variant/30">
                 {rows.map(r => (
                   <div key={r.branch_id}>
@@ -113,7 +135,7 @@ export default function Executive() {
             <h4 className="font-headline-md text-headline-md text-on-surface mb-5">Branch KPI Achievement</h4>
             <div className="space-y-5">
               {ranked.map(r => {
-                const pct  = Math.min(r.kpi_pct, 100)
+                const pct   = Math.min(r.kpi_pct, 100)
                 const color = kpiColor(r.kpi_pct)
                 return (
                   <div key={r.branch_id}>
@@ -127,10 +149,8 @@ export default function Executive() {
                       <span className="font-bold tabular-nums" style={{ color }}>{fmtPct(r.kpi_pct)}</span>
                     </div>
                     <div className="h-2.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-700"
-                        style={{ width: `${pct}%`, background: color }}
-                      />
+                      <div className="h-full rounded-full transition-all duration-700"
+                        style={{ width: `${pct}%`, background: color }} />
                     </div>
                     <p className="text-[10px] text-on-surface-variant mt-1">
                       {fmt(r.kpi_total_score)} pts &nbsp;·&nbsp; {r.person_count} staff &nbsp;·&nbsp; Target: {fmt(r.per_person_target)} pts/person
@@ -168,15 +188,10 @@ export default function Executive() {
                     contentStyle={{ borderRadius: 10, fontSize: 12 }}
                   />
                   <Bar dataKey="kpiPct" name="KPI %" radius={[6,6,0,0]} maxBarSize={80}>
-                    {chartData.map((d, i) => (
-                      <Cell key={i} fill={kpiColor(d.kpiPct)} />
-                    ))}
-                    <LabelList
-                      dataKey="kpiPct"
-                      position="top"
+                    {chartData.map((d, i) => <Cell key={i} fill={kpiColor(d.kpiPct)} />)}
+                    <LabelList dataKey="kpiPct" position="top"
                       formatter={(v: number) => `${v.toFixed(1)}%`}
-                      style={{ fontSize: 12, fontWeight: 700 }}
-                    />
+                      style={{ fontSize: 12, fontWeight: 700 }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -224,7 +239,8 @@ export default function Executive() {
                         <span className="text-[10px] block text-on-surface-variant/60">{fmt(r.per_person_target)}/person</span>
                       </td>
                       <td className="px-6 py-3">
-                        <span className="font-bold text-body-sm tabular-nums px-3 py-1 rounded-lg" style={{ background: kpiColor(r.kpi_pct) + '20', color: kpiColor(r.kpi_pct) }}>
+                        <span className="font-bold text-body-sm tabular-nums px-3 py-1 rounded-lg"
+                          style={{ background: kpiColor(r.kpi_pct) + '20', color: kpiColor(r.kpi_pct) }}>
                           {fmtPct(r.kpi_pct)}
                         </span>
                       </td>

@@ -14,7 +14,7 @@ interface Props {
 
 export function AppShell({ children, title, allowedRoles }: Props) {
   const { token, user, setBranches } = useAuthStore()
-  const { setUnsyncedCount } = useAppStore()
+  const { setUnsyncedCount, sidebarCollapsed } = useAppStore()
 
   if (!token || !user) return <Navigate to="/login" replace />
   if (allowedRoles && !allowedRoles.includes(user.role)) {
@@ -32,7 +32,13 @@ export function AppShell({ children, title, allowedRoles }: Props) {
     <div className="min-h-screen bg-mica font-sans text-on-surface">
       <Sidebar />
       <TopBar title={title} />
-      <main className="ml-sidebar-width mt-16 p-container-padding max-w-[1600px] min-h-[calc(100vh-64px)]">
+      <main
+        className="mt-16 p-container-padding max-w-[1600px] min-h-[calc(100vh-64px)]"
+        style={{
+          marginLeft: sidebarCollapsed ? '72px' : '260px',
+          transition: 'margin-left 0.22s cubic-bezier(0.4,0,0.2,1)',
+        }}
+      >
         {children}
       </main>
     </div>

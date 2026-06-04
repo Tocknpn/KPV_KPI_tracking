@@ -99,6 +99,7 @@ export interface DashboardStats {
   topPerformers: Array<{
     id: number; full_name: string; nickname: string; position: string
     total_jewelry: number; total_bar: number; total_qty: number
+    kpi_total_score: number; kpi_pct: number
   }>
 }
 

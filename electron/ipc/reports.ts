@@ -4,17 +4,6 @@ import { prepare } from '../db/query'
 import { requireAuth } from './auth'
 import { computeKpiScore } from './kpi'
 
-function getBranchPointTarget(db: import('sql.js').Database, branchId: number, year: number, month: number): number {
-  // Monthly override takes priority
-  const monthly = prepare(db, `
-    SELECT kpi_point_target FROM branch_kpi_monthly_targets WHERE branch_id=? AND year=? AND month=?
-  `).get(branchId, year, month) as { kpi_point_target: number } | undefined
-  if (monthly) return monthly.kpi_point_target
-  // Fall back to branch default
-  const branch = prepare(db, `SELECT kpi_point_target FROM branches WHERE id = ?`).get(branchId) as { kpi_point_target: number } | undefined
-  return branch?.kpi_point_target ?? 0
-}
-
 function buildBranchFilter(ids: number[]): { sql: string; params: number[] } {
   if (ids.length === 0) return { sql: '', params: [] }
   return {
@@ -31,16 +20,29 @@ function buildSalesmenBranchFilter(ids: number[]): { sql: string; params: number
   }
 }
 
-export function registerReportHandlers(ipcMain: IpcMain): void {
-  // branchIds: [] = all branches
-  ipcMain.handle('report:dashboard', async (_e, token: string, branchIds: number[], year: number, month: number) => {
-    const user = requireAuth(token)
-    const effectiveBranchIds: number[] = user.role === 'supervisor'
-      ? [user.branch_id ?? 1]
-      : branchIds
+function getBranchPointTarget(db: import('sql.js').Database, branchId: number, year: number, month: number): number {
+  const monthly = prepare(db, `
+    SELECT kpi_point_target FROM branch_kpi_monthly_targets WHERE branch_id=? AND year=? AND month=?
+  `).get(branchId, year, month) as { kpi_point_target: number } | undefined
+  if (monthly) return monthly.kpi_point_target
+  const branch = prepare(db, `SELECT kpi_point_target FROM branches WHERE id = ?`).get(branchId) as { kpi_point_target: number } | undefined
+  return branch?.kpi_point_target ?? 0
+}
 
+export function registerReportHandlers(ipcMain: IpcMain): void {
+
+  // branchIds=[]=all, dateFrom/dateTo filter entries, year/month used for target lookup
+  ipcMain.handle('report:dashboard', async (_e,
+    token: string, branchIds: number[], year: number, month: number,
+    dateFrom: string, dateTo: string,
+  ) => {
+    const user = requireAuth(token)
+    const effectiveBranchIds: number[] = user.role === 'supervisor' ? [user.branch_id ?? 1] : branchIds
     const db = getDb()
-    const today = new Date().toISOString().split('T')[0]
+
+    const daysInMonth = new Date(year, month, 0).getDate()
+    const dayOfMonth  = new Date(dateTo + 'T00:00:00').getDate()
+
     const { sql: bSql, params: bParams } = buildBranchFilter(effectiveBranchIds)
 
     const mtd = prepare(db, `
@@ -48,86 +50,72 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
              COALESCE(SUM(bar_weight_g),0)     AS total_bar,
              COALESCE(SUM(quantity),0)          AS total_qty
       FROM daily_entries
-      WHERE 1=1 ${bSql}
-        AND CAST(strftime('%Y',entry_date) AS INTEGER)=?
-        AND CAST(strftime('%m',entry_date) AS INTEGER)=?
-    `).get(...bParams, year, month) as { total_jewelry: number; total_bar: number; total_qty: number }
+      WHERE 1=1 ${bSql} AND entry_date >= ? AND entry_date <= ?
+    `).get(...bParams, dateFrom, dateTo) as { total_jewelry: number; total_bar: number; total_qty: number }
 
-    const targets = prepare(db, `
-      SELECT COALESCE(SUM(jewelry_weight_g),0) AS target_jewelry,
-             COALESCE(SUM(bar_weight_g),0)     AS target_bar,
-             COALESCE(SUM(quantity),0)          AS target_qty
-      FROM targets
-      WHERE 1=1 ${bSql} AND year=? AND month=?
-    `).get(...bParams, year, month) as { target_jewelry: number; target_bar: number; target_qty: number }
+    const kpiBranchId = effectiveBranchIds.length === 1 ? effectiveBranchIds[0] : 0
 
-    const daysInMonth = new Date(year, month, 0).getDate()
-    const dayOfMonth = (new Date(today).getMonth() + 1 === month) ? new Date(today).getDate() : daysInMonth
-    const projFactor = daysInMonth / Math.max(dayOfMonth, 1)
+    const kpiScoreJewelry = computeKpiScore(db, 1, kpiBranchId, mtd?.total_jewelry ?? 0, 0, dateTo).score
+    const kpiScoreBar     = computeKpiScore(db, 2, kpiBranchId, mtd?.total_bar     ?? 0, 0, dateTo).score
+    const kpiScoreQty     = computeKpiScore(db, 3, kpiBranchId, mtd?.total_qty     ?? 0, 0, dateTo).score
+    const kpiTotalScore   = kpiScoreJewelry + kpiScoreBar + kpiScoreQty
+
+    const { sql: sBranchSqlT, params: sBranchParamsT } = buildSalesmenBranchFilter(effectiveBranchIds)
+    const salesmenRows = prepare(db, `
+      SELECT s.branch_id FROM salesmen s WHERE s.active = 1 ${sBranchSqlT}
+    `).all(...sBranchParamsT) as Array<{ branch_id: number }>
+    const kpiPointTarget = salesmenRows.reduce((sum, r) => sum + getBranchPointTarget(db, r.branch_id, year, month), 0)
+    const kpiPct = kpiPointTarget > 0 ? (kpiTotalScore / kpiPointTarget) * 100 : 0
 
     const { sql: sBranchSql, params: sBranchParams } = buildSalesmenBranchFilter(effectiveBranchIds)
-    const topPerformers = prepare(db, `
-      SELECT s.id, s.full_name, s.nickname, s.position,
+    const rawPerformers = prepare(db, `
+      SELECT s.id, s.full_name, s.nickname, s.position, s.branch_id,
         COALESCE(SUM(de.jewelry_weight_g),0) AS total_jewelry,
         COALESCE(SUM(de.bar_weight_g),0)     AS total_bar,
         COALESCE(SUM(de.quantity),0)         AS total_qty
       FROM salesmen s
       LEFT JOIN daily_entries de ON de.salesman_id=s.id
-        AND CAST(strftime('%Y',de.entry_date) AS INTEGER)=?
-        AND CAST(strftime('%m',de.entry_date) AS INTEGER)=?
+        AND de.entry_date >= ? AND de.entry_date <= ?
       WHERE s.active=1 ${sBranchSql}
       GROUP BY s.id
       ORDER BY (COALESCE(SUM(de.jewelry_weight_g),0)+COALESCE(SUM(de.bar_weight_g),0)) DESC
-      LIMIT 5
-    `).all(year, month, ...sBranchParams)
+      LIMIT 10
+    `).all(dateFrom, dateTo, ...sBranchParams) as Array<{
+      id: number; full_name: string; nickname: string; position: string; branch_id: number
+      total_jewelry: number; total_bar: number; total_qty: number
+    }>
 
-    // For KPI score: use single branch if one selected, else global (branchId=0)
-    const kpiBranchId = effectiveBranchIds.length === 1 ? effectiveBranchIds[0] : 0
-
-    const kpiScoreJewelry = computeKpiScore(db, 1, kpiBranchId, mtd?.total_jewelry ?? 0, 0, today).score
-    const kpiScoreBar     = computeKpiScore(db, 2, kpiBranchId, mtd?.total_bar     ?? 0, 0, today).score
-    const kpiScoreQty     = computeKpiScore(db, 3, kpiBranchId, mtd?.total_qty     ?? 0, 0, today).score
-    const kpiTotalScore   = kpiScoreJewelry + kpiScoreBar + kpiScoreQty
-
-    // Aggregate point target: sum of effective targets (monthly override or default) × person count
-    const { sql: sBranchSqlT, params: sBranchParamsT } = buildSalesmenBranchFilter(effectiveBranchIds)
-    const salesmenRows = prepare(db, `
-      SELECT s.branch_id FROM salesmen s WHERE s.active = 1 ${sBranchSqlT}
-    `).all(...sBranchParamsT) as Array<{ branch_id: number }>
-    const kpiPointTarget = salesmenRows.reduce((sum, r) =>
-      sum + getBranchPointTarget(db, r.branch_id, year, month), 0
-    )
-    const kpiPct          = kpiPointTarget > 0 ? (kpiTotalScore / kpiPointTarget) * 100 : 0
+    const topPerformers = rawPerformers.map(p => {
+      const js = computeKpiScore(db, 1, p.branch_id, p.total_jewelry, 0, dateTo).score
+      const bs = computeKpiScore(db, 2, p.branch_id, p.total_bar,     0, dateTo).score
+      const qs = computeKpiScore(db, 3, p.branch_id, p.total_qty,     0, dateTo).score
+      const totalScore   = js + bs + qs
+      const branchTarget = getBranchPointTarget(db, p.branch_id, year, month)
+      const pct          = branchTarget > 0 ? (totalScore / branchTarget) * 100 : 0
+      return { ...p, kpi_total_score: totalScore, kpi_pct: pct }
+    })
 
     return {
       mtd: mtd ?? { total_jewelry: 0, total_bar: 0, total_qty: 0 },
       daysInMonth, dayOfMonth,
-      kpiScoreJewelry,
-      kpiScoreBar,
-      kpiScoreQty,
-      kpiTotalScore,
-      kpiPointTarget,
-      kpiPct,
+      kpiScoreJewelry, kpiScoreBar, kpiScoreQty, kpiTotalScore, kpiPointTarget, kpiPct,
       topPerformers,
     }
   })
 
-  // branchIds: [] = all branches
-  ipcMain.handle('report:monthly', async (_e, token: string, branchIds: number[], year: number, month: number) => {
+  // branchIds=[]=all
+  ipcMain.handle('report:monthly', async (_e,
+    token: string, branchIds: number[], year: number, month: number,
+    dateFrom: string, dateTo: string,
+  ) => {
     const user = requireAuth(token)
-    const effectiveBranchIds: number[] = user.role === 'supervisor'
-      ? [user.branch_id ?? branchIds[0]]
-      : branchIds
-
+    const effectiveBranchIds: number[] = user.role === 'supervisor' ? [user.branch_id ?? branchIds[0]] : branchIds
     const db = getDb()
-    const today = new Date().toISOString().split('T')[0]
-    const daysInMonth = new Date(year, month, 0).getDate()
-    const dayOfMonth = (new Date(today).getMonth() + 1 === month) ? new Date(today).getDate() : daysInMonth
+    const daysInMonth  = new Date(year, month, 0).getDate()
+    const dayOfMonth   = new Date(dateTo + 'T00:00:00').getDate()
     const daysRemaining = Math.max(daysInMonth - dayOfMonth, 0)
 
-    // Monthly-aware branch targets: monthly override → branch default
     const branchTargetMap = new Map<number, number>()
-
     const { sql: sBranchSql, params: sBranchParams } = buildSalesmenBranchFilter(effectiveBranchIds)
 
     const rows = prepare(db, `
@@ -139,28 +127,25 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       FROM salesmen s
       LEFT JOIN branches b ON b.id = s.branch_id
       LEFT JOIN daily_entries de ON de.salesman_id=s.id
-        AND CAST(strftime('%Y',de.entry_date) AS INTEGER)=?
-        AND CAST(strftime('%m',de.entry_date) AS INTEGER)=?
+        AND de.entry_date >= ? AND de.entry_date <= ?
       WHERE s.active=1 ${sBranchSql}
       GROUP BY s.id ORDER BY s.branch_id, s.full_name
-    `).all(year, month, ...sBranchParams) as Array<{
+    `).all(dateFrom, dateTo, ...sBranchParams) as Array<{
       id: number; full_name: string; nickname: string; position: string
       branch_id: number; branch_name: string
       actual_jewelry: number; actual_bar: number; actual_qty: number
     }>
 
     const enriched = rows.map(r => {
-      const js = computeKpiScore(db, 1, r.branch_id, r.actual_jewelry, 0, today).score
-      const bs = computeKpiScore(db, 2, r.branch_id, r.actual_bar,     0, today).score
-      const qs = computeKpiScore(db, 3, r.branch_id, r.actual_qty,     0, today).score
+      const js = computeKpiScore(db, 1, r.branch_id, r.actual_jewelry, 0, dateTo).score
+      const bs = computeKpiScore(db, 2, r.branch_id, r.actual_bar,     0, dateTo).score
+      const qs = computeKpiScore(db, 3, r.branch_id, r.actual_qty,     0, dateTo).score
       const totalRaw = js + bs + qs
-      // Cache per branch to avoid repeated DB lookups
-      if (!branchTargetMap.has(r.branch_id)) {
+      if (!branchTargetMap.has(r.branch_id))
         branchTargetMap.set(r.branch_id, getBranchPointTarget(db, r.branch_id, year, month))
-      }
       const branchTarget = branchTargetMap.get(r.branch_id) ?? 0
-      const kpiPct       = branchTarget > 0 ? (totalRaw / branchTarget) * 100 : 0
-      const eomKpiPct    = dayOfMonth > 0 ? (kpiPct / dayOfMonth) * daysInMonth : 0
+      const kpiPct    = branchTarget > 0 ? (totalRaw / branchTarget) * 100 : 0
+      const eomKpiPct = dayOfMonth > 0 ? (kpiPct / dayOfMonth) * daysInMonth : 0
       return {
         ...r,
         kpiPointTarget: branchTarget,
@@ -171,10 +156,12 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     return { rows: enriched, daysInMonth, dayOfMonth, daysRemaining }
   })
 
-  ipcMain.handle('report:executive', async (_e, token: string, year: number, month: number) => {
+  ipcMain.handle('report:executive', async (_e,
+    token: string, year: number, month: number,
+    dateFrom: string, dateTo: string,
+  ) => {
     requireAuth(token)
     const db = getDb()
-    const today = new Date().toISOString().split('T')[0]
 
     const branches = prepare(db, `SELECT id, name, code FROM branches ORDER BY id`).all() as Array<{
       id: number; name: string; code: string
@@ -186,40 +173,36 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
                COALESCE(SUM(bar_weight_g),0)     AS actual_bar,
                COALESCE(SUM(quantity),0)          AS actual_qty
         FROM daily_entries
-        WHERE branch_id=? AND CAST(strftime('%Y',entry_date) AS INTEGER)=? AND CAST(strftime('%m',entry_date) AS INTEGER)=?
-      `).get(b.id, year, month) as { actual_jewelry: number; actual_bar: number; actual_qty: number }
+        WHERE branch_id=? AND entry_date >= ? AND entry_date <= ?
+      `).get(b.id, dateFrom, dateTo) as { actual_jewelry: number; actual_bar: number; actual_qty: number }
 
-      const js = computeKpiScore(db, 1, b.id, actuals.actual_jewelry, 0, today).score
-      const bs = computeKpiScore(db, 2, b.id, actuals.actual_bar,     0, today).score
-      const qs = computeKpiScore(db, 3, b.id, actuals.actual_qty,     0, today).score
+      const js = computeKpiScore(db, 1, b.id, actuals.actual_jewelry, 0, dateTo).score
+      const bs = computeKpiScore(db, 2, b.id, actuals.actual_bar,     0, dateTo).score
+      const qs = computeKpiScore(db, 3, b.id, actuals.actual_qty,     0, dateTo).score
       const kpiTotalScore = js + bs + qs
 
-      const personRow = prepare(db, `SELECT COUNT(*) as cnt FROM salesmen WHERE branch_id=? AND active=1`).get(b.id) as { cnt: number }
-      const personCount = personRow.cnt
+      const personRow      = prepare(db, `SELECT COUNT(*) as cnt FROM salesmen WHERE branch_id=? AND active=1`).get(b.id) as { cnt: number }
+      const personCount    = personRow.cnt
       const perPersonTarget = getBranchPointTarget(db, b.id, year, month)
       const kpiPointTarget  = personCount * perPersonTarget
       const kpiPct          = kpiPointTarget > 0 ? (kpiTotalScore / kpiPointTarget) * 100 : 0
 
       return {
-        branch_id:         b.id,
-        branch_name:       b.name,
-        code:              b.code,
-        actual_jewelry:    actuals.actual_jewelry,
-        actual_bar:        actuals.actual_bar,
-        actual_qty:        actuals.actual_qty,
-        kpi_score_jewelry: js,
-        kpi_score_bar:     bs,
-        kpi_score_qty:     qs,
-        kpi_total_score:   kpiTotalScore,
-        kpi_point_target:  kpiPointTarget,
-        per_person_target: perPersonTarget,
-        kpi_pct:           kpiPct,
-        person_count:      personCount,
+        branch_id: b.id, branch_name: b.name, code: b.code,
+        actual_jewelry: actuals.actual_jewelry,
+        actual_bar: actuals.actual_bar,
+        actual_qty: actuals.actual_qty,
+        kpi_score_jewelry: js, kpi_score_bar: bs, kpi_score_qty: qs,
+        kpi_total_score: kpiTotalScore, kpi_point_target: kpiPointTarget,
+        per_person_target: perPersonTarget, kpi_pct: kpiPct, person_count: personCount,
       }
     })
   })
 
-  ipcMain.handle('report:branchAnalytics', async (_e, token: string, year: number, month: number) => {
+  ipcMain.handle('report:branchAnalytics', async (_e,
+    token: string, year: number, month: number,
+    dateFrom: string, dateTo: string,
+  ) => {
     requireAuth(token)
     const db = getDb()
     const dailyTotals = prepare(db, `
@@ -228,20 +211,18 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
         COALESCE(SUM(bar_weight_g),0)     AS bar,
         COALESCE(SUM(quantity),0)         AS qty
       FROM daily_entries
-      WHERE CAST(strftime('%Y',entry_date) AS INTEGER)=?
-        AND CAST(strftime('%m',entry_date) AS INTEGER)=?
+      WHERE entry_date >= ? AND entry_date <= ?
       GROUP BY entry_date ORDER BY entry_date
-    `).all(year, month)
+    `).all(dateFrom, dateTo)
     const branchContrib = prepare(db, `
       SELECT b.id, b.name, b.code,
         COALESCE(SUM(de.jewelry_weight_g+de.bar_weight_g),0) AS total_weight,
         COALESCE(SUM(de.quantity),0) AS total_qty
       FROM branches b
       LEFT JOIN daily_entries de ON de.branch_id=b.id
-        AND CAST(strftime('%Y',de.entry_date) AS INTEGER)=?
-        AND CAST(strftime('%m',de.entry_date) AS INTEGER)=?
+        AND de.entry_date >= ? AND de.entry_date <= ?
       GROUP BY b.id ORDER BY total_weight DESC
-    `).all(year, month)
+    `).all(dateFrom, dateTo)
     return { dailyTotals, branchContrib }
   })
 }

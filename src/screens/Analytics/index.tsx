@@ -5,16 +5,15 @@ import {
 } from 'recharts'
 import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
+import { MonthDropdown, DateRangeBar } from '../../components/ui/PeriodFilter'
 import { useAuthStore } from '../../store/auth.store'
-import { useAppStore } from '../../store/app.store'
+import { getDefaultDateRange } from '../../utils/dates'
 
 interface DailyPoint { entry_date: string; jewelry: number; bar: number; qty: number }
 interface BranchContrib { id: number; name: string; code: string; total_weight: number; total_qty: number }
 
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const PIE_COLORS = ['#004f96', '#0d7c8f', '#1e9962', '#b07800']
 
-// Group daily data by Sun–Sat weeks; label = "Sun date"
 function groupByWeek(daily: DailyPoint[]) {
   const map = new Map<string, { week: string; jewelry: number; bar: number }>()
   for (const d of daily) {
@@ -32,37 +31,53 @@ function groupByWeek(daily: DailyPoint[]) {
 
 export default function Analytics() {
   const { token } = useAuthStore()
-  const { selectedYear, selectedMonth, setSelectedPeriod } = useAppStore()
-  const [daily, setDaily]   = useState<DailyPoint[]>([])
+  const [daily, setDaily]     = useState<DailyPoint[]>([])
   const [contrib, setContrib] = useState<BranchContrib[]>([])
   const [loading, setLoading] = useState(true)
   const [trendView, setTrendView] = useState<'day' | 'week'>('day')
 
+  // ── Local date state ──────────────────────────────────────────────────
+  const now = new Date()
+  const [year, setYear]   = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
+  const initRange = getDefaultDateRange(now.getFullYear(), now.getMonth() + 1)
+  const [dateFrom, setDateFrom] = useState(initRange.dateFrom)
+  const [dateTo, setDateTo]     = useState(initRange.dateTo)
+
+  function handleMonthChange(y: number, m: number) {
+    setYear(y); setMonth(m)
+    const { dateFrom: df, dateTo: dt } = getDefaultDateRange(y, m)
+    setDateFrom(df); setDateTo(dt)
+  }
+
+  const maxDate = getDefaultDateRange(year, month).dateTo
+
   useEffect(() => {
     if (!token) return
     setLoading(true)
-    window.api.getBranchAnalytics(token, selectedYear, selectedMonth)
-      .then(data => { setDaily(data.dailyTotals as DailyPoint[]); setContrib(data.branchContrib as BranchContrib[]) })
+    window.api.getBranchAnalytics(token, year, month, dateFrom, dateTo)
+      .then(data => {
+        setDaily(data.dailyTotals as DailyPoint[])
+        setContrib(data.branchContrib as BranchContrib[])
+      })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [token, selectedYear, selectedMonth])
+  }, [token, year, month, dateFrom, dateTo])
 
   const totalWeight = contrib.reduce((s, b) => s + b.total_weight, 0)
 
-  // Pie data
   const pieData = contrib.map(b => ({
     name: b.name,
     value: parseFloat((totalWeight > 0 ? (b.total_weight / totalWeight) * 100 : 0).toFixed(1)),
   }))
 
-  // Trend data
   const trendData = trendView === 'day'
     ? daily.map(d => ({ ...d, label: d.entry_date.slice(8) }))
     : groupByWeek(daily).map(w => ({ ...w, label: `W:${w.week}` }))
 
   return (
     <AppShell title="Branch Performance Analytics" allowedRoles={['admin','executive']}>
-      <div className="flex justify-between items-end mb-8">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
         <div>
           <nav className="flex items-center gap-2 text-label-md text-on-surface-variant mb-2">
             <span>Analytics</span>
@@ -70,18 +85,19 @@ export default function Analytics() {
             <span className="text-primary">Branch Performance</span>
           </nav>
           <h2 className="font-headline-lg text-headline-lg text-on-surface">Branch Performance Analytics</h2>
+          <p className="text-on-surface-variant text-body-md mt-1">
+            {dateFrom === `${year}-${String(month).padStart(2,'0')}-01` && dateTo === maxDate
+              ? `${now.toLocaleString('default', { month: 'long' })} view`
+              : `${dateFrom} → ${dateTo}`}
+          </p>
         </div>
-        <div className="flex gap-2 items-center">
-          <select
-            value={selectedMonth}
-            onChange={e => setSelectedPeriod(selectedYear, Number(e.target.value))}
-            className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none"
-          >
-            {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-          </select>
-          <input type="number" value={selectedYear}
-            onChange={e => setSelectedPeriod(Number(e.target.value), selectedMonth)}
-            className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm w-24 outline-none"
+        <div className="flex items-center gap-3 flex-wrap">
+          <MonthDropdown year={year} month={month} onChange={handleMonthChange} />
+          <DateRangeBar
+            year={year} month={month}
+            dateFrom={dateFrom} dateTo={dateTo} maxDate={maxDate}
+            onDateFromChange={setDateFrom}
+            onDateToChange={setDateTo}
           />
         </div>
       </div>
@@ -107,7 +123,7 @@ export default function Analytics() {
                     innerRadius={52}
                     paddingAngle={3}
                     dataKey="value"
-                    label={({ name, value }) => `${value}%`}
+                    label={({ value }) => `${value}%`}
                     labelLine={false}
                   >
                     {pieData.map((_e, i) => (
@@ -125,7 +141,6 @@ export default function Analytics() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            {/* Mini table below pie */}
             <div className="mt-3 space-y-2 border-t border-outline-variant/10 pt-3">
               {contrib.map((b, i) => {
                 const pct = totalWeight > 0 ? (b.total_weight / totalWeight) * 100 : 0
@@ -151,10 +166,9 @@ export default function Analytics() {
               <div>
                 <h3 className="font-headline-md text-headline-md text-on-surface">Selling Trends</h3>
                 <p className="text-body-sm text-on-surface-variant">
-                  {trendView === 'day' ? 'Daily' : 'Weekly (Sun–Sat)'} weight totals across all branches
+                  {trendView === 'day' ? 'Daily' : 'Weekly (Sun–Sat)'} weight totals — {dateFrom} → {dateTo}
                 </p>
               </div>
-              {/* Day / Week toggle */}
               <div className="flex gap-1 bg-surface-container rounded-xl p-1">
                 {(['day', 'week'] as const).map(v => (
                   <button
@@ -178,25 +192,10 @@ export default function Analytics() {
                     contentStyle={{ borderRadius: 10, fontSize: 12, border: '1px solid #e0e0e0' }}
                   />
                   <Legend iconType="circle" iconSize={8} />
-                  <Line
-                    type="monotone"
-                    dataKey="jewelry"
-                    name="Jewelry (g)"
-                    stroke="#004f96"
-                    strokeWidth={2.5}
-                    dot={{ r: 3, fill: '#004f96' }}
-                    activeDot={{ r: 5 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="bar"
-                    name="Bar (g)"
-                    stroke="#b07800"
-                    strokeWidth={2.5}
-                    dot={{ r: 3, fill: '#b07800' }}
-                    activeDot={{ r: 5 }}
-                    strokeDasharray="5 3"
-                  />
+                  <Line type="monotone" dataKey="jewelry" name="Jewelry (g)" stroke="#004f96"
+                    strokeWidth={2.5} dot={{ r: 3, fill: '#004f96' }} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="bar" name="Bar (g)" stroke="#b07800"
+                    strokeWidth={2.5} dot={{ r: 3, fill: '#b07800' }} activeDot={{ r: 5 }} strokeDasharray="5 3" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -206,7 +205,7 @@ export default function Analytics() {
           <GlassCard className="col-span-12 overflow-hidden">
             <div className="p-6 pb-2">
               <h3 className="font-headline-md text-headline-md text-on-surface">Branch Comparison Matrix</h3>
-              <p className="text-body-sm text-on-surface-variant">Volume, weight, and contribution metrics</p>
+              <p className="text-body-sm text-on-surface-variant">Volume, weight, and contribution metrics · {dateFrom} → {dateTo}</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">

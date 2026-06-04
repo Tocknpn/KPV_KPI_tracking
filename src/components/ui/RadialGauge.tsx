@@ -5,9 +5,10 @@ interface Props {
   color?: string        // stroke color
   label: string
   gold?: boolean        // use gold gradient
+  subLabel?: string     // extra line shown below label (e.g. actual points)
 }
 
-export function RadialGauge({ pct, size = 128, strokeWidth = 8, color = '#004f96', label, gold = false }: Props) {
+export function RadialGauge({ pct, size = 128, strokeWidth = 8, color = '#004f96', label, gold = false, subLabel }: Props) {
   const clamped = Math.min(Math.max(pct, 0), 100)
   const r = (size / 2) - strokeWidth
   const circumference = 2 * Math.PI * r
@@ -57,6 +58,11 @@ export function RadialGauge({ pct, size = 128, strokeWidth = 8, color = '#004f96
       <p className="label-md font-label-md text-on-surface-variant uppercase tracking-wider text-center">
         {label}
       </p>
+      {subLabel && (
+        <p className="text-[11px] text-on-surface-variant tabular-nums text-center -mt-1">
+          {subLabel}
+        </p>
+      )}
     </div>
   )
 }
