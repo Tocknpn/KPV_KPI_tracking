@@ -229,16 +229,19 @@ export function seedTestData(db: Database): void {
       ]
 
       for (const { tier, names } of tiers) {
-        const supId  = supIdsByBranchAndTier[`${branchId}-${tier}`]
-        const vals   = TIER_VALS[tier]
+        const supId   = supIdsByBranchAndTier[`${branchId}-${tier}`]
+        const vals    = TIER_VALS[tier]
+        const bCode   = ['MM','VC','IT','VT'][branchId - 1]
+        const tLetter = tier === 'alpha' ? 'A' : tier === 'beta' ? 'B' : 'G'
 
-        for (const [fullName, nick] of names) {
-          // Suffix branch to make name unique across branches
-          const bSuffix = ['MM','VC','IT','VT'][branchId - 1]
+        for (let ni = 0; ni < names.length; ni++) {
+          const [fullName, nick] = names[ni]
+          // Rep code: e.g. MM-A-001
+          const repCode = `${bCode}-${tLetter}-${String(ni + 1).padStart(3, '0')}`
           const { lastInsertRowid: sid } = prepare(db,
-            `INSERT OR IGNORE INTO salesmen (full_name, nickname, branch_id, position, department, active, supervisor_id)
-             VALUES (?,?,?,'Sales Representative','Sales',1,?)`
-          ).run(`${fullName} (${bSuffix})`, nick, branchId, supId ?? null)
+            `INSERT OR IGNORE INTO salesmen (rep_code, full_name, nickname, branch_id, position, department, active, supervisor_id)
+             VALUES (?,?,?,?,'Sales Representative','Sales',1,?)`
+          ).run(repCode, `${fullName} (${bCode})`, nick, branchId, supId ?? null)
 
           if (!sid) continue
 

@@ -1,25 +1,31 @@
 import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
-import { requireAuth } from './auth'
+import { requireAuth, requireAdmin } from './auth'
 
 export interface DailyRow {
   date: string           // YYYY-MM-DD
-  salesmanId: number
-  branchId: number
+  repCode: string        // unique company rep code
   jewelryWeightG: number
   barWeightG: number
   quantity: number
 }
 
 export interface TargetRow {
-  salesmanId: number
-  branchId: number
+  repCode: string        // unique company rep code
   year: number
   month: number
   jewelryWeightG: number
   barWeightG: number
   quantity: number
+}
+
+export interface RosterRow {
+  repCode: string
+  fullName: string
+  nickname: string
+  branchCode: string
+  supervisorName: string
 }
 
 export interface UploadLogEntry {
@@ -37,42 +43,47 @@ export interface UploadLogEntry {
 export function registerUploadHandlers(ipcMain: IpcMain): void {
   const db = getDb()
 
-  // ── Process daily CSV upload ──────────────────────────────────────────
+  // ── Process daily upload (rep_code based matching) ────────────────────
   ipcMain.handle('upload:daily', async (_e, token: string, rows: DailyRow[], meta: UploadLogEntry) => {
     const user = requireAuth(token)
     if (!rows.length) return { success: false, error: 'No rows to import.' }
+
+    const skipped: string[] = []
+    let imported = 0
 
     try {
       transaction(db, () => {
         const now = new Date().toISOString()
         for (const r of rows) {
-          // DELETE + INSERT = latest upload always wins per (salesman, date)
-          prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(r.salesmanId, r.date)
+          // Resolve rep_code → salesman
+          const salesman = prepare(db, `SELECT id, branch_id FROM salesmen WHERE rep_code = ? AND active = 1`).get(r.repCode) as
+            { id: number; branch_id: number } | undefined
+          if (!salesman) { skipped.push(r.repCode); continue }
+
+          prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(salesman.id, r.date)
           prepare(db, `
             INSERT INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-          `).run(r.salesmanId, r.branchId, r.date, r.jewelryWeightG, r.barWeightG, r.quantity, now)
+          `).run(salesman.id, salesman.branch_id, r.date, r.jewelryWeightG, r.barWeightG, r.quantity, now)
+          imported++
         }
       })
 
-      // Log the upload
       prepare(db, `
         INSERT INTO upload_logs (branch_id, user_id, upload_type, filename, records_count, date_from, date_to, status, notes)
         VALUES (?, ?, 'daily', ?, ?, ?, ?, 'success', ?)
-      `).run(meta.branchId, user.id, meta.filename, rows.length, meta.dateFrom ?? null, meta.dateTo ?? null, meta.notes ?? null)
+      `).run(meta.branchId, user.id, meta.filename, imported, meta.dateFrom ?? null, meta.dateTo ?? null,
+        skipped.length ? `Skipped unknown codes: ${skipped.slice(0,5).join(', ')}${skipped.length > 5 ? '…' : ''}` : null)
 
-      return { success: true, count: rows.length }
+      return { success: true, count: imported, skipped: skipped.length }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
-      prepare(db, `
-        INSERT INTO upload_logs (branch_id, user_id, upload_type, filename, records_count, status, notes)
-        VALUES (?, ?, 'daily', ?, 0, 'error', ?)
-      `).run(meta.branchId, user.id, meta.filename, msg)
+      prepare(db, `INSERT INTO upload_logs (branch_id, user_id, upload_type, filename, records_count, status, notes) VALUES (?, ?, 'daily', ?, 0, 'error', ?)`).run(meta.branchId, user.id, meta.filename, msg)
       return { success: false, error: msg }
     }
   })
 
-  // ── Process target CSV upload ─────────────────────────────────────────
+  // ── Process target upload (rep_code based) ───────────────────────────
   ipcMain.handle('upload:targets', async (_e, token: string, rows: TargetRow[], meta: UploadLogEntry) => {
     const user = requireAuth(token)
     if (!rows.length) return { success: false, error: 'No rows to import.' }
@@ -80,32 +91,91 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     const { month, year } = meta
     if (!month || !year) return { success: false, error: 'Month and year required for target upload.' }
 
+    const skipped: string[] = []
+    let imported = 0
+
     try {
       transaction(db, () => {
         for (const r of rows) {
-          // Latest upload wins: replace existing target for same salesman+month
-          prepare(db, `DELETE FROM targets WHERE salesman_id = ? AND year = ? AND month = ?`).run(r.salesmanId, r.year, r.month)
+          const salesman = prepare(db, `SELECT id, branch_id FROM salesmen WHERE rep_code = ? AND active = 1`).get(r.repCode) as
+            { id: number; branch_id: number } | undefined
+          if (!salesman) { skipped.push(r.repCode); continue }
+
+          prepare(db, `DELETE FROM targets WHERE salesman_id = ? AND year = ? AND month = ?`).run(salesman.id, r.year, r.month)
           prepare(db, `
             INSERT INTO targets (salesman_id, branch_id, year, month, jewelry_weight_g, bar_weight_g, quantity)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(r.salesmanId, r.branchId, r.year, r.month, r.jewelryWeightG, r.barWeightG, r.quantity)
+          `).run(salesman.id, salesman.branch_id, r.year, r.month, r.jewelryWeightG, r.barWeightG, r.quantity)
+          imported++
         }
       })
 
       prepare(db, `
         INSERT INTO upload_logs (branch_id, user_id, upload_type, filename, records_count, month, year, status, notes)
         VALUES (?, ?, 'target', ?, ?, ?, ?, 'success', ?)
-      `).run(meta.branchId, user.id, meta.filename, rows.length, month, year, meta.notes ?? null)
+      `).run(meta.branchId, user.id, meta.filename, imported, month, year,
+        skipped.length ? `Skipped unknown codes: ${skipped.slice(0,5).join(', ')}` : null)
 
-      return { success: true, count: rows.length }
+      return { success: true, count: imported, skipped: skipped.length }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
-      prepare(db, `
-        INSERT INTO upload_logs (branch_id, user_id, upload_type, filename, records_count, month, year, status, notes)
-        VALUES (?, ?, 'target', ?, 0, ?, ?, 'error', ?)
-      `).run(meta.branchId, user.id, meta.filename, month, year, msg)
+      prepare(db, `INSERT INTO upload_logs (branch_id, user_id, upload_type, filename, records_count, month, year, status, notes) VALUES (?, ?, 'target', ?, 0, ?, ?, 'error', ?)`).run(meta.branchId, user.id, meta.filename, month, year, msg)
       return { success: false, error: msg }
     }
+  })
+
+  // ── Roster upload: upsert salesmen by rep_code (admin only) ──────────
+  ipcMain.handle('upload:roster', async (_e, token: string, rows: RosterRow[]) => {
+    requireAdmin(token)
+    if (!rows.length) return { success: false, error: 'No rows to import.' }
+
+    let created = 0; let updated = 0; const skipped: string[] = []
+
+    try {
+      transaction(db, () => {
+        for (const r of rows) {
+          if (!r.repCode || !r.fullName || !r.branchCode) { skipped.push(r.repCode || '?'); continue }
+
+          const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(r.branchCode) as { id: number } | undefined
+          if (!branch) { skipped.push(`${r.repCode}(bad branch:${r.branchCode})`); continue }
+
+          // Resolve supervisor by name + branch (optional)
+          let supId: number | null = null
+          if (r.supervisorName) {
+            const sup = prepare(db, `SELECT id FROM supervisors WHERE branch_id = ? AND (full_name = ? OR nickname = ?)`).get(branch.id, r.supervisorName, r.supervisorName) as { id: number } | undefined
+            supId = sup?.id ?? null
+          }
+
+          const existing = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(r.repCode) as { id: number } | undefined
+          if (existing) {
+            prepare(db, `UPDATE salesmen SET full_name=?, nickname=?, branch_id=?, supervisor_id=?, active=1 WHERE rep_code=?`)
+              .run(r.fullName, r.nickname || '', branch.id, supId, r.repCode)
+            updated++
+          } else {
+            prepare(db, `INSERT INTO salesmen (rep_code, full_name, nickname, branch_id, position, department, active, supervisor_id) VALUES (?,?,?,?,'Sales Representative','Sales',1,?)`)
+              .run(r.repCode, r.fullName, r.nickname || '', branch.id, supId)
+            created++
+          }
+        }
+      })
+      return { success: true, created, updated, skipped: skipped.length, skippedCodes: skipped }
+    } catch (e: unknown) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
+
+  // ── Download roster template (existing salesmen pre-filled) ──────────
+  ipcMain.handle('upload:getRosterTemplate', async (_e, token: string) => {
+    requireAuth(token)
+    return prepare(db, `
+      SELECT s.rep_code, s.full_name, s.nickname, b.code AS branch_code,
+        sv.full_name AS supervisor_name
+      FROM salesmen s
+      JOIN branches b ON b.id = s.branch_id
+      LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
+      WHERE s.active = 1
+      ORDER BY b.code, sv.full_name NULLS LAST, s.full_name
+    `).all()
   })
 
   // ── Get upload history (with filters) ────────────────────────────────
@@ -187,7 +257,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('upload:getSalesmenForTemplate', async (_e, token: string, branchId: number) => {
     requireAuth(token)
     return prepare(db, `
-      SELECT s.id, s.full_name, s.nickname, s.branch_id, b.code AS branch_code,
+      SELECT s.id, s.rep_code, s.full_name, s.nickname, s.branch_id, b.code AS branch_code,
              sv.id   AS supervisor_id,
              sv.full_name AS supervisor_name
       FROM salesmen s

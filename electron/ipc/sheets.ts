@@ -5,7 +5,7 @@ import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
 import { requireAuth } from './auth'
 
-const SHEET_HEADERS = ['Date', 'Branch', 'Salesman ID', 'Salesman Name', 'Jewelry (Baht)', 'Bar (Baht)', 'Qty']
+const SHEET_HEADERS = ['Date', 'Branch', 'Rep Code', 'Salesman Name', 'Jewelry (Baht)', 'Bar (Baht)', 'Qty']
 
 function getServiceAuth(serviceAccountPath: string) {
   if (!existsSync(serviceAccountPath)) throw new Error(`Service account file not found: ${serviceAccountPath}`)
@@ -80,10 +80,10 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       const db = getDb()
 
       const unsynced = prepare(db, `
-        SELECT de.*, s.full_name, b.code AS branch_code
+        SELECT de.*, s.rep_code, s.full_name, b.code AS branch_code
         FROM daily_entries de JOIN salesmen s ON s.id=de.salesman_id JOIN branches b ON b.id=de.branch_id
         WHERE de.synced=0 ORDER BY de.entry_date, de.branch_id
-      `).all() as Array<{ id: number; salesman_id: number; full_name: string; branch_code: string; entry_date: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number }>
+      `).all() as Array<{ id: number; rep_code: string | null; full_name: string; branch_code: string; entry_date: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number }>
 
       if (unsynced.length === 0) return { success: true, count: 0, message: 'Nothing to sync.' }
 
@@ -91,7 +91,6 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A1' }).catch(() => null)
       const hasHeader = headerCheck?.data?.values?.[0]?.[0]
       if (!hasHeader) {
-        // Try to create the sheet tab if it doesn't exist
         await sheets.spreadsheets.batchUpdate({
           spreadsheetId: sheetsId,
           requestBody: { requests: [{ addSheet: { properties: { title: 'Entries' } } }] },
@@ -104,7 +103,7 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
 
       await sheets.spreadsheets.values.append({
         spreadsheetId: sheetsId, range: 'Entries!A:G', valueInputOption: 'USER_ENTERED',
-        requestBody: { values: unsynced.map(e => [e.entry_date, e.branch_code, e.salesman_id, e.full_name, e.jewelry_weight_g, e.bar_weight_g, e.quantity]) },
+        requestBody: { values: unsynced.map(e => [e.entry_date, e.branch_code, e.rep_code ?? '', e.full_name, e.jewelry_weight_g, e.bar_weight_g, e.quantity]) },
       })
 
       unsynced.forEach(e => prepare(db, `UPDATE daily_entries SET synced=1 WHERE id=?`).run(e.id))
@@ -131,45 +130,34 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       const db     = getDb()
 
       // ── Pull entries from Entries!A:G ─────────────────────────────────
-      // Columns: entry_date | branch_code | salesman_id | full_name | jewelry | bar | qty
-      const entryRes = await sheets.spreadsheets.values.get({
-        spreadsheetId: sheetsId,
-        range: 'Entries!A:G',
-      })
+      // Columns: entry_date | branch_code | rep_code | full_name | jewelry | bar | qty
+      const entryRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A:G' })
       const allRows = entryRes.data.values ?? []
-      // Skip first row if it looks like a header (column A doesn't match YYYY-MM-DD)
+      // Skip header row if A1 is not a date
       const firstIsHeader = allRows[0] && !String(allRows[0][0]).match(/^\d{4}-\d{2}-\d{2}$/)
       const rows = firstIsHeader ? allRows.slice(1) : allRows
-
-      // Build branch_code → branch_id map
-      const branches = prepare(db, `SELECT id, code FROM branches`).all() as Array<{ id: number; code: string }>
-      const branchMap = Object.fromEntries(branches.map(b => [b.code, b.id]))
 
       let imported = 0
       const now = new Date().toISOString()
 
       for (const row of rows) {
-        const [entryDate, branchCode, salesmanIdStr,, jewelryStr, barStr, qtyStr] = row as string[]
-        if (!entryDate || !salesmanIdStr) continue
+        const [entryDate, , repCode, , jewelryStr, barStr, qtyStr] = row as string[]
+        if (!entryDate || !repCode) continue
 
-        const salesmanId = parseInt(salesmanIdStr)
-        const branchId   = branchMap[branchCode] ?? null
-        if (!salesmanId || !branchId) continue
-
-        // Verify salesman exists in this DB
-        const sm = prepare(db, `SELECT id FROM salesmen WHERE id = ? AND branch_id = ?`).get(salesmanId, branchId)
+        // Resolve rep_code → salesman
+        const sm = prepare(db, `SELECT id, branch_id FROM salesmen WHERE rep_code = ? AND active = 1`).get(repCode) as
+          { id: number; branch_id: number } | undefined
         if (!sm) continue
 
         const jewelry = parseFloat(jewelryStr) || 0
         const bar     = parseFloat(barStr)     || 0
         const qty     = parseInt(qtyStr)       || 0
 
-        // INSERT OR REPLACE — remote data wins for same (salesman, date)
-        prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(salesmanId, entryDate)
+        prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(sm.id, entryDate)
         prepare(db, `
           INSERT INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, 1, ?)
-        `).run(salesmanId, branchId, entryDate, jewelry, bar, qty, now)
+        `).run(sm.id, sm.branch_id, entryDate, jewelry, bar, qty, now)
         imported++
       }
 

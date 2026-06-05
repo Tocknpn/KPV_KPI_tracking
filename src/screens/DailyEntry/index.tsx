@@ -4,10 +4,10 @@ import { GlassCard } from '../../components/ui/GlassCard'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import type { DailyEntry } from '../../types'
-import { validateDailyRows } from '../../utils/csv'
-import { parseXLSX, readFileAsArrayBuffer, generateDailyTemplateXLSX, downloadXLSX } from '../../utils/xlsx'
+import { validateDailyRows, validateRosterRows } from '../../utils/csv'
+import { parseXLSX, readFileAsArrayBuffer, generateDailyTemplateXLSX, generateRosterTemplateXLSX, downloadXLSX } from '../../utils/xlsx'
 
-type Tab = 'manual' | 'daily-csv'
+type Tab = 'manual' | 'daily-csv' | 'roster'
 
 function fmt(n: number) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -37,6 +37,52 @@ export default function DailyEntry() {
     : (selectedBranchId ?? branches[0]?.id ?? 1)
 
   const showSupColumn = user?.role !== 'supervisor'
+  const isAdmin = user?.role === 'admin'
+
+  // Roster upload state
+  const [rosterFile, setRosterFile]         = useState<File | null>(null)
+  const [rosterPreview, setRosterPreview]   = useState<{ headers: string[]; sample: string[][] } | null>(null)
+  const [rosterErrors, setRosterErrors]     = useState<string[]>([])
+  const [rosterResult, setRosterResult]     = useState<string | null>(null)
+  const [rosterUploading, setRosterUploading] = useState(false)
+  const [rosterDragging, setRosterDragging] = useState(false)
+  const rosterFileRef = useRef<HTMLInputElement>(null)
+
+  function resetRoster() { setRosterFile(null); setRosterPreview(null); setRosterErrors([]); setRosterResult(null) }
+
+  async function handleRosterFilePick(file: File) {
+    resetRoster(); setRosterFile(file)
+    try {
+      const buf = await readFileAsArrayBuffer(file)
+      const parsed = parseXLSX(buf)
+      setRosterPreview({ headers: parsed.headers, sample: parsed.rows.slice(0,3).map(r => parsed.headers.map(h => r[h] ?? '')) })
+      if (parsed.errors.length) setRosterErrors(parsed.errors)
+    } catch (e) { setRosterErrors([e instanceof Error ? e.message : 'Failed to read file']) }
+  }
+
+  async function submitRoster() {
+    if (!rosterFile || !token) return
+    setRosterUploading(true); setRosterResult(null)
+    try {
+      const buf = await readFileAsArrayBuffer(rosterFile)
+      const parsed = parseXLSX(buf)
+      const { rows, errors } = validateRosterRows(parsed)
+      if (errors.length) setRosterErrors(errors)
+      if (!rows.length) { setRosterUploading(false); return }
+      const res = await window.api.uploadRoster(token, rows)
+      if (res.success) {
+        setRosterResult(`✓ Created: ${res.created} · Updated: ${res.updated}${res.skipped ? ` · Skipped: ${res.skipped}` : ''}`)
+        resetRoster()
+      } else { setRosterErrors([res.error ?? 'Upload failed']) }
+    } finally { setRosterUploading(false) }
+  }
+
+  async function downloadRosterTemplate() {
+    if (!token) return
+    const salesmen = await window.api.getRosterTemplate(token) as Array<{ rep_code?: string; full_name: string; nickname?: string; branch_code: string; supervisor_name?: string }>
+    const data = generateRosterTemplateXLSX(salesmen)
+    downloadXLSX('roster_template.xlsx', data)
+  }
 
   const branchName = branches.find(b => b.id === effectiveBranchId)?.name ?? ''
 
@@ -155,9 +201,10 @@ export default function DailyEntry() {
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-surface-container rounded-xl p-1 w-fit">
         {([
-          { key: 'manual',     label: 'Manual Entry',     icon: 'edit_document' },
-          { key: 'daily-csv',  label: 'Daily XLSX Upload',  icon: 'upload_file' },
-        ] as const).map(t => (
+          { key: 'manual',    label: 'Manual Entry',      icon: 'edit_document', adminOnly: false },
+          { key: 'daily-csv', label: 'Daily XLSX Upload', icon: 'upload_file',   adminOnly: false },
+          { key: 'roster',    label: 'Rep Roster',        icon: 'group_add',     adminOnly: true  },
+        ] as const).filter(t => !t.adminOnly || isAdmin).map(t => (
           <button key={t.key} onClick={() => { setActiveTab(t.key); resetUpload() }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-label-md text-label-md transition-all ${activeTab === t.key ? 'bg-white shadow-sm text-primary font-bold' : 'text-on-surface-variant hover:text-primary'}`}>
             <span className="material-symbols-outlined text-sm">{t.icon}</span>
@@ -196,7 +243,9 @@ export default function DailyEntry() {
                             </div>
                             <div>
                               <p className="font-medium text-body-sm">{e.salesman_name}</p>
-                              {e.nickname && <p className="text-[10px] text-on-surface-variant">{e.nickname}</p>}
+                              <p className="text-[10px] text-on-surface-variant font-mono">
+                                {(e as { rep_code?: string }).rep_code ?? e.nickname ?? ''}
+                              </p>
                             </div>
                           </div>
                         </td>
@@ -260,6 +309,30 @@ export default function DailyEntry() {
         />
       )}
 
+
+      {/* ── Tab: Rep Roster Upload (admin only) ── */}
+      {activeTab === 'roster' && isAdmin && (
+        <CSVUploadPanel
+          title="Monthly Rep Roster Upload"
+          description="Upload or update your rep list monthly. Matches by Rep Code — existing reps update, new codes create new reps. Branch Code must match: MM, VC, IT, VT."
+          templateNote="Columns: Rep_Code | Full_Name | Nickname | Branch_Code | Team_Sup_Name"
+          onDownloadTemplate={downloadRosterTemplate}
+          templateFilename="roster_template.xlsx"
+          onFilePick={handleRosterFilePick}
+          uploadFile={rosterFile}
+          uploading={rosterUploading}
+          preview={rosterPreview}
+          errors={rosterErrors}
+          result={rosterResult}
+          onSubmit={submitRoster}
+          onReset={resetRoster}
+          isDragging={rosterDragging}
+          setIsDragging={setRosterDragging}
+          fileRef={rosterFileRef}
+          submitLabel="Upload Roster"
+          accent="secondary"
+        />
+      )}
 
       {/* Sticky footer for manual entry */}
       {activeTab === 'manual' && (

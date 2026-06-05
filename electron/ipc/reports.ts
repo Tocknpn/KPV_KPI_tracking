@@ -137,7 +137,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const supParams = effectiveSupervisorId ? [effectiveSupervisorId] : []
 
     const rows = prepare(db, `
-      SELECT s.id, s.full_name, s.nickname, s.position, s.branch_id,
+      SELECT s.id, s.rep_code, s.full_name, s.nickname, s.position, s.branch_id,
         b.name AS branch_name,
         sv.full_name AS supervisor_name,
         COALESCE(SUM(de.jewelry_weight_g),0) AS actual_jewelry,
@@ -151,7 +151,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       WHERE s.active=1 ${sBranchSql} ${supSql}
       GROUP BY s.id ORDER BY s.branch_id, sv.full_name, s.full_name
     `).all(dateFrom, dateTo, ...sBranchParams, ...supParams) as Array<{
-      id: number; full_name: string; nickname: string; position: string
+      id: number; rep_code: string | null; full_name: string; nickname: string; position: string
       branch_id: number; branch_name: string; supervisor_name: string | null
       actual_jewelry: number; actual_bar: number; actual_qty: number
     }>

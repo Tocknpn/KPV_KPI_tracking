@@ -5,3 +5,5 @@ out/
 .env
 *.log
 resources/icon.ico
+credentials/
+*.json.key

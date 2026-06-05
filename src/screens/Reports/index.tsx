@@ -389,7 +389,7 @@ export default function Reports() {
                         </div>
                         <div>
                           <p className="font-label-md text-label-md font-bold">{r.full_name}</p>
-                          <p className="text-[10px] text-on-surface-variant">{r.position}</p>
+                          <p className="text-[10px] text-on-surface-variant font-mono">{r.rep_code ?? r.position}</p>
                         </div>
                       </div>
                     </td>

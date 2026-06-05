@@ -125,6 +125,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('upload:getCoverage', token, year, month),
   getSalesmenForTemplate: (token: string, branchId: number) =>
     ipcRenderer.invoke('upload:getSalesmenForTemplate', token, branchId),
+  uploadRoster: (token: string, rows: unknown[]) =>
+    ipcRenderer.invoke('upload:roster', token, rows),
+  getRosterTemplate: (token: string) =>
+    ipcRenderer.invoke('upload:getRosterTemplate', token),
 
   // ── Admin / Test Data ─────────────────────────────────────────────────
   seedTestData: (token: string) =>

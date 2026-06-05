@@ -50,6 +50,7 @@ export function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
 // ── Template generators ───────────────────────────────────────────────────
 interface SalesmanStub {
   id: number
+  rep_code?: string | null
   full_name: string
   branch_id: number
   branch_code: string
@@ -59,26 +60,25 @@ interface SalesmanStub {
 
 export function generateDailyTemplateXLSX(salesmen: SalesmanStub[], date: string): Uint8Array {
   const headers = [
-    'Date', 'Staff_ID', 'Full_Name', 'Branch_ID',
-    'Supervisor_ID', 'Supervisor_Name',          // info-only — not required for import
-    'KPI_1 (Jewelry Weight g)', 'KPI_2 (Bar Weight g)', 'KPI_3 (Quantity)',
+    'Date', 'Rep_Code', 'Full_Name', 'Branch_Code',
+    'Supervisor_Name',
+    'KPI_1 (Jewelry Baht)', 'KPI_2 (Bar Baht)', 'KPI_3 (Quantity)',
   ]
   const dataRows = salesmen.map(s => [
-    date, s.id, s.full_name, s.branch_id,
-    s.supervisor_id ?? '', s.supervisor_name ?? 'Unassigned',
+    date, s.rep_code ?? '', s.full_name, s.branch_code,
+    s.supervisor_name ?? 'Unassigned',
     0, 0, 0,
   ])
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows])
   ws['!cols'] = [
     { wch: 12 }, // Date
-    { wch: 10 }, // Staff_ID
+    { wch: 14 }, // Rep_Code
     { wch: 24 }, // Full_Name
-    { wch: 10 }, // Branch_ID
-    { wch: 14 }, // Supervisor_ID
+    { wch: 12 }, // Branch_Code
     { wch: 24 }, // Supervisor_Name
-    { wch: 22 }, // KPI_1
-    { wch: 18 }, // KPI_2
+    { wch: 20 }, // KPI_1
+    { wch: 16 }, // KPI_2
     { wch: 14 }, // KPI_3
   ]
 
@@ -89,32 +89,59 @@ export function generateDailyTemplateXLSX(salesmen: SalesmanStub[], date: string
 
 export function generateTargetTemplateXLSX(salesmen: SalesmanStub[], year: number, month: number): Uint8Array {
   const headers = [
-    'Staff_ID', 'Full_Name', 'Branch_ID',
-    'Supervisor_ID', 'Supervisor_Name',          // info-only — not required for import
-    'Year', 'Month', 'Jewelry_Target_g', 'Bar_Target_g', 'Quantity_Target',
+    'Rep_Code', 'Full_Name', 'Branch_Code',
+    'Supervisor_Name',
+    'Year', 'Month', 'Jewelry_Target (Baht)', 'Bar_Target (Baht)', 'Quantity_Target',
   ]
   const dataRows = salesmen.map(s => [
-    s.id, s.full_name, s.branch_id,
-    s.supervisor_id ?? '', s.supervisor_name ?? 'Unassigned',
+    s.rep_code ?? '', s.full_name, s.branch_code,
+    s.supervisor_name ?? 'Unassigned',
     year, month, 0, 0, 0,
   ])
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows])
   ws['!cols'] = [
-    { wch: 10 }, // Staff_ID
+    { wch: 14 }, // Rep_Code
     { wch: 24 }, // Full_Name
-    { wch: 10 }, // Branch_ID
-    { wch: 14 }, // Supervisor_ID
+    { wch: 12 }, // Branch_Code
     { wch: 24 }, // Supervisor_Name
     { wch: 8  }, // Year
     { wch: 8  }, // Month
-    { wch: 18 }, // Jewelry_Target_g
-    { wch: 14 }, // Bar_Target_g
+    { wch: 20 }, // Jewelry_Target
+    { wch: 16 }, // Bar_Target
     { wch: 16 }, // Quantity_Target
   ]
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Targets')
+  return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as Uint8Array
+}
+
+interface RosterStub {
+  rep_code?: string | null
+  full_name: string
+  nickname?: string | null
+  branch_code: string
+  supervisor_name?: string | null
+}
+
+export function generateRosterTemplateXLSX(salesmen: RosterStub[]): Uint8Array {
+  const headers = ['Rep_Code', 'Full_Name', 'Nickname', 'Branch_Code', 'Team_Sup_Name']
+  const dataRows = salesmen.length > 0
+    ? salesmen.map(s => [s.rep_code ?? '', s.full_name, s.nickname ?? '', s.branch_code, s.supervisor_name ?? ''])
+    : [['', '', '', '', '']] // blank row if no existing reps
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows])
+  ws['!cols'] = [
+    { wch: 14 }, // Rep_Code
+    { wch: 26 }, // Full_Name
+    { wch: 14 }, // Nickname
+    { wch: 12 }, // Branch_Code
+    { wch: 26 }, // Team_Sup_Name
+  ]
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Roster')
   return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as Uint8Array
 }
 

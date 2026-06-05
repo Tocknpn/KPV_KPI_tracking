@@ -19,6 +19,7 @@ export interface Branch {
 
 export interface Salesman {
   id: number
+  rep_code: string | null
   full_name: string
   nickname: string
   branch_id: number
@@ -108,6 +109,7 @@ export interface DashboardStats {
 
 export interface MonthlyReportRow {
   id: number
+  rep_code: string | null
   full_name: string
   nickname: string
   position: string

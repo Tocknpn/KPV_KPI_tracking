@@ -51,14 +51,20 @@ function splitCSVLine(line: string): string[] {
 // ── Column aliases (normalise various header spellings) ───────────────────
 const ALIASES: Record<string, string> = {
   date: 'date', entry_date: 'date',
-  staff_id: 'staff_id', id_staff: 'staff_id', salesman_id: 'staff_id', id: 'staff_id',
+  rep_code: 'rep_code', rep_id: 'rep_code', staff_id: 'rep_code', id_staff: 'rep_code', salesman_id: 'rep_code', id: 'rep_code',
   full_name: 'full_name', name: 'full_name', salesman_name: 'full_name',
-  branch_id: 'branch_id', branch: 'branch_id',
-  kpi_1: 'jewelry_weight_g', jewelry_weight_g: 'jewelry_weight_g', jewelry: 'jewelry_weight_g', 'jewelry_(g)': 'jewelry_weight_g', jewelry_weight: 'jewelry_weight_g',
-  kpi_2: 'bar_weight_g', bar_weight_g: 'bar_weight_g', bar: 'bar_weight_g', 'bar_(g)': 'bar_weight_g', bar_weight: 'bar_weight_g',
+  branch_code: 'branch_code', branch: 'branch_code', branch_id: 'branch_code',
+  nickname: 'nickname', nick: 'nickname',
+  team_sup_name: 'supervisor_name', supervisor_name: 'supervisor_name', team_supervisor: 'supervisor_name', sup_name: 'supervisor_name',
+  kpi_1: 'jewelry_weight_g', jewelry_weight_g: 'jewelry_weight_g', jewelry: 'jewelry_weight_g',
+  'jewelry_(baht)': 'jewelry_weight_g', 'jewelry_(g)': 'jewelry_weight_g', jewelry_weight: 'jewelry_weight_g',
+  kpi_2: 'bar_weight_g', bar_weight_g: 'bar_weight_g', bar: 'bar_weight_g',
+  'bar_(baht)': 'bar_weight_g', 'bar_(g)': 'bar_weight_g', bar_weight: 'bar_weight_g',
   kpi_3: 'quantity', quantity: 'quantity', qty: 'quantity', quantity_target: 'quantity',
   year: 'year', month: 'month',
-  jewelry_target_g: 'jewelry_weight_g', bar_target_g: 'bar_weight_g', 'jewelry_target_(g)': 'jewelry_weight_g', 'bar_target_(g)': 'bar_weight_g',
+  jewelry_target_g: 'jewelry_weight_g', bar_target_g: 'bar_weight_g',
+  'jewelry_target_(g)': 'jewelry_weight_g', 'bar_target_(g)': 'bar_weight_g',
+  'jewelry_target_(baht)': 'jewelry_weight_g', 'bar_target_(baht)': 'bar_weight_g',
 }
 
 export function normaliseRow(row: Record<string, string>): Record<string, string> {
@@ -70,9 +76,10 @@ export function normaliseRow(row: Record<string, string>): Record<string, string
   return out
 }
 
-// ── Validate & convert daily rows ─────────────────────────────────────────
-export interface DailyRowRaw { date: string; salesmanId: number; branchId: number; jewelryWeightG: number; barWeightG: number; quantity: number }
-export interface TargetRowRaw { salesmanId: number; branchId: number; year: number; month: number; jewelryWeightG: number; barWeightG: number; quantity: number }
+// ── Validate & convert daily rows (rep_code based) ────────────────────────
+export interface DailyRowRaw { date: string; repCode: string; jewelryWeightG: number; barWeightG: number; quantity: number }
+export interface TargetRowRaw { repCode: string; year: number; month: number; jewelryWeightG: number; barWeightG: number; quantity: number }
+export interface RosterRowRaw { repCode: string; fullName: string; nickname: string; branchCode: string; supervisorName: string }
 
 export function validateDailyRows(parsed: ParseResult): { rows: DailyRowRaw[]; errors: string[] } {
   const errors = [...parsed.errors]
@@ -85,19 +92,14 @@ export function validateDailyRows(parsed: ParseResult): { rows: DailyRowRaw[]; e
     if (!raw.date || !raw.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
       errors.push(`Row ${lineNum}: Invalid date "${raw.date}". Use YYYY-MM-DD format.`); continue
     }
-    const salesmanId = parseInt(raw.staff_id)
-    if (isNaN(salesmanId) || salesmanId <= 0) {
-      errors.push(`Row ${lineNum}: Invalid Staff ID "${raw.staff_id}".`); continue
-    }
-    const branchId = parseInt(raw.branch_id)
-    if (isNaN(branchId) || branchId <= 0) {
-      errors.push(`Row ${lineNum}: Invalid Branch ID "${raw.branch_id}".`); continue
+    const repCode = (raw.rep_code ?? '').trim()
+    if (!repCode) {
+      errors.push(`Row ${lineNum}: Missing Rep Code.`); continue
     }
 
     rows.push({
       date: raw.date,
-      salesmanId,
-      branchId,
+      repCode,
       jewelryWeightG: parseFloat(raw.jewelry_weight_g) || 0,
       barWeightG:     parseFloat(raw.bar_weight_g)     || 0,
       quantity:       parseInt(raw.quantity)            || 0,
@@ -115,13 +117,9 @@ export function validateTargetRows(parsed: ParseResult): { rows: TargetRowRaw[];
     const raw = normaliseRow(parsed.rows[i])
     const lineNum = i + 2
 
-    const salesmanId = parseInt(raw.staff_id)
-    if (isNaN(salesmanId) || salesmanId <= 0) {
-      errors.push(`Row ${lineNum}: Invalid Staff ID "${raw.staff_id}".`); continue
-    }
-    const branchId = parseInt(raw.branch_id)
-    if (isNaN(branchId) || branchId <= 0) {
-      errors.push(`Row ${lineNum}: Invalid Branch ID "${raw.branch_id}".`); continue
+    const repCode = (raw.rep_code ?? '').trim()
+    if (!repCode) {
+      errors.push(`Row ${lineNum}: Missing Rep Code.`); continue
     }
     const year  = parseInt(raw.year)
     const month = parseInt(raw.month)
@@ -130,10 +128,36 @@ export function validateTargetRows(parsed: ParseResult): { rows: TargetRowRaw[];
     }
 
     rows.push({
-      salesmanId, branchId, year, month,
+      repCode, year, month,
       jewelryWeightG: parseFloat(raw.jewelry_weight_g) || 0,
       barWeightG:     parseFloat(raw.bar_weight_g)     || 0,
       quantity:       parseInt(raw.quantity)            || 0,
+    })
+  }
+
+  return { rows, errors }
+}
+
+export function validateRosterRows(parsed: ParseResult): { rows: RosterRowRaw[]; errors: string[] } {
+  const errors = [...parsed.errors]
+  const rows: RosterRowRaw[] = []
+
+  for (let i = 0; i < parsed.rows.length; i++) {
+    const raw = normaliseRow(parsed.rows[i])
+    const lineNum = i + 2
+
+    const repCode = (raw.rep_code ?? '').trim()
+    if (!repCode) { errors.push(`Row ${lineNum}: Missing Rep Code.`); continue }
+    const fullName = (raw.full_name ?? '').trim()
+    if (!fullName) { errors.push(`Row ${lineNum}: Missing Full Name.`); continue }
+    const branchCode = (raw.branch_code ?? '').trim().toUpperCase()
+    if (!branchCode) { errors.push(`Row ${lineNum}: Missing Branch Code.`); continue }
+
+    rows.push({
+      repCode, fullName,
+      nickname:       (raw.nickname ?? '').trim(),
+      branchCode,
+      supervisorName: (raw.supervisor_name ?? '').trim(),
     })
   }
 
