@@ -23,6 +23,8 @@ export default function Settings() {
   const [isSaving, setIsSaving] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [isTestingConn, setIsTestingConn] = useState(false)
+  const [connStatus, setConnStatus] = useState<{ ok: boolean; msg: string } | null>(null)
   const [toast, setToast] = useState('')
 
   function showToast(msg: string) {
@@ -57,6 +59,24 @@ export default function Settings() {
     else showToast(`Sync failed: ${res.error}`)
     window.api.getSyncLogs(token).then(setSyncLogs)
     setIsSyncing(false)
+  }
+
+  async function testConnection() {
+    if (!token) return
+    setIsTestingConn(true); setConnStatus(null)
+    const res = await window.api.testSheetsConnection(token)
+    if (res.success) {
+      setConnStatus({ ok: true, msg: `✓ Connected — "${res.title}" · Tabs: ${(res.sheetNames ?? []).join(', ')}` })
+    } else {
+      setConnStatus({ ok: false, msg: res.error ?? 'Connection failed' })
+    }
+    setIsTestingConn(false)
+  }
+
+  async function browseJson() {
+    if (!token) return
+    const path = await window.api.browseSheetsFile(token)
+    if (path) setSaPath(path)
   }
 
   async function pullFromCloud() {
@@ -386,20 +406,43 @@ export default function Settings() {
               </div>
               <div>
                 <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Service Account JSON Path</label>
-                <input
-                  type="text"
-                  value={saPath}
-                  onChange={e => setSaPath(e.target.value)}
-                  placeholder="C:\credentials\service-account.json"
-                  className="w-full bg-surface-container-low border-b-2 border-tertiary border-t-0 border-l-0 border-r-0 px-3 py-2 text-sm outline-none"
-                />
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    value={saPath}
+                    onChange={e => setSaPath(e.target.value)}
+                    placeholder="C:\credentials\service-account.json"
+                    className="flex-1 bg-surface-container-low border-b-2 border-tertiary border-t-0 border-l-0 border-r-0 px-3 py-2 text-sm outline-none"
+                  />
+                  <button
+                    onClick={browseJson}
+                    title="Browse for JSON file"
+                    className="px-3 py-2 bg-surface-container rounded border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container-high transition-colors flex items-center gap-1 text-sm"
+                  >
+                    <span className="material-symbols-outlined text-sm">folder_open</span>
+                    Browse
+                  </button>
+                </div>
               </div>
+
+              {/* Connection status */}
+              {connStatus && (
+                <div className={`rounded-lg px-4 py-3 text-sm flex items-start gap-2 ${connStatus.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+                  <span className="material-symbols-outlined text-base flex-shrink-0 mt-0.5">
+                    {connStatus.ok ? 'check_circle' : 'error'}
+                  </span>
+                  <p className="break-all">{connStatus.msg}</p>
+                </div>
+              )}
+
               {lastSync && (
                 <div className="bg-surface-container rounded-lg p-3 text-body-sm">
                   <p className="text-on-surface-variant text-xs mb-1">Last successful sync</p>
                   <p className="font-tabular-nums text-on-surface">{new Date(lastSync).toLocaleString()}</p>
                 </div>
               )}
+
+              {/* Action buttons */}
               <div className="flex gap-2 flex-wrap">
                 <button
                   onClick={saveSheets}
@@ -409,12 +452,24 @@ export default function Settings() {
                   Save Config
                 </button>
                 <button
+                  onClick={testConnection}
+                  disabled={isTestingConn}
+                  className="flex-1 py-2 bg-surface-container-high text-on-surface border border-outline-variant/30 rounded font-label-md text-label-md flex items-center justify-center gap-1 hover:bg-surface-variant/30 disabled:opacity-60 transition-colors"
+                >
+                  <span className={`material-symbols-outlined text-sm ${isTestingConn ? 'animate-spin-slow' : ''}`}>
+                    {isTestingConn ? 'sync' : 'wifi_tethering'}
+                  </span>
+                  {isTestingConn ? 'Testing...' : 'Test Connection'}
+                </button>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
                   onClick={forceSync}
                   disabled={isSyncing}
                   className="flex-1 py-2 bg-tertiary text-white rounded font-label-md text-label-md flex items-center justify-center gap-1 hover:opacity-90 disabled:opacity-60 transition-opacity"
                 >
                   <span className={`material-symbols-outlined text-sm ${isSyncing ? 'animate-spin-slow' : ''}`}>cloud_upload</span>
-                  {isSyncing ? 'Working...' : 'Push to Sheets'}
+                  {isSyncing ? 'Pushing...' : 'Push to Sheets'}
                 </button>
                 <button
                   onClick={pullFromCloud}
@@ -422,12 +477,12 @@ export default function Settings() {
                   className="flex-1 py-2 bg-primary text-white rounded font-label-md text-label-md flex items-center justify-center gap-1 hover:opacity-90 disabled:opacity-60 transition-opacity"
                 >
                   <span className={`material-symbols-outlined text-sm ${isSyncing ? 'animate-spin-slow' : ''}`}>cloud_download</span>
-                  {isSyncing ? 'Working...' : 'Pull Entries'}
+                  {isSyncing ? 'Pulling...' : 'Pull from Sheets'}
                 </button>
               </div>
               <p className="text-[10px] text-on-surface-variant/60 italic">
-                Push → sends unsynced entries to Sheets &nbsp;·&nbsp;
-                Pull → imports all Sheets entries into local DB (for admin PC aggregation)
+                Push → sends unsynced entries · auto-creates header row on first push &nbsp;·&nbsp;
+                Pull → imports all Sheets entries into local DB
               </p>
             </div>
           </GlassCard>

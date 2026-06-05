@@ -1,9 +1,11 @@
-import { IpcMain } from 'electron'
+import { IpcMain, dialog } from 'electron'
 import { google } from 'googleapis'
 import { readFileSync, existsSync } from 'fs'
 import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
 import { requireAuth } from './auth'
+
+const SHEET_HEADERS = ['Date', 'Branch', 'Salesman ID', 'Salesman Name', 'Jewelry (Baht)', 'Bar (Baht)', 'Qty']
 
 function getServiceAuth(serviceAccountPath: string) {
   if (!existsSync(serviceAccountPath)) throw new Error(`Service account file not found: ${serviceAccountPath}`)
@@ -35,6 +37,37 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
     return prepare(getDb(), `SELECT * FROM sync_logs ORDER BY synced_at DESC LIMIT 20`).all()
   })
 
+  ipcMain.handle('sheets:testConnection', async (_e, token: string) => {
+    requireAuth(token)
+    const sheetsId = getSetting('sheets_id')
+    const saPath   = getSetting('service_account_path')
+    if (!sheetsId)  return { success: false, error: 'No Spreadsheet ID configured.' }
+    if (!saPath)    return { success: false, error: 'No Service Account JSON path configured.' }
+    if (!existsSync(saPath)) return { success: false, error: `File not found: ${saPath}` }
+    try {
+      const auth   = getServiceAuth(saPath)
+      const sheets = google.sheets({ version: 'v4', auth })
+      const res    = await sheets.spreadsheets.get({ spreadsheetId: sheetsId, fields: 'properties.title,sheets.properties.title' })
+      const title      = res.data.properties?.title ?? 'Unknown'
+      const sheetNames = (res.data.sheets ?? []).map(s => s.properties?.title ?? '')
+      return { success: true, title, sheetNames }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { success: false, error: msg }
+    }
+  })
+
+  ipcMain.handle('sheets:browseFile', async (_e, token: string) => {
+    requireAuth(token)
+    const result = await dialog.showOpenDialog({
+      title: 'Select Service Account JSON',
+      filters: [{ name: 'JSON Files', extensions: ['json'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    return result.filePaths[0]
+  })
+
   ipcMain.handle('sheets:syncToCloud', async (_e, token: string) => {
     requireAuth(token)
     const sheetsId = getSetting('sheets_id')
@@ -53,6 +86,21 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       `).all() as Array<{ id: number; salesman_id: number; full_name: string; branch_code: string; entry_date: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number }>
 
       if (unsynced.length === 0) return { success: true, count: 0, message: 'Nothing to sync.' }
+
+      // Auto-create "Entries" tab with header if cell A1 is empty
+      const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A1' }).catch(() => null)
+      const hasHeader = headerCheck?.data?.values?.[0]?.[0]
+      if (!hasHeader) {
+        // Try to create the sheet tab if it doesn't exist
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: sheetsId,
+          requestBody: { requests: [{ addSheet: { properties: { title: 'Entries' } } }] },
+        }).catch(() => { /* tab may already exist */ })
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: sheetsId, range: 'Entries!A1', valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [SHEET_HEADERS] },
+        })
+      }
 
       await sheets.spreadsheets.values.append({
         spreadsheetId: sheetsId, range: 'Entries!A:G', valueInputOption: 'USER_ENTERED',

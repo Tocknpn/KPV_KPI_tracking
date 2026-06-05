@@ -109,6 +109,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('sheets:getConfig', token),
   saveSheetsConfig: (token: string, config: unknown) =>
     ipcRenderer.invoke('sheets:saveConfig', token, config),
+  testSheetsConnection: (token: string) =>
+    ipcRenderer.invoke('sheets:testConnection', token),
+  browseSheetsFile: (token: string) =>
+    ipcRenderer.invoke('sheets:browseFile', token),
 
   // ── Upload ────────────────────────────────────────────────────────────
   uploadDaily: (token: string, rows: unknown[], meta: unknown) =>
