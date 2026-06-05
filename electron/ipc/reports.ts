@@ -37,7 +37,12 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     dateFrom: string, dateTo: string,
   ) => {
     const user = requireAuth(token)
-    const effectiveBranchIds: number[] = user.role === 'supervisor' ? [user.branch_id ?? 1] : branchIds
+    let effectiveBranchIds: number[]
+    if (user.role === 'supervisor' || user.role === 'branch_manager') {
+      effectiveBranchIds = [user.branch_id ?? 1]
+    } else {
+      effectiveBranchIds = branchIds
+    }
     const db = getDb()
 
     const daysInMonth = new Date(year, month, 0).getDate()
@@ -103,13 +108,24 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     }
   })
 
-  // branchIds=[]=all
+  // branchIds=[]=all, supervisorId=null=all (for branch_manager/executive filter)
   ipcMain.handle('report:monthly', async (_e,
     token: string, branchIds: number[], year: number, month: number,
-    dateFrom: string, dateTo: string,
+    dateFrom: string, dateTo: string, supervisorId?: number,
   ) => {
     const user = requireAuth(token)
-    const effectiveBranchIds: number[] = user.role === 'supervisor' ? [user.branch_id ?? branchIds[0]] : branchIds
+    let effectiveBranchIds: number[]
+    let effectiveSupervisorId: number | null = supervisorId ?? null
+
+    if (user.role === 'supervisor') {
+      effectiveBranchIds = [user.branch_id ?? branchIds[0] ?? 1]
+      effectiveSupervisorId = user.supervisor_id
+    } else if (user.role === 'branch_manager') {
+      effectiveBranchIds = user.branch_id ? [user.branch_id] : branchIds
+    } else {
+      effectiveBranchIds = branchIds
+    }
+
     const db = getDb()
     const daysInMonth  = new Date(year, month, 0).getDate()
     const dayOfMonth   = new Date(dateTo + 'T00:00:00').getDate()
@@ -117,22 +133,26 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
 
     const branchTargetMap = new Map<number, number>()
     const { sql: sBranchSql, params: sBranchParams } = buildSalesmenBranchFilter(effectiveBranchIds)
+    const supSql    = effectiveSupervisorId ? `AND s.supervisor_id = ?` : ''
+    const supParams = effectiveSupervisorId ? [effectiveSupervisorId] : []
 
     const rows = prepare(db, `
       SELECT s.id, s.full_name, s.nickname, s.position, s.branch_id,
         b.name AS branch_name,
+        sv.full_name AS supervisor_name,
         COALESCE(SUM(de.jewelry_weight_g),0) AS actual_jewelry,
         COALESCE(SUM(de.bar_weight_g),0)     AS actual_bar,
         COALESCE(SUM(de.quantity),0)         AS actual_qty
       FROM salesmen s
       LEFT JOIN branches b ON b.id = s.branch_id
+      LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
       LEFT JOIN daily_entries de ON de.salesman_id=s.id
         AND de.entry_date >= ? AND de.entry_date <= ?
-      WHERE s.active=1 ${sBranchSql}
-      GROUP BY s.id ORDER BY s.branch_id, s.full_name
-    `).all(dateFrom, dateTo, ...sBranchParams) as Array<{
+      WHERE s.active=1 ${sBranchSql} ${supSql}
+      GROUP BY s.id ORDER BY s.branch_id, sv.full_name, s.full_name
+    `).all(dateFrom, dateTo, ...sBranchParams, ...supParams) as Array<{
       id: number; full_name: string; nickname: string; position: string
-      branch_id: number; branch_name: string
+      branch_id: number; branch_name: string; supervisor_name: string | null
       actual_jewelry: number; actual_bar: number; actual_qty: number
     }>
 
@@ -148,6 +168,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       const eomKpiPct = dayOfMonth > 0 ? (kpiPct / dayOfMonth) * daysInMonth : 0
       return {
         ...r,
+        supervisor_name: r.supervisor_name ?? null,
         kpiPointTarget: branchTarget,
         kpiScore: { jewelry: js, bar: bs, qty: qs, total: totalRaw, pct: kpiPct },
         eomKpiPct,
@@ -203,18 +224,23 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     token: string, branchIds: number[], year: number, month: number,
     dateFrom: string, dateTo: string,
   ) => {
-    requireAuth(token)
+    const user = requireAuth(token)
     const db = getDb()
+
+    // branch_manager: always scope to their branch
+    const effectiveBranchIds = user.role === 'branch_manager' && user.branch_id
+      ? [user.branch_id]
+      : branchIds
 
     const pctRow = prepare(db, `SELECT value FROM app_settings WHERE key='sup_kpi_pct'`).get() as { value: string } | undefined
     const supKpiPct = parseFloat(pctRow?.value ?? '30')
 
-    const { sql: bSql, params: bParams } = buildSalesmenBranchFilter(branchIds)
+    const { sql: bSql, params: bParams } = buildSalesmenBranchFilter(effectiveBranchIds)
     const supervisors = prepare(db, `
       SELECT sv.id, sv.full_name, sv.nickname, sv.branch_id, b.name AS branch_name
       FROM supervisors sv
       JOIN branches b ON b.id = sv.branch_id
-      WHERE sv.active = 1 ${branchIds.length > 0 ? `AND sv.branch_id IN (${branchIds.map(() => '?').join(',')})` : ''}
+      WHERE sv.active = 1 ${effectiveBranchIds.length > 0 ? `AND sv.branch_id IN (${effectiveBranchIds.map(() => '?').join(',')})` : ''}
       ORDER BY sv.branch_id, sv.full_name
     `).all(...bParams) as Array<{ id: number; full_name: string; nickname: string; branch_id: number; branch_name: string }>
 

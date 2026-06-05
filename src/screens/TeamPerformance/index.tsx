@@ -189,7 +189,11 @@ export default function TeamPerformance() {
     if (!token) return
     setLoading(true)
     try {
-      const data = await window.api.getTeamPerformance(token, [], year, month, dateFrom, dateTo)
+      // branch_manager: auto-scope to their branch; others pass selected filters
+      const branchFilter = user?.role === 'branch_manager' && user.branchId
+        ? [user.branchId]
+        : []
+      const data = await window.api.getTeamPerformance(token, branchFilter, year, month, dateFrom, dateTo)
       setRows(data as TeamPerformanceRow[])
     } finally {
       setLoading(false)
@@ -243,7 +247,7 @@ export default function TeamPerformance() {
   const avgSupKpi      = rows.length ? rows.reduce((s, r) => s + r.sup_kpi_pct_ach, 0) / rows.length : 0
 
   return (
-    <AppShell title="SalesTrack Pro" allowedRoles={['admin', 'executive']}>
+    <AppShell title="SalesTrack Pro" allowedRoles={['admin', 'branch_manager', 'executive']}>
       {toast && (
         <div className="fixed top-20 right-6 z-50 bg-inverse-surface text-inverse-on-surface px-5 py-3 rounded-xl shadow-lg animate-slide-in text-body-sm">
           {toast}
@@ -260,6 +264,9 @@ export default function TeamPerformance() {
           </nav>
           <h2 className="font-headline-lg text-headline-lg text-on-surface">Supervisor Team KPI</h2>
           <p className="text-on-surface-variant text-body-md mt-0.5">
+            {user?.role === 'branch_manager'
+              ? `${branches.find(b => b.id === user.branchId)?.name ?? 'My Branch'} — `
+              : ''}
             Supervisor score = {rows[0]?.sup_kpi_pct ?? 30}% of team KPI total
           </p>
         </div>
@@ -374,15 +381,17 @@ export default function TeamPerformance() {
             <div className="p-5 border-b border-white/20 flex items-center justify-between">
               <div>
                 <h4 className="font-headline-md text-on-surface">Supervisor Roster</h4>
-                <p className="text-body-sm text-on-surface-variant mt-0.5">{supervisors.length} supervisor(s) across all branches</p>
+                <p className="text-body-sm text-on-surface-variant mt-0.5">{supervisors.length} supervisor(s) {user?.role === 'branch_manager' ? 'in your branch' : 'across all branches'}</p>
               </div>
-              <button
-                onClick={() => { setEditSup(null); setSupModal('create') }}
-                className="bg-primary text-white px-4 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 shadow-primary"
-              >
-                <span className="material-symbols-outlined text-sm">add</span>
-                New Supervisor
-              </button>
+              {user?.role !== 'branch_manager' && (
+                <button
+                  onClick={() => { setEditSup(null); setSupModal('create') }}
+                  className="bg-primary text-white px-4 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 shadow-primary"
+                >
+                  <span className="material-symbols-outlined text-sm">add</span>
+                  New Supervisor
+                </button>
+              )}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -419,18 +428,22 @@ export default function TeamPerformance() {
                       </td>
                       <td className="px-5 py-3">
                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => openAssign(sup)}
-                            className="flex items-center gap-1 px-2.5 py-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors text-body-sm font-label-md">
-                            <span className="material-symbols-outlined text-sm">group</span> Assign Reps
-                          </button>
-                          <button onClick={() => { setEditSup(sup); setSupModal('edit') }}
-                            className="p-1.5 text-on-surface-variant hover:bg-surface-variant/30 rounded-lg transition-colors">
-                            <span className="material-symbols-outlined text-sm">edit</span>
-                          </button>
-                          <button onClick={() => handleDeleteSup(sup)}
-                            className="p-1.5 text-error hover:bg-error-container/30 rounded-lg transition-colors">
-                            <span className="material-symbols-outlined text-sm">delete</span>
-                          </button>
+                          {user?.role !== 'branch_manager' && (
+                            <>
+                              <button onClick={() => openAssign(sup)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors text-body-sm font-label-md">
+                                <span className="material-symbols-outlined text-sm">group</span> Assign Reps
+                              </button>
+                              <button onClick={() => { setEditSup(sup); setSupModal('edit') }}
+                                className="p-1.5 text-on-surface-variant hover:bg-surface-variant/30 rounded-lg transition-colors">
+                                <span className="material-symbols-outlined text-sm">edit</span>
+                              </button>
+                              <button onClick={() => handleDeleteSup(sup)}
+                                className="p-1.5 text-error hover:bg-error-container/30 rounded-lg transition-colors">
+                                <span className="material-symbols-outlined text-sm">delete</span>
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

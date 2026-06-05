@@ -8,14 +8,14 @@ function generateToken(): string {
   return randomBytes(32).toString('hex')
 }
 
-function validateToken(token: string): { id: number; role: string; branch_id: number | null } | null {
+function validateToken(token: string): { id: number; role: string; branch_id: number | null; supervisor_id: number | null } | null {
   const db = getDb()
   const session = prepare(db, `
-    SELECT u.id, u.role, u.branch_id
+    SELECT u.id, u.role, u.branch_id, u.supervisor_id
     FROM sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.token = ? AND s.expires_at > datetime('now') AND u.active = 1
-  `).get(token) as { id: number; role: string; branch_id: number | null } | undefined
+  `).get(token) as { id: number; role: string; branch_id: number | null; supervisor_id: number | null } | undefined
   return session ?? null
 }
 
@@ -35,7 +35,7 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('auth:login', async (_e, username: string, password: string) => {
     const db = getDb()
     const user = prepare(db, `SELECT * FROM users WHERE username = ? AND active = 1`).get(username) as {
-      id: number; username: string; password_hash: string; full_name: string; role: string; branch_id: number | null
+      id: number; username: string; password_hash: string; full_name: string; role: string; branch_id: number | null; supervisor_id: number | null
     } | undefined
 
     if (!user) return { success: false, error: 'Invalid username or password' }
@@ -51,7 +51,7 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
 
     return {
       success: true, token,
-      user: { id: user.id, username: user.username, fullName: user.full_name, role: user.role, branchId: user.branch_id },
+      user: { id: user.id, username: user.username, fullName: user.full_name, role: user.role, branchId: user.branch_id, supervisorId: user.supervisor_id },
     }
   })
 

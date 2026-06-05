@@ -27,6 +27,68 @@ function kpiBg(pct: number) {
 
 type SortCol = 'full_name' | 'actual_jewelry' | 'actual_bar' | 'actual_qty' | 'kpiPct' | 'eomKpiPct'
 
+// ── Team Supervisor single-select dropdown ────────────────────────────────
+interface SupervisorDropdownProps {
+  supervisors: Array<{ id: number; full_name: string; branch_name: string }>
+  selectedId: number | null
+  onChange: (id: number | null) => void
+}
+
+function SupervisorDropdown({ supervisors, selectedId, onChange }: SupervisorDropdownProps) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onOut(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onOut)
+    return () => document.removeEventListener('mousedown', onOut)
+  }, [])
+
+  const label = selectedId == null
+    ? 'All Supervisors'
+    : supervisors.find(s => s.id === selectedId)?.full_name ?? 'Supervisor'
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-container text-on-surface text-body-sm hover:bg-surface-container-high transition-colors border border-white/20"
+      >
+        <span className="material-symbols-outlined text-sm text-secondary">supervisor_account</span>
+        {label}
+        <span className="material-symbols-outlined text-sm">{open ? 'expand_less' : 'expand_more'}</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-2 bg-white/95 backdrop-blur-xl shadow-xl rounded-xl border border-white/40 z-50 min-w-56 py-1 max-h-72 overflow-y-auto">
+          <label
+            className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer"
+            onClick={() => { onChange(null); setOpen(false) }}
+          >
+            <input type="radio" checked={selectedId == null} readOnly className="accent-primary" />
+            <span className="text-body-sm">All Supervisors</span>
+          </label>
+          <div className="border-t border-black/5 my-1" />
+          {supervisors.map(s => (
+            <label
+              key={s.id}
+              className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer"
+              onClick={() => { onChange(s.id); setOpen(false) }}
+            >
+              <input type="radio" checked={selectedId === s.id} readOnly className="accent-primary" />
+              <div>
+                <span className="text-body-sm">{s.full_name}</span>
+                <span className="ml-2 text-[10px] text-on-surface-variant">{s.branch_name}</span>
+              </div>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Multi-select branch dropdown ──────────────────────────────────────────
 interface BranchDropdownProps {
   branches: Array<{ id: number; name: string; code: string }>
@@ -119,6 +181,10 @@ export default function Reports() {
   const [search, setSearch] = useState('')
   const [sortCol, setSortCol] = useState<SortCol>('kpiPct')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [selectedSupId, setSelectedSupId] = useState<number | null>(null)
+  const [supervisors, setSupervisors] = useState<Array<{ id: number; full_name: string; branch_name: string }>>([])
+
+  const showSupFilter = user?.role === 'branch_manager' || user?.role === 'executive' || user?.role === 'admin'
 
   // ── Local date state ──────────────────────────────────────────────────
   const now = new Date()
@@ -136,14 +202,26 @@ export default function Reports() {
 
   const maxDate = getDefaultDateRange(year, month).dateTo
 
-  const effectiveBranchIds: number[] = user?.role === 'supervisor'
+  const effectiveBranchIds: number[] = (user?.role === 'supervisor' || user?.role === 'branch_manager')
     ? [user.branchId ?? 1]
     : selectedBranchIds
+
+  // Load supervisors list for filter dropdown
+  useEffect(() => {
+    if (!token || !showSupFilter) return
+    const branchId = user?.role === 'branch_manager' ? (user.branchId ?? undefined) : undefined
+    window.api.getSupervisors(token, branchId)
+      .then(data => setSupervisors(data as Array<{ id: number; full_name: string; branch_name: string }>))
+      .catch(console.error)
+  }, [token, user?.role, user?.branchId])
+
+  // Reset sup filter when branch changes
+  useEffect(() => { setSelectedSupId(null) }, [JSON.stringify(effectiveBranchIds)])
 
   useEffect(() => {
     if (!token) return
     setLoading(true)
-    window.api.getMonthlyReport(token, effectiveBranchIds, year, month, dateFrom, dateTo)
+    window.api.getMonthlyReport(token, effectiveBranchIds, year, month, dateFrom, dateTo, selectedSupId ?? undefined)
       .then(data => {
         setRows(data.rows)
         setMeta({
@@ -154,7 +232,7 @@ export default function Reports() {
       })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [token, JSON.stringify(effectiveBranchIds), year, month, dateFrom, dateTo])
+  }, [token, JSON.stringify(effectiveBranchIds), year, month, dateFrom, dateTo, selectedSupId])
 
   function handleSort(col: SortCol) {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -180,17 +258,28 @@ export default function Reports() {
   })
 
   const isMultiBranch = effectiveBranchIds.length !== 1
+  const showSupColumn = showSupFilter && selectedSupId == null
 
   const avgKpiPct    = rows.length ? rows.reduce((s, r) => s + r.kpiScore.pct, 0) / rows.length : 0
   const avgEomKpiPct = rows.length ? rows.reduce((s, r) => s + r.eomKpiPct, 0) / rows.length : 0
   const totalJewelry = rows.reduce((s, r) => s + r.actual_jewelry, 0)
   const totalBar     = rows.reduce((s, r) => s + r.actual_bar, 0)
 
-  const scopeLabel = user?.role === 'supervisor'
+  const scopeLabel = (user?.role === 'supervisor' || user?.role === 'branch_manager')
     ? branches.find(b => b.id === user.branchId)?.name ?? 'My Branch'
     : effectiveBranchIds.length === 0 ? 'All Branches'
     : effectiveBranchIds.length === 1 ? (branches.find(b => b.id === effectiveBranchIds[0])?.name ?? '1 Branch')
     : `${effectiveBranchIds.length} Branches`
+
+  // Supervisors visible in filter (scoped by branch for branch_manager)
+  const visibleSupervisors = user?.role === 'branch_manager'
+    ? supervisors
+    : selectedBranchIds.length > 0
+      ? supervisors.filter(s => {
+          const branch = branches.find(b => b.name === s.branch_name)
+          return branch ? selectedBranchIds.includes(branch.id) : true
+        })
+      : supervisors
 
   return (
     <AppShell title="SalesTrack Pro">
@@ -215,8 +304,11 @@ export default function Reports() {
             onDateFromChange={setDateFrom}
             onDateToChange={setDateTo}
           />
-          {user?.role !== 'supervisor' && (
+          {user?.role !== 'supervisor' && user?.role !== 'branch_manager' && (
             <BranchDropdown branches={branches} selectedIds={selectedBranchIds} onChange={setSelectedBranchIds} />
+          )}
+          {showSupFilter && visibleSupervisors.length > 0 && (
+            <SupervisorDropdown supervisors={visibleSupervisors} selectedId={selectedSupId} onChange={setSelectedSupId} />
           )}
         </div>
       </div>
@@ -263,6 +355,9 @@ export default function Reports() {
                 {isMultiBranch && (
                   <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Branch</th>
                 )}
+                {showSupColumn && (
+                  <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Team Sup</th>
+                )}
                 <SortTh label="Jewelry (g)"    col="actual_jewelry" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <SortTh label="Bar (g)"        col="actual_bar"     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <SortTh label="Qty (pcs)"      col="actual_qty"     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
@@ -272,7 +367,7 @@ export default function Reports() {
             </thead>
             <tbody className="divide-y divide-white/20">
               {loading ? (
-                <tr><td colSpan={isMultiBranch ? 7 : 6} className="py-12 text-center text-on-surface-variant">
+                <tr><td colSpan={6 + (isMultiBranch ? 1 : 0) + (showSupColumn ? 1 : 0)} className="py-12 text-center text-on-surface-variant">
                   <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>
                   Loading report...
                 </td></tr>
@@ -294,6 +389,9 @@ export default function Reports() {
                     </td>
                     {isMultiBranch && (
                       <td className="px-5 py-3 text-body-sm text-on-surface-variant whitespace-nowrap">{r.branch_name}</td>
+                    )}
+                    {showSupColumn && (
+                      <td className="px-5 py-3 text-body-sm text-on-surface-variant whitespace-nowrap">{r.supervisor_name ?? '—'}</td>
                     )}
                     <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{fmt(r.actual_jewelry)}g</td>
                     <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{fmt(r.actual_bar)}g</td>
@@ -318,7 +416,7 @@ export default function Reports() {
                 )
               })}
               {!loading && !sorted.length && (
-                <tr><td colSpan={isMultiBranch ? 7 : 6} className="py-8 text-center text-on-surface-variant text-body-sm">No results found.</td></tr>
+                <tr><td colSpan={6 + (isMultiBranch ? 1 : 0) + (showSupColumn ? 1 : 0)} className="py-8 text-center text-on-surface-variant text-body-sm">No results found.</td></tr>
               )}
             </tbody>
           </table>

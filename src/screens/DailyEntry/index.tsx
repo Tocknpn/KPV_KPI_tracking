@@ -32,9 +32,11 @@ export default function DailyEntry() {
   const [isDragging, setIsDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const effectiveBranchId = user?.role === 'supervisor'
+  const effectiveBranchId = (user?.role === 'supervisor' || user?.role === 'branch_manager')
     ? (user.branchId ?? 1)
     : (selectedBranchId ?? branches[0]?.id ?? 1)
+
+  const showSupColumn = user?.role !== 'supervisor'
 
   const branchName = branches.find(b => b.id === effectiveBranchId)?.name ?? ''
 
@@ -172,14 +174,14 @@ export default function DailyEntry() {
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="bg-surface-container-highest/50 border-b border-black/5">
-                    {['Salesman','Position','Jewelry (g)','Bar (g)','Qty','Status'].map(h => (
+                    {(['Salesman', ...(showSupColumn ? ['Team Sup'] : []), 'Position','Jewelry (g)','Bar (g)','Qty','Status'] as string[]).map(h => (
                       <th key={h} className="px-5 py-4 text-left font-label-md text-label-md text-on-surface-variant uppercase whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/5">
                   {loadingEntries ? (
-                    <tr><td colSpan={6} className="py-10 text-center text-on-surface-variant">
+                    <tr><td colSpan={6 + (showSupColumn ? 1 : 0)} className="py-10 text-center text-on-surface-variant">
                       <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>Loading...
                     </td></tr>
                   ) : entries.map(e => {
@@ -198,6 +200,9 @@ export default function DailyEntry() {
                             </div>
                           </div>
                         </td>
+                        {showSupColumn && (
+                          <td className="px-5 py-compact-row text-body-sm text-on-surface-variant whitespace-nowrap">{e.supervisor_name ?? '—'}</td>
+                        )}
                         <td className="px-5 py-compact-row text-body-sm text-on-surface-variant">{e.position}</td>
                         <EditCell value={e.jewelry_weight_g} onBlur={v => handleCellChange(e.salesman_id, effectiveBranchId, 'jewelry_weight_g', v)} />
                         <EditCell value={e.bar_weight_g} onBlur={v => handleCellChange(e.salesman_id, effectiveBranchId, 'bar_weight_g', v)} />

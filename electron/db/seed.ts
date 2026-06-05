@@ -13,12 +13,13 @@ export function seedDatabase(db: Database): void {
     // ── Users ─────────────────────────────────────────────────────────────
     const adminHash = bcrypt.hashSync('admin1234', 10)
     const supHash   = bcrypt.hashSync('sup1234',   10)
+    const bmHash    = bcrypt.hashSync('bm1234',    10)
     const ceoHash   = bcrypt.hashSync('ceo1234',   10)
 
     prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
       .run('admin', adminHash, 'System Administrator', 'admin', null)
 
-    // One supervisor per branch
+    // One supervisor user per branch (supervisor_id linked in seedTestData)
     const supers = [
       ['sup_mm', 'Supervisor Morning Market',   1],
       ['sup_vc', 'Supervisor Vientiane Center', 2],
@@ -28,6 +29,18 @@ export function seedDatabase(db: Database): void {
     for (const [u, n, b] of supers) {
       prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
         .run(u, supHash, n, 'supervisor', b)
+    }
+
+    // One branch manager per branch
+    const managers = [
+      ['bm_mm', 'Branch Manager Morning Market',   1],
+      ['bm_vc', 'Branch Manager Vientiane Center', 2],
+      ['bm_it', 'Branch Manager ITecc',            3],
+      ['bm_vt', 'Branch Manager VangThong',        4],
+    ] as [string, string, number][]
+    for (const [u, n, b] of managers) {
+      prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
+        .run(u, bmHash, n, 'branch_manager', b)
     }
 
     // CEO/executive
@@ -194,6 +207,16 @@ export function seedTestData(db: Database): void {
         `INSERT OR IGNORE INTO supervisors (full_name, nickname, branch_id) VALUES (?,?,?)`
       ).run(sup.fullName, sup.nick, sup.branchId)
       if (lastInsertRowid) supIdsByBranchAndTier[`${sup.branchId}-${sup.tier}`] = lastInsertRowid as number
+    }
+
+    // Link existing supervisor user accounts (one per branch) to alpha-tier supervisor record
+    const branchSupUserMap: Record<number, string> = { 1: 'sup_mm', 2: 'sup_vc', 3: 'sup_it', 4: 'sup_vt' }
+    for (const branchId of [1, 2, 3, 4]) {
+      const alphaSupId = supIdsByBranchAndTier[`${branchId}-alpha`]
+      if (alphaSupId) {
+        prepare(db, `UPDATE users SET supervisor_id = ? WHERE username = ? AND role = 'supervisor'`)
+          .run(alphaSupId, branchSupUserMap[branchId])
+      }
     }
   })
 

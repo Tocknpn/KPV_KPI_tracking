@@ -1,5 +1,5 @@
 // ── Auth ──────────────────────────────────────────────────────────────────
-export type UserRole = 'admin' | 'supervisor' | 'executive'
+export type UserRole = 'admin' | 'supervisor' | 'branch_manager' | 'executive'
 
 export interface AuthUser {
   id: number
@@ -7,6 +7,7 @@ export interface AuthUser {
   fullName: string
   role: UserRole
   branchId: number | null
+  supervisorId: number | null
 }
 
 export interface Branch {
@@ -25,6 +26,7 @@ export interface Salesman {
   position: string
   department: string
   active: number
+  supervisor_name?: string
 }
 
 // ── Entries ───────────────────────────────────────────────────────────────
@@ -39,6 +41,7 @@ export interface DailyEntry {
   bar_weight_g: number
   quantity: number
   synced: number
+  supervisor_name?: string
 }
 
 // ── Targets ───────────────────────────────────────────────────────────────
@@ -110,6 +113,7 @@ export interface MonthlyReportRow {
   position: string
   branch_id: number
   branch_name: string
+  supervisor_name: string | null
   actual_jewelry: number
   actual_bar: number
   actual_qty: number

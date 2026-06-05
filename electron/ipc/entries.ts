@@ -7,18 +7,34 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('entry:getSalesmen', async (_e, token: string, branchId?: number) => {
     const user = requireAuth(token)
     const db = getDb()
-    const effectiveBranchId = user.role === 'supervisor' ? user.branch_id : (branchId ?? null)
+
+    // Supervisor: see only their assigned team
+    if (user.role === 'supervisor' && user.supervisor_id) {
+      return prepare(db, `
+        SELECT s.*, b.name AS branch_name, sv.full_name AS supervisor_name FROM salesmen s
+        JOIN branches b ON b.id = s.branch_id
+        LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
+        WHERE s.supervisor_id = ? AND s.active = 1 ORDER BY s.full_name
+      `).all(user.supervisor_id)
+    }
+
+    const effectiveBranchId = (user.role === 'supervisor' || user.role === 'branch_manager')
+      ? user.branch_id
+      : (branchId ?? null)
+
     if (effectiveBranchId) {
       return prepare(db, `
-        SELECT s.*, b.name AS branch_name FROM salesmen s
+        SELECT s.*, b.name AS branch_name, sv.full_name AS supervisor_name FROM salesmen s
         JOIN branches b ON b.id = s.branch_id
-        WHERE s.branch_id = ? AND s.active = 1 ORDER BY s.full_name
+        LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
+        WHERE s.branch_id = ? AND s.active = 1 ORDER BY sv.full_name, s.full_name
       `).all(effectiveBranchId)
     }
     return prepare(db, `
-      SELECT s.*, b.name AS branch_name FROM salesmen s
+      SELECT s.*, b.name AS branch_name, sv.full_name AS supervisor_name FROM salesmen s
       JOIN branches b ON b.id = s.branch_id
-      WHERE s.active = 1 ORDER BY b.id, s.full_name
+      LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
+      WHERE s.active = 1 ORDER BY b.id, sv.full_name, s.full_name
     `).all()
   })
 
@@ -43,19 +59,42 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
   })
 
   ipcMain.handle('entry:getEntries', async (_e, token: string, branchId: number, date: string) => {
-    requireAuth(token)
-    return prepare(getDb(), `
+    const user = requireAuth(token)
+    const db = getDb()
+
+    // Supervisor: show only their assigned team members
+    if (user.role === 'supervisor' && user.supervisor_id) {
+      return prepare(db, `
+        SELECT
+          de.id, de.salesman_id, de.entry_date,
+          COALESCE(de.jewelry_weight_g, 0) AS jewelry_weight_g,
+          COALESCE(de.bar_weight_g, 0)     AS bar_weight_g,
+          COALESCE(de.quantity, 0)         AS quantity,
+          COALESCE(de.synced, 0)           AS synced,
+          s.full_name AS salesman_name, s.nickname, s.position,
+          sv.full_name AS supervisor_name
+        FROM salesmen s
+        LEFT JOIN daily_entries de ON de.salesman_id = s.id AND de.entry_date = ?
+        LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
+        WHERE s.supervisor_id = ? AND s.active = 1
+        ORDER BY s.full_name
+      `).all(date, user.supervisor_id)
+    }
+
+    return prepare(db, `
       SELECT
         de.id, de.salesman_id, de.entry_date,
         COALESCE(de.jewelry_weight_g, 0) AS jewelry_weight_g,
         COALESCE(de.bar_weight_g, 0)     AS bar_weight_g,
         COALESCE(de.quantity, 0)         AS quantity,
         COALESCE(de.synced, 0)           AS synced,
-        s.full_name AS salesman_name, s.nickname, s.position
+        s.full_name AS salesman_name, s.nickname, s.position,
+        sv.full_name AS supervisor_name
       FROM salesmen s
       LEFT JOIN daily_entries de ON de.salesman_id = s.id AND de.entry_date = ?
+      LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
       WHERE s.branch_id = ? AND s.active = 1
-      ORDER BY s.full_name
+      ORDER BY sv.full_name, s.full_name
     `).all(date, branchId)
   })
 

@@ -3,16 +3,16 @@ import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 
 const navItems = [
-  { to: '/dashboard',       icon: 'dashboard',        label: 'Dashboard',       roles: ['admin','supervisor','executive'] },
-  { to: '/entry',           icon: 'edit_document',    label: 'Daily Entry',     roles: ['admin','supervisor'] },
-  { to: '/reports',         icon: 'insert_chart',     label: 'Reports',         roles: ['admin','supervisor'] },
-  { to: '/analytics',       icon: 'monitoring',       label: 'Analytics',       roles: ['admin','executive'] },
-  { to: '/executive',       icon: 'leaderboard',      label: 'Executive View',  roles: ['admin','executive'] },
-  { to: '/team',            icon: 'supervisor_account', label: 'Team Performance', roles: ['admin','executive'] },
-  { to: '/upload-history',  icon: 'history',          label: 'Upload History',  roles: ['admin','supervisor','executive'] },
-  { to: '/settings',        icon: 'settings',         label: 'Settings',        roles: ['admin','supervisor','executive'] },
-  { to: '/users',           icon: 'manage_accounts',  label: 'User Management', roles: ['admin'] },
-  { to: '/kpi-settings',    icon: 'tune',             label: 'KPI Settings',    roles: ['admin'] },
+  { to: '/dashboard',      icon: 'dashboard',          label: 'Dashboard',        roles: ['admin','supervisor','branch_manager','executive'] },
+  { to: '/entry',          icon: 'edit_document',      label: 'Daily Entry',      roles: ['admin','supervisor','branch_manager'] },
+  { to: '/reports',        icon: 'insert_chart',       label: 'Reports',          roles: ['admin','supervisor','branch_manager'] },
+  { to: '/analytics',      icon: 'monitoring',         label: 'Analytics',        roles: ['admin','executive'] },
+  { to: '/executive',      icon: 'leaderboard',        label: 'Executive View',   roles: ['admin','executive'] },
+  { to: '/team',           icon: 'supervisor_account', label: 'Team Performance', roles: ['admin','branch_manager','executive'] },
+  { to: '/upload-history', icon: 'history',            label: 'Upload History',   roles: ['admin','supervisor','branch_manager','executive'] },
+  { to: '/settings',       icon: 'settings',           label: 'Settings',         roles: ['admin','supervisor','branch_manager','executive'] },
+  { to: '/users',          icon: 'manage_accounts',    label: 'User Management',  roles: ['admin'] },
+  { to: '/kpi-settings',   icon: 'tune',               label: 'KPI Settings',     roles: ['admin'] },
 ]
 
 export function Sidebar() {
@@ -24,8 +24,9 @@ export function Sidebar() {
   const visibleItems = navItems.filter(item => item.roles.includes(role))
 
   const portalLabel =
-    role === 'executive' ? 'Executive Portal'
-    : role === 'admin'   ? 'Admin Portal'
+    role === 'executive'       ? 'Executive Portal'
+    : role === 'admin'         ? 'Admin Portal'
+    : role === 'branch_manager' ? 'Manager Portal'
     : 'Supervisor Portal'
 
   return (

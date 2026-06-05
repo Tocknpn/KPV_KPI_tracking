@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 7
+const SCHEMA_VERSION = 8
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -20,6 +20,7 @@ const BASE_TABLES = `
     full_name     TEXT    NOT NULL DEFAULT '',
     role          TEXT    NOT NULL,
     branch_id     INTEGER REFERENCES branches(id),
+    supervisor_id INTEGER REFERENCES supervisors(id),
     active        INTEGER NOT NULL DEFAULT 1,
     created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
   );
@@ -226,6 +227,11 @@ export function applySchema(db: Database): boolean {
     try { db.run(`ALTER TABLE salesmen ADD COLUMN supervisor_id INTEGER REFERENCES supervisors(id)`) } catch { /* already exists */ }
     db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('sup_kpi_pct', '30')`).run()
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '7')`).run()
+  }
+
+  if (currentVersion < 8) {
+    try { db.run(`ALTER TABLE users ADD COLUMN supervisor_id INTEGER REFERENCES supervisors(id)`) } catch { /* already exists */ }
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '8')`).run()
   }
 
   return false // Existing DB — no seeding needed
