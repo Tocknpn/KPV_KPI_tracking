@@ -69,20 +69,26 @@ function SupervisorDropdown({ supervisors, selectedId, onChange }: SupervisorDro
             <input type="radio" checked={selectedId == null} readOnly className="accent-primary" />
             <span className="text-body-sm">All Supervisors</span>
           </label>
-          <div className="border-t border-black/5 my-1" />
-          {supervisors.map(s => (
-            <label
-              key={s.id}
-              className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer"
-              onClick={() => { onChange(s.id); setOpen(false) }}
-            >
-              <input type="radio" checked={selectedId === s.id} readOnly className="accent-primary" />
-              <div>
-                <span className="text-body-sm">{s.full_name}</span>
-                <span className="ml-2 text-[10px] text-on-surface-variant">{s.branch_name}</span>
-              </div>
-            </label>
-          ))}
+          {supervisors.length === 0 ? (
+            <p className="px-4 py-3 text-[11px] text-on-surface-variant italic">No supervisors yet. Use Team Setup to create them.</p>
+          ) : (
+            <>
+              <div className="border-t border-black/5 my-1" />
+              {supervisors.map(s => (
+                <label
+                  key={s.id}
+                  className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer"
+                  onClick={() => { onChange(s.id); setOpen(false) }}
+                >
+                  <input type="radio" checked={selectedId === s.id} readOnly className="accent-primary" />
+                  <div>
+                    <span className="text-body-sm">{s.full_name}</span>
+                    <span className="ml-2 text-[10px] text-on-surface-variant">{s.branch_name}</span>
+                  </div>
+                </label>
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -307,7 +313,7 @@ export default function Reports() {
           {user?.role !== 'supervisor' && user?.role !== 'branch_manager' && (
             <BranchDropdown branches={branches} selectedIds={selectedBranchIds} onChange={setSelectedBranchIds} />
           )}
-          {showSupFilter && visibleSupervisors.length > 0 && (
+          {showSupFilter && (
             <SupervisorDropdown supervisors={visibleSupervisors} selectedId={selectedSupId} onChange={setSelectedSupId} />
           )}
         </div>
@@ -318,8 +324,8 @@ export default function Reports() {
         {[
           { label: 'Avg KPI Score %',   value: fmtPct(avgKpiPct),    color: 'border-primary',            sub: `Day ${meta.dayOfMonth} of ${meta.daysInMonth}` },
           { label: 'Avg Est. Month End', value: fmtPct(avgEomKpiPct), color: 'border-tertiary',            sub: `${meta.daysRemaining} days remaining` },
-          { label: 'Total Jewelry MTD',  value: `${fmt(totalJewelry / 1000, 2)} kg`, color: 'border-secondary-container', sub: `${rows.length} reps` },
-          { label: 'Total Bar MTD',      value: `${fmt(totalBar / 1000, 2)} kg`,     color: 'border-outline-variant',    sub: `${dateFrom} → ${dateTo}` },
+          { label: 'Total Jewelry MTD',  value: `${fmt(totalJewelry, 1)} Baht`, color: 'border-secondary-container', sub: `${rows.length} reps` },
+          { label: 'Total Bar MTD',      value: `${fmt(totalBar, 1)} Baht`,     color: 'border-outline-variant',    sub: `${dateFrom} → ${dateTo}` },
         ].map(k => (
           <GlassCard key={k.label} className={`p-5 border-l-4 ${k.color}`}>
             <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{k.label}</p>
@@ -358,8 +364,8 @@ export default function Reports() {
                 {showSupColumn && (
                   <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Team Sup</th>
                 )}
-                <SortTh label="Jewelry (g)"    col="actual_jewelry" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                <SortTh label="Bar (g)"        col="actual_bar"     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortTh label="Jewelry (Baht)" col="actual_jewelry" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortTh label="Bar (Baht)"     col="actual_bar"     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <SortTh label="Qty (pcs)"      col="actual_qty"     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <SortTh label="KPI Score %"    col="kpiPct"         sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <SortTh label="Est. Month End" col="eomKpiPct"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
@@ -393,8 +399,8 @@ export default function Reports() {
                     {showSupColumn && (
                       <td className="px-5 py-3 text-body-sm text-on-surface-variant whitespace-nowrap">{r.supervisor_name ?? '—'}</td>
                     )}
-                    <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{fmt(r.actual_jewelry)}g</td>
-                    <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{fmt(r.actual_bar)}g</td>
+                    <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{fmt(r.actual_jewelry)} Baht</td>
+                    <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{fmt(r.actual_bar)} Baht</td>
                     <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{r.actual_qty}</td>
                     <td className="px-5 py-3">
                       <div className={`inline-flex flex-col items-center px-3 py-1 rounded-lg ${kpiBg(pct)}`}>

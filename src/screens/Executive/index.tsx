@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList, Cell } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList, Cell, Legend } from 'recharts'
 import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { RadialGauge } from '../../components/ui/RadialGauge'
 import { MonthDropdown, DateRangeBar } from '../../components/ui/PeriodFilter'
 import { useAuthStore } from '../../store/auth.store'
 import { getDefaultDateRange } from '../../utils/dates'
-import type { ExecutiveBranchRow } from '../../types'
+import type { ExecutiveBranchRow, TeamPerformanceRow } from '../../types'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -22,8 +22,9 @@ function kpiColor(pct: number) {
 
 export default function Executive() {
   const { token } = useAuthStore()
-  const [rows, setRows]     = useState<ExecutiveBranchRow[]>([])
-  const [loading, setLoading] = useState(true)
+  const [rows, setRows]         = useState<ExecutiveBranchRow[]>([])
+  const [teamRows, setTeamRows] = useState<TeamPerformanceRow[]>([])
+  const [loading, setLoading]   = useState(true)
 
   // ── Local date state ──────────────────────────────────────────────────
   const now = new Date()
@@ -41,13 +42,21 @@ export default function Executive() {
 
   const maxDate = getDefaultDateRange(year, month).dateTo
 
+  // Est. Month End helpers
+  const daysInMonth = new Date(year, month, 0).getDate()
+  const dayOfMonth  = new Date(dateTo + 'T00:00:00').getDate()
+  function eomPct(pct: number) { return dayOfMonth > 0 ? (pct / dayOfMonth) * daysInMonth : 0 }
+
   useEffect(() => {
     if (!token) return
     setLoading(true)
-    window.api.getExecutiveReport(token, year, month, dateFrom, dateTo)
-      .then(setRows)
-      .catch(console.error)
-      .finally(() => setLoading(false))
+    Promise.all([
+      window.api.getExecutiveReport(token, year, month, dateFrom, dateTo),
+      window.api.getTeamPerformance(token, [], year, month, dateFrom, dateTo),
+    ]).then(([branchData, teamData]) => {
+      setRows(branchData as ExecutiveBranchRow[])
+      setTeamRows(teamData as TeamPerformanceRow[])
+    }).catch(console.error).finally(() => setLoading(false))
   }, [token, year, month, dateFrom, dateTo])
 
   const totalScore    = rows.reduce((s, r) => s + r.kpi_total_score, 0)
@@ -55,15 +64,17 @@ export default function Executive() {
   const overallKpiPct = totalTarget > 0 ? (totalScore / totalTarget) * 100 : 0
   const totalPeople   = rows.reduce((s, r) => s + r.person_count, 0)
 
-  const chartData = rows.map(r => ({
-    name:       r.code,
-    branchName: r.branch_name,
-    kpiPct:     parseFloat(r.kpi_pct.toFixed(1)),
-    score:      r.kpi_total_score,
-    target:     r.kpi_point_target,
-  }))
-
   const ranked = [...rows].sort((a, b) => b.kpi_pct - a.kpi_pct)
+
+  // Team Sup chart data
+  const supChartData = teamRows.map(r => ({
+    name:    r.nickname || r.full_name.split(' ')[0],
+    fullName: r.full_name,
+    branch:  r.branch_name,
+    current: parseFloat(r.team_kpi_pct.toFixed(1)),
+    eom:     parseFloat(eomPct(r.team_kpi_pct).toFixed(1)),
+    supKpi:  parseFloat(r.sup_kpi_pct_ach.toFixed(1)),
+  }))
 
   return (
     <AppShell title="SalesTrack Pro" allowedRoles={['admin','executive']}>
@@ -132,11 +143,14 @@ export default function Executive() {
 
           {/* ── Branch KPI Progress ── */}
           <GlassCard className="col-span-12 lg:col-span-4 p-6">
-            <h4 className="font-headline-md text-headline-md text-on-surface mb-5">Branch KPI Achievement</h4>
+            <h4 className="font-headline-md text-headline-md text-on-surface mb-1">Branch KPI Achievement</h4>
+            <p className="text-[10px] text-on-surface-variant mb-4">Current · Est. Month End (day {dayOfMonth} of {daysInMonth})</p>
             <div className="space-y-5">
               {ranked.map(r => {
-                const pct   = Math.min(r.kpi_pct, 100)
-                const color = kpiColor(r.kpi_pct)
+                const pct    = Math.min(r.kpi_pct, 100)
+                const eom    = eomPct(r.kpi_pct)
+                const eomCap = Math.min(eom, 100)
+                const color  = kpiColor(r.kpi_pct)
                 return (
                   <div key={r.branch_id}>
                     <div className="flex justify-between text-body-sm mb-1.5">
@@ -146,11 +160,20 @@ export default function Executive() {
                         </div>
                         <span className="font-medium">{r.branch_name}</span>
                       </div>
-                      <span className="font-bold tabular-nums" style={{ color }}>{fmtPct(r.kpi_pct)}</span>
+                      <div className="text-right">
+                        <span className="font-bold tabular-nums" style={{ color }}>{fmtPct(r.kpi_pct)}</span>
+                        <span className="text-[10px] text-on-surface-variant ml-1.5">→ <span className={eom >= 100 ? 'text-green-600 font-bold' : 'text-tertiary font-semibold'}>{fmtPct(eom)}</span> est.</span>
+                      </div>
                     </div>
-                    <div className="h-2.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
+                    {/* Current progress bar */}
+                    <div className="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden mb-0.5">
                       <div className="h-full rounded-full transition-all duration-700"
                         style={{ width: `${pct}%`, background: color }} />
+                    </div>
+                    {/* Est. month end bar */}
+                    <div className="h-1 w-full bg-surface-container-highest rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-700 opacity-40"
+                        style={{ width: `${eomCap}%`, background: color }} />
                     </div>
                     <p className="text-[10px] text-on-surface-variant mt-1">
                       {fmt(r.kpi_total_score)} pts &nbsp;·&nbsp; {r.person_count} staff &nbsp;·&nbsp; Target: {fmt(r.per_person_target)} pts/person
@@ -161,42 +184,49 @@ export default function Executive() {
             </div>
           </GlassCard>
 
-          {/* ── KPI % Chart ── */}
-          <GlassCard elevated className="col-span-12 p-8">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h3 className="font-headline-md text-on-surface">Branch KPI % Comparison</h3>
-                <p className="text-on-surface-variant text-body-sm">KPI achievement % per branch — 100% = target fully met</p>
+          {/* ── Team Supervisor KPI% Chart ── */}
+          {supChartData.length > 0 && (
+            <GlassCard elevated className="col-span-12 p-8">
+              <div className="mb-6">
+                <h3 className="font-headline-md text-on-surface">Team Supervisor KPI% Performance</h3>
+                <p className="text-on-surface-variant text-body-sm">Team KPI% per supervisor — Current (solid) vs Est. Month End (faded) — day {dayOfMonth} of {daysInMonth}</p>
               </div>
-            </div>
-            <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 28, right: 16, bottom: 4, left: 4 }} barCategoryGap="35%">
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e0e0" />
-                  <XAxis dataKey="name" tick={{ fontSize: 13, fontWeight: 700 }} />
-                  <YAxis
-                    tick={{ fontSize: 10 }}
-                    tickFormatter={v => `${v}%`}
-                    domain={[0, Math.max(100, Math.ceil(Math.max(...chartData.map(d => d.kpiPct)) / 10) * 10 + 10)]}
-                  />
-                  <Tooltip
-                    formatter={(v: number, _name: string, props) => [
-                      `${v.toFixed(1)}%  (${fmt(props.payload.score)} / ${fmt(props.payload.target)} pts)`,
-                      'KPI Score %',
-                    ]}
-                    labelFormatter={(_l, payload) => payload?.[0]?.payload?.branchName ?? _l}
-                    contentStyle={{ borderRadius: 10, fontSize: 12 }}
-                  />
-                  <Bar dataKey="kpiPct" name="KPI %" radius={[6,6,0,0]} maxBarSize={80}>
-                    {chartData.map((d, i) => <Cell key={i} fill={kpiColor(d.kpiPct)} />)}
-                    <LabelList dataKey="kpiPct" position="top"
-                      formatter={(v: number) => `${v.toFixed(1)}%`}
-                      style={{ fontSize: 12, fontWeight: 700 }} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </GlassCard>
+              <div style={{ height: Math.max(220, supChartData.length * 40) }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={supChartData}
+                    layout="vertical"
+                    margin={{ top: 4, right: 60, bottom: 4, left: 8 }}
+                    barCategoryGap="25%"
+                    barGap={2}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e0e0e0" />
+                    <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`}
+                      domain={[0, Math.max(100, Math.ceil(Math.max(...supChartData.map(d => Math.max(d.current, d.eom))) / 10) * 10 + 10)]} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={72} />
+                    <Tooltip
+                      formatter={(v: number, name: string) => [`${v.toFixed(1)}%`, name]}
+                      labelFormatter={(_l, payload) => {
+                        const d = payload?.[0]?.payload
+                        return d ? `${d.fullName} · ${d.branch}` : _l
+                      }}
+                      contentStyle={{ borderRadius: 10, fontSize: 12 }}
+                    />
+                    <Legend iconType="circle" iconSize={8} />
+                    <Bar dataKey="current" name="Team KPI % (Current)" radius={[0,4,4,0]} maxBarSize={14}>
+                      {supChartData.map((d, i) => <Cell key={i} fill={kpiColor(d.current)} />)}
+                      <LabelList dataKey="current" position="right"
+                        formatter={(v: number) => `${v.toFixed(1)}%`}
+                        style={{ fontSize: 10, fontWeight: 700 }} />
+                    </Bar>
+                    <Bar dataKey="eom" name="Est. Month End %" radius={[0,4,4,0]} maxBarSize={14} opacity={0.45}>
+                      {supChartData.map((d, i) => <Cell key={i} fill={kpiColor(d.eom)} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </GlassCard>
+          )}
 
           {/* ── Branch Rankings Table ── */}
           <GlassCard elevated className="col-span-12 overflow-hidden">
@@ -208,7 +238,7 @@ export default function Executive() {
               <table className="w-full border-collapse">
                 <thead className="bg-surface-container/30">
                   <tr>
-                    {['Rank','Branch','Staff','Jewelry (g)','Bar (g)','Qty','KPI Score','Point Target','KPI %'].map(h => (
+                    {['Rank','Branch','Staff','Jewelry (Baht)','Bar (Baht)','Qty','KPI Score','Point Target','KPI %'].map(h => (
                       <th key={h} className="text-left px-6 py-4 font-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -230,8 +260,8 @@ export default function Executive() {
                         </div>
                       </td>
                       <td className="px-6 py-3 font-tabular-nums text-on-surface-variant">{r.person_count}</td>
-                      <td className="px-6 py-3 font-tabular-nums">{fmt(r.actual_jewelry)}g</td>
-                      <td className="px-6 py-3 font-tabular-nums">{fmt(r.actual_bar)}g</td>
+                      <td className="px-6 py-3 font-tabular-nums">{fmt(r.actual_jewelry)} Baht</td>
+                      <td className="px-6 py-3 font-tabular-nums">{fmt(r.actual_bar)} Baht</td>
                       <td className="px-6 py-3 font-tabular-nums">{fmt(r.actual_qty)}</td>
                       <td className="px-6 py-3 font-tabular-nums font-bold">{fmt(r.kpi_total_score)} pts</td>
                       <td className="px-6 py-3 font-tabular-nums text-on-surface-variant">

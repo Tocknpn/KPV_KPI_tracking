@@ -10,7 +10,7 @@ import { useAuthStore } from '../../store/auth.store'
 import { getDefaultDateRange } from '../../utils/dates'
 
 interface DailyPoint { entry_date: string; jewelry: number; bar: number; qty: number }
-interface BranchContrib { id: number; name: string; code: string; total_weight: number; total_qty: number }
+interface BranchContrib { id: number; name: string; code: string; total_weight: number; total_jewelry: number; total_bar: number; total_qty: number }
 
 const PIE_COLORS = ['#004f96', '#0d7c8f', '#1e9962', '#b07800']
 
@@ -152,7 +152,7 @@ export default function Analytics() {
                     </div>
                     <div className="text-right">
                       <span className="font-bold">{pct.toFixed(1)}%</span>
-                      <span className="text-[10px] text-on-surface-variant ml-1">({b.total_weight.toLocaleString()}g)</span>
+                      <span className="text-[10px] text-on-surface-variant ml-1">({b.total_weight.toLocaleString()} Baht)</span>
                     </div>
                   </div>
                 )
@@ -188,13 +188,13 @@ export default function Analytics() {
                   <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${(v/1000).toFixed(1)}k`} />
                   <Tooltip
-                    formatter={(v: number, name: string) => [`${v.toLocaleString()} g`, name]}
+                    formatter={(v: number, name: string) => [`${v.toLocaleString()} Baht`, name]}
                     contentStyle={{ borderRadius: 10, fontSize: 12, border: '1px solid #e0e0e0' }}
                   />
                   <Legend iconType="circle" iconSize={8} />
-                  <Line type="monotone" dataKey="jewelry" name="Jewelry (g)" stroke="#004f96"
+                  <Line type="monotone" dataKey="jewelry" name="Jewelry (Baht)" stroke="#004f96"
                     strokeWidth={2.5} dot={{ r: 3, fill: '#004f96' }} activeDot={{ r: 5 }} />
-                  <Line type="monotone" dataKey="bar" name="Bar (g)" stroke="#b07800"
+                  <Line type="monotone" dataKey="bar" name="Bar (Baht)" stroke="#b07800"
                     strokeWidth={2.5} dot={{ r: 3, fill: '#b07800' }} activeDot={{ r: 5 }} strokeDasharray="5 3" />
                 </LineChart>
               </ResponsiveContainer>
@@ -211,7 +211,7 @@ export default function Analytics() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-container-low/50">
-                    {['Branch','Total Weight (g)','Jewelry (g)','Bar (g)','Quantity','% of Total Weight'].map(h => (
+                    {['Branch','Total Weight (Baht)','Jewelry (Baht)','Bar (Baht)','Quantity','% of Total Weight'].map(h => (
                       <th key={h} className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase">{h}</th>
                     ))}
                   </tr>
@@ -231,8 +231,8 @@ export default function Analytics() {
                           </div>
                         </td>
                         <td className="px-6 py-4 font-tabular-nums font-bold">{b.total_weight.toLocaleString()}</td>
-                        <td className="px-6 py-4 font-tabular-nums text-primary">—</td>
-                        <td className="px-6 py-4 font-tabular-nums text-secondary">—</td>
+                        <td className="px-6 py-4 font-tabular-nums text-primary">{b.total_jewelry.toLocaleString()}</td>
+                        <td className="px-6 py-4 font-tabular-nums text-secondary">{b.total_bar.toLocaleString()}</td>
                         <td className="px-6 py-4 font-tabular-nums">{b.total_qty.toLocaleString()}</td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">

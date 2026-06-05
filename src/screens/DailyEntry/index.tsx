@@ -174,7 +174,7 @@ export default function DailyEntry() {
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="bg-surface-container-highest/50 border-b border-black/5">
-                    {(['Salesman', ...(showSupColumn ? ['Team Sup'] : []), 'Position','Jewelry (g)','Bar (g)','Qty','Status'] as string[]).map(h => (
+                    {(['Salesman', ...(showSupColumn ? ['Team Sup'] : []), 'Position','Jewelry (Baht)','Bar (Baht)','Qty','Status'] as string[]).map(h => (
                       <th key={h} className="px-5 py-4 text-left font-label-md text-label-md text-on-surface-variant uppercase whitespace-nowrap">{h}</th>
                     ))}
                   </tr>

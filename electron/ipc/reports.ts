@@ -307,7 +307,9 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const branchContrib = prepare(db, `
       SELECT b.id, b.name, b.code,
         COALESCE(SUM(de.jewelry_weight_g+de.bar_weight_g),0) AS total_weight,
-        COALESCE(SUM(de.quantity),0) AS total_qty
+        COALESCE(SUM(de.jewelry_weight_g),0) AS total_jewelry,
+        COALESCE(SUM(de.bar_weight_g),0)     AS total_bar,
+        COALESCE(SUM(de.quantity),0)          AS total_qty
       FROM branches b
       LEFT JOIN daily_entries de ON de.branch_id=b.id
         AND de.entry_date >= ? AND de.entry_date <= ?

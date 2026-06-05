@@ -270,7 +270,7 @@ export default function Dashboard() {
             <KpiCard
               label="Jewelry Weight (MTD)"
               value={fmt(s?.mtd.total_jewelry ?? 0)}
-              unit="g"
+              unit="Baht"
               delta={null}
               icon={<span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>diamond</span>}
               iconBg="bg-primary-container"
@@ -280,7 +280,7 @@ export default function Dashboard() {
             <KpiCard
               label="Bar Weight (MTD)"
               value={fmt(s?.mtd.total_bar ?? 0)}
-              unit="g"
+              unit="Baht"
               delta={null}
               icon={<span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>payments</span>}
               iconBg="bg-secondary-container"
@@ -364,7 +364,7 @@ export default function Dashboard() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-surface-container/30">
-                      {['Sales Member','Position','Jewelry (g)','Bar (g)','Qty','Actual Pts','%KPI'].map(h => (
+                      {['Sales Member','Position','Jewelry (Baht)','Bar (Baht)','Qty','Actual Pts','%KPI'].map(h => (
                         <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase">
                           {h}
                         </th>
