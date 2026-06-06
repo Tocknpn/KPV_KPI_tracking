@@ -2,15 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase } from './db/connection'
-import { registerAuthHandlers } from './ipc/auth'
-import { registerEntryHandlers } from './ipc/entries'
-import { registerTargetHandlers } from './ipc/targets'
-import { registerKpiHandlers } from './ipc/kpi'
-import { registerSheetsHandlers } from './ipc/sheets'
-import { registerEmailHandlers, startEmailScheduler } from './ipc/email'
-import { registerReportHandlers } from './ipc/reports'
-import { registerAdminHandlers } from './ipc/admin'
-import { registerUploadHandlers } from './ipc/upload'
+import { registerAllHandlers, startEmailScheduler } from './ipc/index'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -59,16 +51,8 @@ app.whenReady().then(async () => {
   // Initialize SQLite database (async — loads WASM, creates tables + seeds)
   await initDatabase()
 
-  // Register all IPC handlers
-  registerAuthHandlers(ipcMain)
-  registerEntryHandlers(ipcMain)
-  registerTargetHandlers(ipcMain)
-  registerKpiHandlers(ipcMain)
-  registerSheetsHandlers(ipcMain)
-  registerEmailHandlers(ipcMain)
-  registerReportHandlers(ipcMain)
-  registerAdminHandlers(ipcMain)
-  registerUploadHandlers(ipcMain)
+  // Register all IPC handlers (see electron/ipc/index.ts for full channel map)
+  registerAllHandlers(ipcMain)
 
   // Start scheduled email jobs
   startEmailScheduler()
