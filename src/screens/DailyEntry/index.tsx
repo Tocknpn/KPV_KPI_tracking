@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { useAuthStore } from '../../store/auth.store'
@@ -22,6 +22,8 @@ export default function DailyEntry() {
   const [loadingEntries, setLoadingEntries] = useState(true)
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [saving, setSaving] = useState<Record<number, boolean>>({})
+  const [savedAt, setSavedAt] = useState<string | null>(null)
+  const [savingAll, setSavingAll] = useState(false)
 
   // CSV upload state
   const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -98,17 +100,44 @@ export default function DailyEntry() {
 
   useEffect(() => { if (activeTab === 'manual') loadEntries() }, [token, effectiveBranchId, date, activeTab])
 
-  async function handleCellChange(salesmanId: number, branchId: number, field: 'jewelry_weight_g' | 'bar_weight_g' | 'quantity', value: string) {
-    const numVal = parseFloat(value) || 0
-    setEntries(prev => prev.map(e => e.salesman_id === salesmanId ? { ...e, [field]: numVal, synced: 0 } : e))
+  const handleCellChange = useCallback(async (salesmanId: number, branchId: number, field: 'jewelry_weight_g' | 'bar_weight_g' | 'quantity', value: string) => {
+    const numVal = field === 'quantity' ? (parseInt(value) || 0) : (parseFloat(value) || 0)
+    // Capture updated entry inside functional update to avoid stale closure
+    let updated: DailyEntry | null = null
+    setEntries(prev => prev.map(e => {
+      if (e.salesman_id === salesmanId) {
+        updated = { ...e, [field]: numVal, synced: 0 }
+        return updated
+      }
+      return e
+    }))
+    if (!updated) return
     setSaving(prev => ({ ...prev, [salesmanId]: true }))
-    const entry = entries.find(e => e.salesman_id === salesmanId)
-    if (!entry) return
-    const updated = { ...entry, [field]: numVal }
-    await window.api.saveEntry(token!, { salesmanId, branchId, date, jewelryWeightG: updated.jewelry_weight_g, barWeightG: updated.bar_weight_g, quantity: updated.quantity })
+    await window.api.saveEntry(token!, {
+      salesmanId, branchId, date,
+      jewelryWeightG: (updated as DailyEntry).jewelry_weight_g,
+      barWeightG:     (updated as DailyEntry).bar_weight_g,
+      quantity:       (updated as DailyEntry).quantity,
+    })
     setSaving(prev => ({ ...prev, [salesmanId]: false }))
+    setSavedAt(new Date().toLocaleTimeString())
     const count = await window.api.getUnsyncedCount(token!)
     setUnsyncedCount(count)
+  }, [token, date])
+
+  async function saveAll() {
+    if (!token || !entries.length) return
+    setSavingAll(true)
+    const toSave = entries.filter(e => e.jewelry_weight_g > 0 || e.bar_weight_g > 0 || e.quantity > 0)
+    await window.api.saveBatchEntries(token, toSave.map(e => ({
+      salesmanId: e.salesman_id, branchId: effectiveBranchId, date,
+      jewelryWeightG: e.jewelry_weight_g, barWeightG: e.bar_weight_g, quantity: e.quantity,
+    })))
+    setSavedAt(new Date().toLocaleTimeString())
+    setSavingAll(false)
+    const count = await window.api.getUnsyncedCount(token)
+    setUnsyncedCount(count)
+    loadEntries()
   }
 
   // ── CSV upload helpers ─────────────────────────────────────────────────
@@ -341,13 +370,28 @@ export default function DailyEntry() {
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Auto-save On</span>
+                <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Auto-save</span>
               </div>
               <p className="text-sm text-on-surface-variant">{filled} / {entries.length} filled for {date}</p>
+              {savedAt && (
+                <p className="text-xs text-green-600 font-medium flex items-center gap-1">
+                  <span className="material-symbols-outlined text-sm">check_circle</span>
+                  Saved {savedAt}
+                </p>
+              )}
             </div>
-            <button onClick={loadEntries} className="px-5 py-2.5 rounded-lg border border-primary text-primary font-bold hover:bg-primary/5 flex items-center gap-2">
-              <span className="material-symbols-outlined text-lg">refresh</span> Refresh
-            </button>
+            <div className="flex items-center gap-3">
+              <button onClick={loadEntries} className="px-4 py-2 rounded-lg border border-outline-variant text-on-surface-variant hover:bg-surface-container flex items-center gap-2 text-sm">
+                <span className="material-symbols-outlined text-base">refresh</span> Refresh
+              </button>
+              <button onClick={saveAll} disabled={savingAll || filled === 0}
+                className="px-5 py-2.5 rounded-lg bg-primary text-white font-bold hover:opacity-90 disabled:opacity-40 flex items-center gap-2 text-sm">
+                <span className={`material-symbols-outlined text-base ${savingAll ? 'animate-spin-slow' : ''}`}>
+                  {savingAll ? 'sync' : 'save'}
+                </span>
+                {savingAll ? 'Saving...' : 'Save All'}
+              </button>
+            </div>
           </div>
           <div className="h-20" />
         </>
@@ -358,11 +402,26 @@ export default function DailyEntry() {
 
 // ── Inline editable cell ───────────────────────────────────────────────────
 function EditCell({ value, onBlur, isInt = false }: { value: number; onBlur: (v: string) => void; isInt?: boolean }) {
+  const [local, setLocal] = useState(value > 0 ? String(value) : '')
+  const focused = useRef(false)
+
+  // Sync value from parent (e.g. after Refresh) only when not actively typing
+  useEffect(() => {
+    if (!focused.current) {
+      setLocal(value > 0 ? String(value) : '')
+    }
+  }, [value])
+
   return (
     <td className="px-5 py-compact-row text-right border-b-2 border-transparent focus-within:border-primary focus-within:bg-primary/[0.02] transition-all">
-      <input type="number" step={isInt ? '1' : '0.01'} min="0" defaultValue={value || ''}
-        onBlur={e => onBlur(e.target.value)}
-        className="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1 outline-none" />
+      <input
+        type="number" step={isInt ? '1' : '0.01'} min="0"
+        value={local}
+        onChange={e => setLocal(e.target.value)}
+        onFocus={() => { focused.current = true }}
+        onBlur={e => { focused.current = false; onBlur(e.target.value) }}
+        className="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1 outline-none"
+      />
     </td>
   )
 }

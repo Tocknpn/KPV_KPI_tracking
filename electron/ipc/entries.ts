@@ -66,7 +66,7 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     if (user.role === 'supervisor' && user.supervisor_id) {
       return prepare(db, `
         SELECT
-          de.id, de.salesman_id, de.entry_date,
+          de.id, s.id AS salesman_id, de.entry_date,
           COALESCE(de.jewelry_weight_g, 0) AS jewelry_weight_g,
           COALESCE(de.bar_weight_g, 0)     AS bar_weight_g,
           COALESCE(de.quantity, 0)         AS quantity,
@@ -83,7 +83,7 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
 
     return prepare(db, `
       SELECT
-        de.id, de.salesman_id, de.entry_date,
+        de.id, s.id AS salesman_id, de.entry_date,
         COALESCE(de.jewelry_weight_g, 0) AS jewelry_weight_g,
         COALESCE(de.bar_weight_g, 0)     AS bar_weight_g,
         COALESCE(de.quantity, 0)         AS quantity,
