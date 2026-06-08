@@ -134,33 +134,46 @@ export function seedDatabase(db: Database): void {
  *
  * ── STRUCTURE ──────────────────────────────────────────────────────────────
  *   4 branches × 3 supervisors × 9 reps = 108 reps total
- *   All entries on day 1 of current month → MTD = entry value exactly
+ *   May 2026 full month (31 days) + June 2026 MTD (days 1–today)
+ *   Daily variation: rep mult [0.7–1.2] × day factor (Sat=60%, Sun=0%/closed)
  *
- * ── PERFORMANCE TIERS (per supervisor team) ───────────────────────────────
- *   ALPHA (high): J=250g  B=350g  Qty=130  → J-pts=3750 B-pts=2625 Q-pts=325 Total=6700
- *     VC: 6700÷5500=121.8%  IT: 6700÷6000=111.7%  VT: 6700÷7000=95.7%  MM: 6700÷8000=83.8%
+ * ── DAILY PERFORMANCE VALUES (per working day) ────────────────────────────
+ *   ALPHA B2C: J=8  B=10  Qty=35  → ~5946 pts/month (118.9% of 5000 target)
+ *   BETA  B2C: J=5  B=7   Qty=25  → ~3963 pts/month (79.3%  of 5000 target)
+ *   GAMMA B2B: J=5  B=5   Qty=15  → ~4145 pts/month (59.2%  of 7000 target)
+ *   Rep mult range: lowest 0.7×  |  highest 1.2×  (deterministic per rep index)
  *
- *   BETA (mid):  J=140g  B=200g  Qty=80   → J-pts=2100 B-pts=1500 Q-pts=200 Total=3800
- *     VC: 3800÷5500=69.1%  IT: 3800÷6000=63.3%  VT: 3800÷7000=54.3%  MM: 3800÷8000=47.5%
- *
- *   GAMMA (low): J=70g   B=100g  Qty=35   → J-pts=1050 B-pts=750  Q-pts=70  Total=1870
- *     VC: 1870÷5500=34.0%  IT: 1870÷6000=31.2%  VT: 1870÷7000=26.7%  MM: 1870÷8000=23.4%
- *
- *   Qty tier ×2.5 (≥100) used for Alpha, ×2.5 for Beta (≥50→×2), ×2 for Gamma (≥1→×1.5×35)
- *   Qty multipliers: Alpha 130×2.5=325, Beta 80×2.5=200, Gamma 35×2=70
- *
- * ── SUPERVISOR KPI (30% rate) ──────────────────────────────────────────────
- *   Alpha sup team score = 9×6700=60300 → sup score=60300×30%=18090
- *   Beta  sup team score = 9×3800=34200 → sup score=34200×30%=10260
- *   Gamma sup team score = 9×1870=16830 → sup score=16830×30%=5049
+ * ── TOTAL ROWS SEEDED ─────────────────────────────────────────────────────
+ *   May: 26 working days × 108 reps = 2808 entries
+ *   June MTD (8 days): 7 working days × 108 reps = 756 entries
  */
 export function seedTestData(db: Database): void {
-  const year  = new Date().getFullYear()
-  const month = new Date().getMonth() + 1
+  const now   = new Date()
+  const year  = now.getFullYear()
+  const month = now.getMonth() + 1
   const pad   = (n: number) => String(n).padStart(2, '0')
-  const day1  = `${year}-${pad(month)}-01`
 
-  const yearMonth = `${year}${pad(month)}`
+  const yearMonth    = `${year}${pad(month)}`
+  const mayYearMonth = '202605'
+
+  // All dates to seed: May 2026 (full month) + current month MTD
+  const allDates: string[] = []
+  for (let d = 1; d <= 31; d++) allDates.push(`2026-05-${pad(d)}`)
+  const todayDay = now.getDate()
+  for (let d = 1; d <= todayDay; d++) allDates.push(`${year}-${pad(month)}-${pad(d)}`)
+
+  // Deterministic per-rep variation (no random) — rep index 0–8 maps to these multipliers
+  const REP_MULTS = [0.7, 0.85, 1.0, 0.9, 1.1, 0.75, 1.05, 0.95, 1.2]
+  function scaleVal(base: number, repIdx: number, dateStr: string, isInt = false): number {
+    const dt  = new Date(dateStr + 'T00:00:00')
+    const dow = dt.getDay()
+    if (dow === 0) return 0                          // Sunday: store closed
+    const wm  = dow === 6 ? 0.6 : 1.0               // Saturday at 60%
+    const dm  = dt.getDate() % 2 === 0 ? 0.95 : 1.05 // slight weekday wave
+    const rm  = REP_MULTS[repIdx % REP_MULTS.length]
+    const v   = base * rm * wm * dm
+    return isInt ? Math.max(0, Math.round(v)) : Math.max(0, Math.round(v * 10) / 10)
+  }
 
   // ── Supervisors (3 per branch) ────────────────────────────────────────────
   // alpha/beta teams = B2C, gamma team = B2B
@@ -206,11 +219,12 @@ export function seedTestData(db: Database): void {
     ['Thong Sengdara',       'Thong'],
   ]
 
-  // ── Performance values per tier ───────────────────────────────────────────
+  // ── Performance values per tier (daily per-working-day values) ───────────
+  // tJ/tB/tQ = legacy monthly targets stored in `targets` table
   const TIER_VALS = {
-    alpha: { jewelry: 250, bar: 350, qty: 130, tJ: 200, tB: 300, tQ: 100 },
-    beta:  { jewelry: 140, bar: 200, qty:  80, tJ: 140, tB: 200, tQ:  80 },
-    gamma: { jewelry:  70, bar: 100, qty:  35, tJ: 100, tB: 150, tQ:  50 },
+    alpha: { jewelry: 8,  bar: 10, qty: 35, tJ: 160, tB: 200, tQ: 700 },
+    beta:  { jewelry: 5,  bar: 7,  qty: 25, tJ: 100, tB: 140, tQ: 500 },
+    gamma: { jewelry: 5,  bar: 5,  qty: 15, tJ: 100, tB: 100, tQ: 300 },
   }
 
   // Build supervisor → { branchId, tier } map after insertion
@@ -234,6 +248,10 @@ export function seedTestData(db: Database): void {
           .run(alphaSupId, branchSupUserMap[branchId])
       }
     }
+
+    // Commission configs for May 2026 (historical test data)
+    prepare(db, `INSERT OR IGNORE INTO commission_configs (staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak) VALUES (?,?,?,?,?)`).run('b2c', mayYearMonth, 5000, 3000, 500)
+    prepare(db, `INSERT OR IGNORE INTO commission_configs (staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak) VALUES (?,?,?,?,?)`).run('b2b', mayYearMonth, 8000, 5000, 800)
   })
 
   transaction(db, () => {
@@ -253,32 +271,41 @@ export function seedTestData(db: Database): void {
 
         for (let ni = 0; ni < names.length; ni++) {
           const [fullName, nick] = names[ni]
-          // Rep code: e.g. MM-A-001
           const repCode = `${bCode}-${tLetter}-${String(ni + 1).padStart(3, '0')}`
-          const { lastInsertRowid: sid } = prepare(db,
+          const { lastInsertRowid: newSid } = prepare(db,
             `INSERT OR IGNORE INTO salesmen (rep_code, full_name, nickname, branch_id, staff_type, position, department, active, supervisor_id)
              VALUES (?,?,?,?,?,'Sales Representative','Sales',1,?)`
           ).run(repCode, `${fullName} (${bCode})`, nick, branchId, staffType, supId ?? null)
 
+          // Fallback: look up existing rep if INSERT was ignored
+          let sid = newSid as number
+          if (!sid) {
+            const ex = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(repCode) as { id: number } | undefined
+            sid = ex?.id ?? 0
+          }
           if (!sid) continue
 
-          // Monthly KPI target (legacy targets table — kept for XLSX upload compat)
-          prepare(db,
-            `INSERT OR IGNORE INTO targets (salesman_id, branch_id, year, month, jewelry_weight_g, bar_weight_g, quantity)
-             VALUES (?,?,?,?,?,?,?)`
-          ).run(sid, branchId, year, month, vals.tJ, vals.tB, vals.tQ)
-
-          // Individual KPI point target (new)
           const ptTarget = staffType === 'b2b' ? 7000 : 5000
-          prepare(db,
-            `INSERT OR IGNORE INTO staff_monthly_targets (salesman_id, year_month, point_target) VALUES (?,?,?)`
-          ).run(sid, yearMonth, ptTarget)
 
-          // MTD entry on day 1
-          prepare(db,
-            `INSERT OR IGNORE INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced)
-             VALUES (?,?,?,?,?,?,0)`
-          ).run(sid, branchId, day1, vals.jewelry, vals.bar, vals.qty)
+          // Legacy targets for May + current month
+          prepare(db, `INSERT OR IGNORE INTO targets (salesman_id, branch_id, year, month, jewelry_weight_g, bar_weight_g, quantity) VALUES (?,?,?,?,?,?,?)`).run(sid, branchId, 2026, 5, vals.tJ, vals.tB, vals.tQ)
+          prepare(db, `INSERT OR IGNORE INTO targets (salesman_id, branch_id, year, month, jewelry_weight_g, bar_weight_g, quantity) VALUES (?,?,?,?,?,?,?)`).run(sid, branchId, year, month, vals.tJ, vals.tB, vals.tQ)
+
+          // Individual point targets for May + current month
+          prepare(db, `INSERT OR IGNORE INTO staff_monthly_targets (salesman_id, year_month, point_target) VALUES (?,?,?)`).run(sid, mayYearMonth, ptTarget)
+          prepare(db, `INSERT OR IGNORE INTO staff_monthly_targets (salesman_id, year_month, point_target) VALUES (?,?,?)`).run(sid, yearMonth, ptTarget)
+
+          // Daily entries for all dates (May full month + current month MTD)
+          for (const dateStr of allDates) {
+            const j = scaleVal(vals.jewelry, ni, dateStr, false)
+            const b = scaleVal(vals.bar,     ni, dateStr, false)
+            const q = scaleVal(vals.qty,     ni, dateStr, true)
+            if (j === 0 && b === 0 && q === 0) continue  // Sunday: closed, skip
+            prepare(db,
+              `INSERT OR IGNORE INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced)
+               VALUES (?,?,?,?,?,?,0)`
+            ).run(sid, branchId, dateStr, j, b, q)
+          }
         }
       }
     }
