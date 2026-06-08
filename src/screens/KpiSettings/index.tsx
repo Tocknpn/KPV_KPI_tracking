@@ -37,6 +37,14 @@ export default function KpiSettings() {
   const [targetEdits, setTargetEdits] = useState<Record<number, string>>({})
   const [savingTargets, setSavingTargets] = useState(false)
   const [targetSaved, setTargetSaved]     = useState(false)
+  // Commission rates
+  const [commYear, setCommYear]   = useState(new Date().getFullYear())
+  const [commMonth, setCommMonth] = useState(new Date().getMonth() + 1)
+  const [commEdits, setCommEdits] = useState<Record<string, { jewelry: string; bar: string; qty: string }>>({
+    b2c: { jewelry: '5000', bar: '3000', qty: '500' },
+    b2b: { jewelry: '8000', bar: '5000', qty: '800' },
+  })
+  const [savingComm, setSavingComm]   = useState<string | null>(null)
   // Simulator
   const [simActual, setSimActual] = useState('')
   const [simBranch, setSimBranch] = useState<number | null>(null)
@@ -57,6 +65,28 @@ export default function KpiSettings() {
       setSupPctEdit(String(pct))
     })
   }, [token])
+
+  // Load commission configs when month/year changes
+  useEffect(() => {
+    if (!token) return
+    const yearMonth = `${commYear}${String(commMonth).padStart(2, '0')}`
+    window.api.getCommissionConfigs(token, yearMonth).then((cfgs: Array<{
+      staff_type: string; jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number
+    }>) => {
+      const next: Record<string, { jewelry: string; bar: string; qty: string }> = {
+        b2c: { jewelry: '5000', bar: '3000', qty: '500' },
+        b2b: { jewelry: '8000', bar: '5000', qty: '800' },
+      }
+      cfgs.forEach(c => {
+        next[c.staff_type] = {
+          jewelry: String(c.jewelry_rate_lak),
+          bar:     String(c.bar_rate_lak),
+          qty:     String(c.qty_rate_lak),
+        }
+      })
+      setCommEdits(next)
+    }).catch(console.error)
+  }, [token, commYear, commMonth])
 
   // Load monthly targets whenever month/year changes
   useEffect(() => {
@@ -203,6 +233,22 @@ export default function KpiSettings() {
     newConfig()
   }
 
+  async function saveCommissionRate(staffType: string) {
+    if (!token) return
+    const e = commEdits[staffType]
+    if (!e) return
+    const yearMonth = `${commYear}${String(commMonth).padStart(2, '0')}`
+    setSavingComm(staffType)
+    await window.api.saveCommissionConfig(token, {
+      staffType, yearMonth,
+      jewelryRateLak: parseFloat(e.jewelry) || 0,
+      barRateLak:     parseFloat(e.bar)     || 0,
+      qtyRateLak:     parseFloat(e.qty)     || 0,
+    })
+    showToast(`${staffType.toUpperCase()} commission rates saved for ${MONTH_NAMES[commMonth - 1]} ${commYear}.`)
+    setSavingComm(null)
+  }
+
   async function simulate() {
     if (!token) return
     const actual = parseFloat(simActual) || 0
@@ -288,6 +334,81 @@ export default function KpiSettings() {
               {savingSupPct ? 'Saving...' : 'Save Rate'}
             </button>
           </div>
+        </div>
+      </GlassCard>
+
+      {/* Commission Rates Config */}
+      <GlassCard elevated className="p-5 mb-6">
+        <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
+          <div>
+            <h4 className="font-headline-md text-on-surface flex items-center gap-2">
+              <span className="material-symbols-outlined text-tertiary">payments</span>
+              Commission Rates (LAK)
+            </h4>
+            <p className="text-body-sm text-on-surface-variant mt-1">
+              Commission = (Jewelry Baht × rate) + (Bar Baht × rate) + (Qty × rate). Saved per staff type per month. Synced to Google Sheets CommissionConfig tab.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={commMonth}
+              onChange={e => setCommMonth(Number(e.target.value))}
+              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none"
+            >
+              {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+            </select>
+            <input
+              type="number" value={commYear}
+              onChange={e => setCommYear(Number(e.target.value))}
+              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none w-24"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {(['b2c', 'b2b'] as const).map(type => (
+            <div key={type} className={`rounded-xl p-5 border ${type === 'b2b' ? 'bg-secondary/5 border-secondary/20' : 'bg-primary/5 border-primary/20'}`}>
+              <div className="flex items-center gap-2 mb-4">
+                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider
+                  ${type === 'b2b' ? 'bg-secondary text-white' : 'bg-primary text-white'}`}>
+                  {type.toUpperCase()}
+                </span>
+                <span className="text-on-surface-variant text-body-sm">{MONTH_NAMES[commMonth - 1]} {commYear}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                {[
+                  { key: 'jewelry' as const, label: 'Jewelry (₭/Baht)' },
+                  { key: 'bar'     as const, label: 'Bar (₭/Baht)' },
+                  { key: 'qty'     as const, label: 'Qty (₭/pc)' },
+                ].map(({ key, label }) => (
+                  <div key={key}>
+                    <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">{label}</label>
+                    <input
+                      type="number" min="0" step="100"
+                      value={commEdits[type]?.[key] ?? ''}
+                      onChange={e => setCommEdits(prev => ({
+                        ...prev,
+                        [type]: { ...prev[type], [key]: e.target.value },
+                      }))}
+                      className={`w-full border-b-2 px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold bg-white
+                        ${type === 'b2b' ? 'border-secondary text-secondary' : 'border-primary text-primary'}`}
+                    />
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => saveCommissionRate(type)}
+                disabled={savingComm === type}
+                className={`w-full py-2.5 rounded-lg font-label-md text-label-md flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 text-white
+                  ${type === 'b2b' ? 'bg-secondary' : 'bg-primary'}`}
+              >
+                <span className={`material-symbols-outlined text-sm ${savingComm === type ? 'animate-spin-slow' : ''}`}>
+                  {savingComm === type ? 'sync' : 'save'}
+                </span>
+                {savingComm === type ? 'Saving & Syncing...' : `Save ${type.toUpperCase()} Rates`}
+              </button>
+            </div>
+          ))}
         </div>
       </GlassCard>
 

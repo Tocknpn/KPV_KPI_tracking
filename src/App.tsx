@@ -10,6 +10,7 @@ import Settings from './screens/Settings'
 import KpiSettings from './screens/KpiSettings'
 import UserManagement from './screens/UserManagement'
 import UploadHistory from './screens/UploadHistory'
+import Commission from './screens/Commission'
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
       <Route path="/kpi-settings"    element={<KpiSettings />} />
       <Route path="/users"          element={<UserManagement />} />
       <Route path="/upload-history" element={<UploadHistory />} />
+      <Route path="/commission"     element={<Commission />} />
       <Route path="*"             element={<Navigate to="/login" replace />} />
     </Routes>
   )

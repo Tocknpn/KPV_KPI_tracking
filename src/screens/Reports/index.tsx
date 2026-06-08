@@ -26,6 +26,8 @@ function kpiBg(pct: number) {
 }
 
 type SortCol = 'full_name' | 'actual_jewelry' | 'actual_bar' | 'actual_qty' | 'kpiPct' | 'eomKpiPct'
+type ReportTab = 'performance' | 'customer_type'
+type StaffTypeFilter = 'all' | 'b2c' | 'b2b'
 
 // ── Team Supervisor single-select dropdown ────────────────────────────────
 interface SupervisorDropdownProps {
@@ -189,6 +191,8 @@ export default function Reports() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [selectedSupId, setSelectedSupId] = useState<number | null>(null)
   const [supervisors, setSupervisors] = useState<Array<{ id: number; full_name: string; branch_name: string }>>([])
+  const [activeTab, setActiveTab] = useState<ReportTab>('performance')
+  const [typeFilter, setTypeFilter] = useState<StaffTypeFilter>('all')
 
   const showSupFilter = user?.role === 'branch_manager' || user?.role === 'executive' || user?.role === 'admin'
 
@@ -246,9 +250,28 @@ export default function Reports() {
   }
 
   const searched = rows.filter(r =>
-    r.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    r.position.toLowerCase().includes(search.toLowerCase())
+    (typeFilter === 'all' || r.staff_type === typeFilter) &&
+    (r.full_name.toLowerCase().includes(search.toLowerCase()) ||
+     r.position.toLowerCase().includes(search.toLowerCase()))
   )
+
+  // Customer Type Report — group by staff_type
+  const b2cRows = rows.filter(r => r.staff_type === 'b2c')
+  const b2bRows = rows.filter(r => r.staff_type === 'b2b')
+  function groupStats(group: MonthlyReportRow[]) {
+    const n = group.length
+    return {
+      count: n,
+      totalJewelry: group.reduce((s, r) => s + r.actual_jewelry, 0),
+      totalBar:     group.reduce((s, r) => s + r.actual_bar, 0),
+      totalQty:     group.reduce((s, r) => s + r.actual_qty, 0),
+      avgKpiPct:    n ? group.reduce((s, r) => s + r.kpiScore.pct, 0) / n : 0,
+      avgEomPct:    n ? group.reduce((s, r) => s + r.eomKpiPct, 0) / n : 0,
+      totalPts:     group.reduce((s, r) => s + r.kpiScore.total, 0),
+    }
+  }
+  const b2cStats = groupStats(b2cRows)
+  const b2bStats = groupStats(b2bRows)
 
   const sorted = [...searched].sort((a, b) => {
     const mul = sortDir === 'asc' ? 1 : -1
@@ -290,12 +313,12 @@ export default function Reports() {
   return (
     <AppShell title="SalesTrack Pro">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
         <div>
           <nav className="flex items-center gap-2 text-label-md text-on-surface-variant mb-2">
             <span>Reports</span>
             <span className="material-symbols-outlined text-sm">chevron_right</span>
-            <span className="text-primary">Performance Tracking</span>
+            <span className="text-primary">{activeTab === 'performance' ? 'Performance Tracking' : 'Customer Type Report'}</span>
           </nav>
           <h2 className="font-headline-lg text-headline-lg text-on-surface">Monthly Tracking Report</h2>
           <p className="text-on-surface-variant text-body-md mt-1">
@@ -313,9 +336,51 @@ export default function Reports() {
           {user?.role !== 'supervisor' && user?.role !== 'branch_manager' && (
             <BranchDropdown branches={branches} selectedIds={selectedBranchIds} onChange={setSelectedBranchIds} />
           )}
-          {showSupFilter && (
+          {showSupFilter && activeTab === 'performance' && (
             <SupervisorDropdown supervisors={visibleSupervisors} selectedId={selectedSupId} onChange={setSelectedSupId} />
           )}
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
+        <div className="flex rounded-xl bg-surface-container overflow-hidden border border-white/20">
+          {([
+            { key: 'performance',   label: 'Performance Tracking', icon: 'insert_chart' },
+            { key: 'customer_type', label: 'Customer Type Report',  icon: 'group' },
+          ] as const).map(t => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className={`flex items-center gap-1.5 px-4 py-2.5 font-label-md text-label-md transition-colors
+                ${activeTab === t.key ? 'bg-primary text-white' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
+            >
+              <span className="material-symbols-outlined text-sm">{t.icon}</span>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* B2C / B2B type filter chips */}
+        <div className="flex gap-2 ml-auto">
+          {([
+            { key: 'all', label: 'All Types' },
+            { key: 'b2c', label: 'B2C' },
+            { key: 'b2b', label: 'B2B' },
+          ] as const).map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTypeFilter(t.key)}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider transition-colors
+                ${typeFilter === t.key
+                  ? t.key === 'b2b' ? 'bg-secondary text-white'
+                  : t.key === 'b2c' ? 'bg-primary text-white'
+                  : 'bg-on-surface text-surface'
+                  : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'}`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -324,7 +389,7 @@ export default function Reports() {
         {[
           { label: 'Avg KPI Score %',   value: fmtPct(avgKpiPct),    color: 'border-primary',            sub: `Day ${meta.dayOfMonth} of ${meta.daysInMonth}` },
           { label: 'Avg Est. Month End', value: fmtPct(avgEomKpiPct), color: 'border-tertiary',            sub: `${meta.daysRemaining} days remaining` },
-          { label: 'Total Jewelry MTD',  value: `${fmt(totalJewelry, 1)} Baht`, color: 'border-secondary-container', sub: `${rows.length} reps` },
+          { label: 'Total Jewelry MTD',  value: `${fmt(totalJewelry, 1)} Baht`, color: 'border-secondary-container', sub: `${searched.length} reps${typeFilter !== 'all' ? ` (${typeFilter.toUpperCase()})` : ''}` },
           { label: 'Total Bar MTD',      value: `${fmt(totalBar, 1)} Baht`,     color: 'border-outline-variant',    sub: `${dateFrom} → ${dateTo}` },
         ].map(k => (
           <GlassCard key={k.label} className={`p-5 border-l-4 ${k.color}`}>
@@ -334,6 +399,9 @@ export default function Reports() {
           </GlassCard>
         ))}
       </div>
+
+      {/* ── Performance Tracking tab ────────────────────────────────────── */}
+      {activeTab === 'performance' && (<>
 
       {/* Search */}
       <div className="relative mb-4 max-w-sm">
@@ -347,7 +415,7 @@ export default function Reports() {
 
       {/* Est. Month End note */}
       <p className="text-[11px] text-on-surface-variant/60 mb-3 italic">
-        KPI % = (Jewelry + Bar + Qty Score) ÷ branch point target &nbsp;·&nbsp;
+        KPI % = (Jewelry + Bar + Qty Score) ÷ individual point target &nbsp;·&nbsp;
         Est. Month End = KPI % ÷ Day {meta.dayOfMonth} × {meta.daysInMonth} days
       </p>
 
@@ -433,6 +501,92 @@ export default function Reports() {
           </p>
         </div>
       </GlassCard>
+
+      </>)}
+
+      {/* ── Customer Type Report tab ────────────────────────────────────── */}
+      {activeTab === 'customer_type' && (
+        <div className="space-y-6">
+          {/* B2C vs B2B comparison cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {[
+              { type: 'B2C', stats: b2cStats, color: 'border-primary', bg: 'bg-primary/5', textColor: 'text-primary' },
+              { type: 'B2B', stats: b2bStats, color: 'border-secondary', bg: 'bg-secondary/5', textColor: 'text-secondary' },
+            ].map(({ type, stats, color, bg, textColor }) => (
+              <GlassCard key={type} className={`p-6 border-l-4 ${color}`} elevated>
+                <div className="flex items-center gap-3 mb-5">
+                  <div className={`px-3 py-1 rounded-full ${bg} ${textColor} font-bold text-sm`}>{type}</div>
+                  <span className="text-on-surface-variant text-body-sm">{stats.count} representatives</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  {[
+                    { label: 'Jewelry MTD',    value: `${fmt(stats.totalJewelry, 1)} Baht` },
+                    { label: 'Bar MTD',         value: `${fmt(stats.totalBar, 1)} Baht` },
+                    { label: 'Qty MTD',         value: stats.totalQty.toLocaleString() + ' pcs' },
+                    { label: 'Total KPI Pts',   value: stats.totalPts.toLocaleString('en-US', { maximumFractionDigits: 0 }) },
+                    { label: 'Avg KPI %',       value: fmtPct(stats.avgKpiPct) },
+                    { label: 'Avg Est. EOM',    value: fmtPct(stats.avgEomPct) },
+                  ].map(item => (
+                    <div key={item.label} className="rounded-lg bg-white/40 p-3">
+                      <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-1">{item.label}</p>
+                      <p className={`font-tabular-nums font-bold text-body-sm ${textColor}`}>{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
+            ))}
+          </div>
+
+          {/* Detail table by type */}
+          {[
+            { type: 'b2c', label: 'B2C Staff', labelColor: 'text-primary', rows: typeFilter === 'b2b' ? [] : b2cRows },
+            { type: 'b2b', label: 'B2B Staff', labelColor: 'text-secondary', rows: typeFilter === 'b2c' ? [] : b2bRows },
+          ].map(({ type, label, labelColor, rows: typeRows }) => typeRows.length === 0 ? null : (
+            <GlassCard key={type} className="overflow-hidden shadow-sm border border-white/40" elevated>
+              <div className="px-5 py-4 border-b border-white/30 flex items-center gap-3">
+                <span className={`font-headline-md text-headline-md ${labelColor}`}>{label}</span>
+                <span className="text-on-surface-variant text-body-sm">{typeRows.length} reps</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-surface-variant/20 border-b border-white/40">
+                      <th className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Representative</th>
+                      {isMultiBranch && <th className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Branch</th>}
+                      <th className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Jewelry (Baht)</th>
+                      <th className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Bar (Baht)</th>
+                      <th className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Qty</th>
+                      <th className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">KPI %</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/20">
+                    {loading ? (
+                      <tr><td colSpan={6} className="py-8 text-center text-on-surface-variant text-body-sm">Loading...</td></tr>
+                    ) : typeRows.map(r => (
+                      <tr key={r.id} className="hover:bg-primary/[0.02] transition-colors">
+                        <td className="px-5 py-3 whitespace-nowrap">
+                          <p className="font-label-md text-label-md font-bold">{r.full_name}</p>
+                          <p className="text-[10px] text-on-surface-variant font-mono">{r.rep_code ?? r.supervisor_name ?? '—'}</p>
+                        </td>
+                        {isMultiBranch && <td className="px-5 py-3 text-body-sm text-on-surface-variant">{r.branch_name}</td>}
+                        <td className="px-5 py-3 text-right font-tabular-nums text-body-sm font-bold">{fmt(r.actual_jewelry)} Baht</td>
+                        <td className="px-5 py-3 text-right font-tabular-nums text-body-sm font-bold">{fmt(r.actual_bar)} Baht</td>
+                        <td className="px-5 py-3 text-right font-tabular-nums text-body-sm">{r.actual_qty}</td>
+                        <td className="px-5 py-3 text-right">
+                          <span className={`font-tabular-nums font-bold text-body-sm ${kpiColor(r.kpiScore.pct)}`}>
+                            {fmtPct(r.kpiScore.pct)}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </GlassCard>
+          ))}
+        </div>
+      )}
+
     </AppShell>
   )
 }
