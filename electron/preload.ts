@@ -130,6 +130,16 @@ contextBridge.exposeInMainWorld('api', {
   getRosterTemplate: (token: string) =>
     ipcRenderer.invoke('upload:getRosterTemplate', token),
 
+  // ── Commission ────────────────────────────────────────────────────────
+  getCommissionConfigs: (token: string, yearMonth?: string) =>
+    ipcRenderer.invoke('commission:getConfigs', token, yearMonth),
+  saveCommissionConfig: (token: string, data: unknown) =>
+    ipcRenderer.invoke('commission:saveConfig', token, data),
+  pullCommissionConfigs: (token: string) =>
+    ipcRenderer.invoke('commission:pullConfigs', token),
+  getCommissionReport: (token: string, branchIds: number[], year: number, month: number) =>
+    ipcRenderer.invoke('commission:getReport', token, branchIds, year, month),
+
   // ── Admin / Test Data ─────────────────────────────────────────────────
   seedTestData: (token: string) =>
     ipcRenderer.invoke('admin:seedTestData', token),

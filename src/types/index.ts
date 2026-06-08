@@ -27,6 +27,7 @@ export interface Salesman {
   position: string
   department: string
   active: number
+  staff_type: 'b2c' | 'b2b'
   supervisor_name?: string
 }
 
@@ -116,6 +117,7 @@ export interface MonthlyReportRow {
   branch_id: number
   branch_name: string
   supervisor_name: string | null
+  staff_type: string
   actual_jewelry: number
   actual_bar: number
   actual_qty: number
@@ -143,6 +145,7 @@ export interface Supervisor {
   branch_name: string
   rep_count: number
   active: number
+  staff_type?: string
 }
 
 export interface SalesmanBrief {
@@ -167,6 +170,52 @@ export interface TeamPerformanceRow {
   sup_score: number
   sup_kpi_pct_ach: number
   branch_target: number
+}
+
+export interface CommissionConfig {
+  id: number
+  staff_type: string
+  year_month: string
+  jewelry_rate_lak: number
+  bar_rate_lak: number
+  qty_rate_lak: number
+  created_at: string
+}
+
+export interface CommissionReportRow {
+  id: number
+  full_name: string
+  nickname: string
+  staff_type: string
+  branch_id: number
+  branch_name: string
+  branch_code: string
+  supervisor_name: string | null
+  actual_jewelry: number
+  actual_bar: number
+  actual_qty: number
+  commission_lak: number
+  rate_applied: { jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number } | null
+}
+
+export interface CommissionSupervisorRow {
+  id: number
+  full_name: string
+  nickname: string
+  staff_type: string
+  branch_id: number
+  branch_name: string
+  branch_code: string
+  team_commission_lak: number
+  supervisor_commission_lak: number
+  sup_pct: number
+}
+
+export interface StaffMonthlyTarget {
+  id: number
+  salesman_id: number
+  year_month: string
+  point_target: number
 }
 
 export interface SyncLog {

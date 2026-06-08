@@ -7,13 +7,13 @@ import { requireAuth } from './auth'
 
 const SHEET_HEADERS = ['Date', 'Branch', 'Rep Code', 'Salesman Name', 'Jewelry (Baht)', 'Bar (Baht)', 'Qty']
 
-function getServiceAuth(serviceAccountPath: string) {
+export function getServiceAuth(serviceAccountPath: string) {
   if (!existsSync(serviceAccountPath)) throw new Error(`Service account file not found: ${serviceAccountPath}`)
   const key = JSON.parse(readFileSync(serviceAccountPath, 'utf8'))
   return new google.auth.GoogleAuth({ credentials: key, scopes: ['https://www.googleapis.com/auth/spreadsheets'] })
 }
 
-function getSetting(key: string): string {
+export function getSetting(key: string): string {
   const row = prepare(getDb(), `SELECT value FROM app_settings WHERE key = ?`).get(key) as { value: string } | undefined
   return row?.value ?? ''
 }
@@ -161,10 +161,31 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
         imported++
       }
 
+      // ── Pull commission configs from CommissionConfig tab ─────────────
+      let configsImported = 0
+      try {
+        const cfgRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'CommissionConfig!A:E' }).catch(() => null)
+        const cfgRows = cfgRes?.data?.values ?? []
+        const cfgDataRows = cfgRows.length > 0 && String(cfgRows[0][0]).toLowerCase().includes('type') ? cfgRows.slice(1) : cfgRows
+        for (const row of cfgDataRows) {
+          const [staffType, yearMonth, jRate, bRate, qRate] = row as string[]
+          if (!staffType || !yearMonth) continue
+          prepare(db, `
+            INSERT INTO commission_configs (staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak)
+            VALUES (?,?,?,?,?)
+            ON CONFLICT(staff_type, year_month) DO UPDATE SET
+              jewelry_rate_lak = excluded.jewelry_rate_lak,
+              bar_rate_lak     = excluded.bar_rate_lak,
+              qty_rate_lak     = excluded.qty_rate_lak
+          `).run(staffType, yearMonth, parseFloat(jRate) || 0, parseFloat(bRate) || 0, parseFloat(qRate) || 0)
+          configsImported++
+        }
+      } catch { /* CommissionConfig tab may not exist yet */ }
+
       prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now)
       prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('pull', ?, 'success')`).run(imported)
 
-      return { success: true, count: imported, message: `Pulled ${imported} entries from Google Sheets.` }
+      return { success: true, count: imported, configsImported, message: `Pulled ${imported} entries and ${configsImported} commission configs from Google Sheets.` }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       prepare(getDb(), `INSERT INTO sync_logs (direction, records_count, status, error_message) VALUES ('pull', 0, 'error', ?)`).run(msg)

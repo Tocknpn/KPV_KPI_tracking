@@ -54,6 +54,18 @@ export function seedDatabase(db: Database): void {
     prepare(db, `INSERT INTO kpi_metrics (name, unit, color_token, active, display_order, points_per_unit) VALUES (?,?,?,1,?,?)`).run('Bar Weight',     'g',   'secondary', 2, 7.5)
     prepare(db, `INSERT INTO kpi_metrics (name, unit, color_token, active, display_order, points_per_unit) VALUES (?,?,?,1,?,?)`).run('Quantity',       'pcs', 'tertiary',  3, 0)
 
+    // ── KPI metric rates by staff type ───────────────────────────────────
+    // B2C uses the base kpi_metrics.points_per_unit; B2B has higher multipliers
+    prepare(db, `INSERT OR IGNORE INTO kpi_metric_type_rates (metric_id, staff_type, points_per_unit) VALUES (1,'b2c',15)`).run()
+    prepare(db, `INSERT OR IGNORE INTO kpi_metric_type_rates (metric_id, staff_type, points_per_unit) VALUES (2,'b2c',7.5)`).run()
+    prepare(db, `INSERT OR IGNORE INTO kpi_metric_type_rates (metric_id, staff_type, points_per_unit) VALUES (1,'b2b',20)`).run()
+    prepare(db, `INSERT OR IGNORE INTO kpi_metric_type_rates (metric_id, staff_type, points_per_unit) VALUES (2,'b2b',10)`).run()
+
+    // ── Default commission configs (current month, placeholder rates) ─────
+    const cm = (() => { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}` })()
+    prepare(db, `INSERT OR IGNORE INTO commission_configs (staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak) VALUES (?,?,?,?,?)`).run('b2c', cm, 5000, 3000, 500)
+    prepare(db, `INSERT OR IGNORE INTO commission_configs (staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak) VALUES (?,?,?,?,?)`).run('b2b', cm, 8000, 5000, 800)
+
     // ── Qty tier configs per branch ───────────────────────────────────────
     // threshold_pct stores absolute qty threshold; score stores the multiplier
     const today = new Date().toISOString().split('T')[0]
@@ -148,7 +160,10 @@ export function seedTestData(db: Database): void {
   const pad   = (n: number) => String(n).padStart(2, '0')
   const day1  = `${year}-${pad(month)}-01`
 
+  const yearMonth = `${year}${pad(month)}`
+
   // ── Supervisors (3 per branch) ────────────────────────────────────────────
+  // alpha/beta teams = B2C, gamma team = B2B
   const SUPERVISORS: Array<{ branchId: number; fullName: string; nick: string; tier: 'alpha' | 'beta' | 'gamma' }> = [
     // Morning Market (1)
     { branchId: 1, fullName: 'Somvang Phongsavanh',     nick: 'Somvang',  tier: 'alpha' },
@@ -203,9 +218,10 @@ export function seedTestData(db: Database): void {
 
   transaction(db, () => {
     for (const sup of SUPERVISORS) {
+      const supStaffType = sup.tier === 'gamma' ? 'b2b' : 'b2c'
       const { lastInsertRowid } = prepare(db,
-        `INSERT OR IGNORE INTO supervisors (full_name, nickname, branch_id) VALUES (?,?,?)`
-      ).run(sup.fullName, sup.nick, sup.branchId)
+        `INSERT OR IGNORE INTO supervisors (full_name, nickname, branch_id, staff_type) VALUES (?,?,?,?)`
+      ).run(sup.fullName, sup.nick, sup.branchId, supStaffType)
       if (lastInsertRowid) supIdsByBranchAndTier[`${sup.branchId}-${sup.tier}`] = lastInsertRowid as number
     }
 
@@ -231,25 +247,32 @@ export function seedTestData(db: Database): void {
       for (const { tier, names } of tiers) {
         const supId   = supIdsByBranchAndTier[`${branchId}-${tier}`]
         const vals    = TIER_VALS[tier]
-        const bCode   = ['MM','VC','IT','VT'][branchId - 1]
-        const tLetter = tier === 'alpha' ? 'A' : tier === 'beta' ? 'B' : 'G'
+        const bCode      = ['MM','VC','IT','VT'][branchId - 1]
+        const tLetter    = tier === 'alpha' ? 'A' : tier === 'beta' ? 'B' : 'G'
+        const staffType  = tier === 'gamma' ? 'b2b' : 'b2c'
 
         for (let ni = 0; ni < names.length; ni++) {
           const [fullName, nick] = names[ni]
           // Rep code: e.g. MM-A-001
           const repCode = `${bCode}-${tLetter}-${String(ni + 1).padStart(3, '0')}`
           const { lastInsertRowid: sid } = prepare(db,
-            `INSERT OR IGNORE INTO salesmen (rep_code, full_name, nickname, branch_id, position, department, active, supervisor_id)
-             VALUES (?,?,?,?,'Sales Representative','Sales',1,?)`
-          ).run(repCode, `${fullName} (${bCode})`, nick, branchId, supId ?? null)
+            `INSERT OR IGNORE INTO salesmen (rep_code, full_name, nickname, branch_id, staff_type, position, department, active, supervisor_id)
+             VALUES (?,?,?,?,?,'Sales Representative','Sales',1,?)`
+          ).run(repCode, `${fullName} (${bCode})`, nick, branchId, staffType, supId ?? null)
 
           if (!sid) continue
 
-          // Monthly target
+          // Monthly KPI target (legacy targets table — kept for XLSX upload compat)
           prepare(db,
             `INSERT OR IGNORE INTO targets (salesman_id, branch_id, year, month, jewelry_weight_g, bar_weight_g, quantity)
              VALUES (?,?,?,?,?,?,?)`
           ).run(sid, branchId, year, month, vals.tJ, vals.tB, vals.tQ)
+
+          // Individual KPI point target (new)
+          const ptTarget = staffType === 'b2b' ? 7000 : 5000
+          prepare(db,
+            `INSERT OR IGNORE INTO staff_monthly_targets (salesman_id, year_month, point_target) VALUES (?,?,?)`
+          ).run(sid, yearMonth, ptTarget)
 
           // MTD entry on day 1
           prepare(db,

@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 9
+const SCHEMA_VERSION = 10
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -36,6 +36,7 @@ const BASE_TABLES = `
     full_name  TEXT    NOT NULL,
     nickname   TEXT    NOT NULL DEFAULT '',
     branch_id  INTEGER NOT NULL REFERENCES branches(id),
+    staff_type TEXT    NOT NULL DEFAULT 'b2c',
     position   TEXT    NOT NULL DEFAULT '',
     department TEXT    NOT NULL DEFAULT '',
     active     INTEGER NOT NULL DEFAULT 1,
@@ -78,10 +79,35 @@ const BASE_TABLES = `
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     metric_id      INTEGER NOT NULL REFERENCES kpi_metrics(id),
     branch_id      INTEGER,
+    staff_type     TEXT,
     label          TEXT    NOT NULL,
     effective_from TEXT    NOT NULL,
     effective_to   TEXT,
     is_active      INTEGER NOT NULL DEFAULT 1
+  );
+  CREATE TABLE IF NOT EXISTS kpi_metric_type_rates (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    metric_id       INTEGER NOT NULL REFERENCES kpi_metrics(id),
+    staff_type      TEXT    NOT NULL,
+    points_per_unit REAL    NOT NULL DEFAULT 0,
+    UNIQUE(metric_id, staff_type)
+  );
+  CREATE TABLE IF NOT EXISTS staff_monthly_targets (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    salesman_id INTEGER NOT NULL REFERENCES salesmen(id),
+    year_month  TEXT    NOT NULL,
+    point_target REAL   NOT NULL DEFAULT 0,
+    UNIQUE(salesman_id, year_month)
+  );
+  CREATE TABLE IF NOT EXISTS commission_configs (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    staff_type       TEXT    NOT NULL,
+    year_month       TEXT    NOT NULL,
+    jewelry_rate_lak REAL    NOT NULL DEFAULT 0,
+    bar_rate_lak     REAL    NOT NULL DEFAULT 0,
+    qty_rate_lak     REAL    NOT NULL DEFAULT 0,
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(staff_type, year_month)
   );
   CREATE TABLE IF NOT EXISTS kpi_tiers (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,6 +129,7 @@ const BASE_TABLES = `
     full_name  TEXT    NOT NULL,
     nickname   TEXT    NOT NULL DEFAULT '',
     branch_id  INTEGER NOT NULL REFERENCES branches(id),
+    staff_type TEXT    NOT NULL DEFAULT 'b2c',
     active     INTEGER NOT NULL DEFAULT 1,
     created_at TEXT    NOT NULL DEFAULT (datetime('now'))
   );
@@ -239,6 +266,48 @@ export function applySchema(db: Database): boolean {
     try { db.run(`ALTER TABLE salesmen ADD COLUMN rep_code TEXT`) } catch { /* already exists */ }
     try { db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_salesmen_rep_code ON salesmen(rep_code) WHERE rep_code IS NOT NULL`) } catch { /* already exists */ }
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '9')`).run()
+  }
+
+  if (currentVersion < 10) {
+    try { db.run(`ALTER TABLE salesmen ADD COLUMN staff_type TEXT NOT NULL DEFAULT 'b2c'`) } catch { /* already exists */ }
+    try { db.run(`ALTER TABLE supervisors ADD COLUMN staff_type TEXT NOT NULL DEFAULT 'b2c'`) } catch { /* already exists */ }
+    try { db.run(`ALTER TABLE kpi_tier_configs ADD COLUMN staff_type TEXT`) } catch { /* already exists */ }
+    db.run(`
+      CREATE TABLE IF NOT EXISTS kpi_metric_type_rates (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        metric_id       INTEGER NOT NULL REFERENCES kpi_metrics(id),
+        staff_type      TEXT    NOT NULL,
+        points_per_unit REAL    NOT NULL DEFAULT 0,
+        UNIQUE(metric_id, staff_type)
+      )
+    `)
+    db.run(`
+      CREATE TABLE IF NOT EXISTS staff_monthly_targets (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        salesman_id  INTEGER NOT NULL REFERENCES salesmen(id),
+        year_month   TEXT    NOT NULL,
+        point_target REAL    NOT NULL DEFAULT 0,
+        UNIQUE(salesman_id, year_month)
+      )
+    `)
+    db.run(`
+      CREATE TABLE IF NOT EXISTS commission_configs (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        staff_type       TEXT    NOT NULL,
+        year_month       TEXT    NOT NULL,
+        jewelry_rate_lak REAL    NOT NULL DEFAULT 0,
+        bar_rate_lak     REAL    NOT NULL DEFAULT 0,
+        qty_rate_lak     REAL    NOT NULL DEFAULT 0,
+        created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(staff_type, year_month)
+      )
+    `)
+    // Seed default B2C and B2B metric rates
+    db.prepare(`INSERT OR IGNORE INTO kpi_metric_type_rates (metric_id, staff_type, points_per_unit) VALUES (1, 'b2c', 15)`).run()
+    db.prepare(`INSERT OR IGNORE INTO kpi_metric_type_rates (metric_id, staff_type, points_per_unit) VALUES (2, 'b2c', 7.5)`).run()
+    db.prepare(`INSERT OR IGNORE INTO kpi_metric_type_rates (metric_id, staff_type, points_per_unit) VALUES (1, 'b2b', 20)`).run()
+    db.prepare(`INSERT OR IGNORE INTO kpi_metric_type_rates (metric_id, staff_type, points_per_unit) VALUES (2, 'b2b', 10)`).run()
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '10')`).run()
   }
 
   return false // Existing DB — no seeding needed

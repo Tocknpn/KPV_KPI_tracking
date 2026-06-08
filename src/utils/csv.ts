@@ -56,6 +56,9 @@ const ALIASES: Record<string, string> = {
   branch_code: 'branch_code', branch: 'branch_code', branch_id: 'branch_code',
   nickname: 'nickname', nick: 'nickname',
   team_sup_name: 'supervisor_name', supervisor_name: 'supervisor_name', team_supervisor: 'supervisor_name', sup_name: 'supervisor_name',
+  staff_type: 'staff_type', type: 'staff_type', customer_type: 'staff_type',
+  point_target: 'point_target', kpi_target: 'point_target', monthly_target: 'point_target', points_target: 'point_target',
+  year_month: 'year_month', yearmonth: 'year_month', yyyymm: 'year_month',
   kpi_1: 'jewelry_weight_g', jewelry_weight_g: 'jewelry_weight_g', jewelry: 'jewelry_weight_g',
   'jewelry_(baht)': 'jewelry_weight_g', 'jewelry_(g)': 'jewelry_weight_g', jewelry_weight: 'jewelry_weight_g',
   kpi_2: 'bar_weight_g', bar_weight_g: 'bar_weight_g', bar: 'bar_weight_g',
@@ -79,7 +82,7 @@ export function normaliseRow(row: Record<string, string>): Record<string, string
 // ── Validate & convert daily rows (rep_code based) ────────────────────────
 export interface DailyRowRaw { date: string; repCode: string; jewelryWeightG: number; barWeightG: number; quantity: number }
 export interface TargetRowRaw { repCode: string; year: number; month: number; jewelryWeightG: number; barWeightG: number; quantity: number }
-export interface RosterRowRaw { repCode: string; fullName: string; nickname: string; branchCode: string; supervisorName: string }
+export interface RosterRowRaw { repCode: string; fullName: string; nickname: string; branchCode: string; supervisorName: string; staffType: 'b2c' | 'b2b'; pointTarget: number; yearMonth: string }
 
 export function validateDailyRows(parsed: ParseResult): { rows: DailyRowRaw[]; errors: string[] } {
   const errors = [...parsed.errors]
@@ -153,11 +156,19 @@ export function validateRosterRows(parsed: ParseResult): { rows: RosterRowRaw[];
     const branchCode = (raw.branch_code ?? '').trim().toUpperCase()
     if (!branchCode) { errors.push(`Row ${lineNum}: Missing Branch Code.`); continue }
 
+    const rawStaffType = (raw.staff_type ?? '').trim().toLowerCase()
+    const staffType: 'b2c' | 'b2b' = rawStaffType === 'b2b' ? 'b2b' : 'b2c'
+
+    const yearMonth = (raw.year_month ?? '').trim().replace(/\D/g, '').slice(0, 6)
+
     rows.push({
       repCode, fullName,
       nickname:       (raw.nickname ?? '').trim(),
       branchCode,
       supervisorName: (raw.supervisor_name ?? '').trim(),
+      staffType,
+      pointTarget:    parseFloat(raw.point_target) || 0,
+      yearMonth,
     })
   }
 

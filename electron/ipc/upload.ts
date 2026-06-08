@@ -26,6 +26,9 @@ export interface RosterRow {
   nickname: string
   branchCode: string
   supervisorName: string
+  staffType?: 'b2c' | 'b2b'
+  pointTarget?: number
+  yearMonth?: string
 }
 
 export interface UploadLogEntry {
@@ -146,15 +149,25 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
             supId = sup?.id ?? null
           }
 
+          const staffType = r.staffType === 'b2b' ? 'b2b' : 'b2c'
+
           const existing = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(r.repCode) as { id: number } | undefined
+          let salesmanId: number
           if (existing) {
-            prepare(db, `UPDATE salesmen SET full_name=?, nickname=?, branch_id=?, supervisor_id=?, active=1 WHERE rep_code=?`)
-              .run(r.fullName, r.nickname || '', branch.id, supId, r.repCode)
+            prepare(db, `UPDATE salesmen SET full_name=?, nickname=?, branch_id=?, supervisor_id=?, staff_type=?, active=1 WHERE rep_code=?`)
+              .run(r.fullName, r.nickname || '', branch.id, supId, staffType, r.repCode)
+            salesmanId = existing.id
             updated++
           } else {
-            prepare(db, `INSERT INTO salesmen (rep_code, full_name, nickname, branch_id, position, department, active, supervisor_id) VALUES (?,?,?,?,'Sales Representative','Sales',1,?)`)
-              .run(r.repCode, r.fullName, r.nickname || '', branch.id, supId)
+            const ins = prepare(db, `INSERT INTO salesmen (rep_code, full_name, nickname, branch_id, staff_type, position, department, active, supervisor_id) VALUES (?,?,?,?,?,'Sales Representative','Sales',1,?)`)
+              .run(r.repCode, r.fullName, r.nickname || '', branch.id, staffType, supId)
+            salesmanId = Number(ins.lastInsertRowid)
             created++
+          }
+
+          if (r.pointTarget && r.yearMonth && /^\d{6}$/.test(r.yearMonth)) {
+            prepare(db, `INSERT INTO staff_monthly_targets (salesman_id, year_month, point_target) VALUES (?,?,?) ON CONFLICT(salesman_id, year_month) DO UPDATE SET point_target = excluded.point_target`)
+              .run(salesmanId, r.yearMonth, r.pointTarget)
           }
         }
       })
@@ -169,10 +182,15 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     requireAuth(token)
     return prepare(db, `
       SELECT s.rep_code, s.full_name, s.nickname, b.code AS branch_code,
-        sv.full_name AS supervisor_name
+        sv.full_name AS supervisor_name, s.staff_type,
+        smt.point_target, smt.year_month
       FROM salesmen s
       JOIN branches b ON b.id = s.branch_id
       LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
+      LEFT JOIN staff_monthly_targets smt ON smt.salesman_id = s.id
+        AND smt.year_month = (
+          SELECT MAX(year_month) FROM staff_monthly_targets WHERE salesman_id = s.id
+        )
       WHERE s.active = 1
       ORDER BY b.code, sv.full_name NULLS LAST, s.full_name
     `).all()

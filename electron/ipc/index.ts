@@ -15,6 +15,7 @@
  *   sheets:*        -> sheets.ts      (Google Sheets push/pull/config)
  *   email:*         -> email.ts       (SMTP config, scheduled reports)
  *   admin:*         -> admin.ts       (test data seed, data stats)
+ *   commission:*    -> commission.ts  (commission configs, report, Sheets sync)
  */
 
 import type { IpcMain } from 'electron'
@@ -27,6 +28,7 @@ import { registerUploadHandlers } from './upload'
 import { registerSheetsHandlers } from './sheets'
 import { registerEmailHandlers } from './email'
 import { registerAdminHandlers } from './admin'
+import { registerCommissionHandlers } from './commission'
 
 export { startEmailScheduler } from './email'
 export { computeKpiScore } from './kpi'
@@ -42,4 +44,5 @@ export function registerAllHandlers(ipcMain: IpcMain): void {
   registerSheetsHandlers(ipcMain)
   registerEmailHandlers(ipcMain)
   registerAdminHandlers(ipcMain)
+  registerCommissionHandlers(ipcMain)
 }

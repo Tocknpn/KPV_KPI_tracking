@@ -10,32 +10,45 @@ export function computeKpiScore(
   branchId: number,
   actual: number,
   target: number,
-  date: string = new Date().toISOString().split('T')[0]
+  date: string = new Date().toISOString().split('T')[0],
+  staffType?: string
 ): { score: number; pct: number; tierId: number | null } {
   const pct = target > 0 ? (actual / target) * 100 : 0
 
-  // Fetch metric to check scoring mode
+  // Staff-type-specific rate takes priority over metric default (jewelry/bar)
+  if (staffType) {
+    const typeRate = prepare(db, `
+      SELECT points_per_unit FROM kpi_metric_type_rates WHERE metric_id = ? AND staff_type = ?
+    `).get(metricId, staffType) as { points_per_unit: number } | undefined
+    if (typeRate && typeRate.points_per_unit > 0) {
+      return { score: actual * typeRate.points_per_unit, pct, tierId: null }
+    }
+  }
+
+  // Fetch metric default multiplier
   const metric = prepare(db, `SELECT points_per_unit FROM kpi_metrics WHERE id = ?`).get(metricId) as
     | { points_per_unit: number }
     | undefined
 
-  // Jewelry / Bar: direct weight × multiplier (no target percentage needed)
+  // Jewelry / Bar: direct weight × multiplier
   if (metric && metric.points_per_unit > 0) {
     return { score: actual * metric.points_per_unit, pct, tierId: null }
   }
 
-  // Quantity: find tier by absolute qty threshold; score is the multiplier
-  // Branch-specific config wins over global (NULL branch_id)
+  // Quantity: tier lookup — staff_type-specific config wins over NULL, branch-specific wins over global
   const config = prepare(db, `
     SELECT id FROM kpi_tier_configs
     WHERE metric_id = ?
       AND (branch_id = ? OR branch_id IS NULL)
+      AND (staff_type = ? OR staff_type IS NULL)
       AND is_active = 1
       AND effective_from <= ?
       AND (effective_to IS NULL OR effective_to >= ?)
-    ORDER BY CASE WHEN branch_id IS NULL THEN 1 ELSE 0 END
+    ORDER BY
+      CASE WHEN branch_id  IS NULL THEN 1 ELSE 0 END,
+      CASE WHEN staff_type IS NULL THEN 1 ELSE 0 END
     LIMIT 1
-  `).get(metricId, branchId, date, date) as { id: number } | undefined
+  `).get(metricId, branchId, staffType ?? null, date, date) as { id: number } | undefined
 
   if (!config) return { score: 0, pct, tierId: null }
 

@@ -29,6 +29,13 @@ function getBranchPointTarget(db: import('sql.js').Database, branchId: number, y
   return branch?.kpi_point_target ?? 0
 }
 
+function getIndividualPointTarget(db: import('sql.js').Database, salesmanId: number, yearMonth: string): number | null {
+  const row = prepare(db, `
+    SELECT point_target FROM staff_monthly_targets WHERE salesman_id = ? AND year_month = ?
+  `).get(salesmanId, yearMonth) as { point_target: number } | undefined
+  return row?.point_target ?? null
+}
+
 export function registerReportHandlers(ipcMain: IpcMain): void {
 
   // branchIds=[]=all, dateFrom/dateTo filter entries, year/month used for target lookup
@@ -136,8 +143,10 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const supSql    = effectiveSupervisorId ? `AND s.supervisor_id = ?` : ''
     const supParams = effectiveSupervisorId ? [effectiveSupervisorId] : []
 
+    const yearMonth = `${year}${String(month).padStart(2, '0')}`
+
     const rows = prepare(db, `
-      SELECT s.id, s.rep_code, s.full_name, s.nickname, s.position, s.branch_id,
+      SELECT s.id, s.rep_code, s.full_name, s.nickname, s.position, s.branch_id, s.staff_type,
         b.name AS branch_name,
         sv.full_name AS supervisor_name,
         COALESCE(SUM(de.jewelry_weight_g),0) AS actual_jewelry,
@@ -152,24 +161,25 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       GROUP BY s.id ORDER BY s.branch_id, sv.full_name, s.full_name
     `).all(dateFrom, dateTo, ...sBranchParams, ...supParams) as Array<{
       id: number; rep_code: string | null; full_name: string; nickname: string; position: string
-      branch_id: number; branch_name: string; supervisor_name: string | null
+      branch_id: number; branch_name: string; supervisor_name: string | null; staff_type: string
       actual_jewelry: number; actual_bar: number; actual_qty: number
     }>
 
     const enriched = rows.map(r => {
-      const js = computeKpiScore(db, 1, r.branch_id, r.actual_jewelry, 0, dateTo).score
-      const bs = computeKpiScore(db, 2, r.branch_id, r.actual_bar,     0, dateTo).score
-      const qs = computeKpiScore(db, 3, r.branch_id, r.actual_qty,     0, dateTo).score
+      const js = computeKpiScore(db, 1, r.branch_id, r.actual_jewelry, 0, dateTo, r.staff_type).score
+      const bs = computeKpiScore(db, 2, r.branch_id, r.actual_bar,     0, dateTo, r.staff_type).score
+      const qs = computeKpiScore(db, 3, r.branch_id, r.actual_qty,     0, dateTo, r.staff_type).score
       const totalRaw = js + bs + qs
       if (!branchTargetMap.has(r.branch_id))
         branchTargetMap.set(r.branch_id, getBranchPointTarget(db, r.branch_id, year, month))
       const branchTarget = branchTargetMap.get(r.branch_id) ?? 0
-      const kpiPct    = branchTarget > 0 ? (totalRaw / branchTarget) * 100 : 0
+      const individualTarget = getIndividualPointTarget(db, r.id, yearMonth) ?? branchTarget
+      const kpiPct    = individualTarget > 0 ? (totalRaw / individualTarget) * 100 : 0
       const eomKpiPct = dayOfMonth > 0 ? (kpiPct / dayOfMonth) * daysInMonth : 0
       return {
         ...r,
         supervisor_name: r.supervisor_name ?? null,
-        kpiPointTarget: branchTarget,
+        kpiPointTarget: individualTarget,
         kpiScore: { jewelry: js, bar: bs, qty: qs, total: totalRaw, pct: kpiPct },
         eomKpiPct,
       }
@@ -246,7 +256,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
 
     return supervisors.map(sup => {
       const reps = prepare(db, `
-        SELECT s.id, s.branch_id,
+        SELECT s.id, s.branch_id, s.staff_type,
           COALESCE(SUM(de.jewelry_weight_g), 0) AS total_jewelry,
           COALESCE(SUM(de.bar_weight_g),     0) AS total_bar,
           COALESCE(SUM(de.quantity),          0) AS total_qty
@@ -256,14 +266,14 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
         WHERE s.supervisor_id = ? AND s.active = 1
         GROUP BY s.id
       `).all(dateFrom, dateTo, sup.id) as Array<{
-        id: number; branch_id: number; total_jewelry: number; total_bar: number; total_qty: number
+        id: number; branch_id: number; staff_type: string; total_jewelry: number; total_bar: number; total_qty: number
       }>
 
       let teamScore = 0
       for (const r of reps) {
-        const js = computeKpiScore(db, 1, r.branch_id, r.total_jewelry, 0, dateTo).score
-        const bs = computeKpiScore(db, 2, r.branch_id, r.total_bar,     0, dateTo).score
-        const qs = computeKpiScore(db, 3, r.branch_id, r.total_qty,     0, dateTo).score
+        const js = computeKpiScore(db, 1, r.branch_id, r.total_jewelry, 0, dateTo, r.staff_type).score
+        const bs = computeKpiScore(db, 2, r.branch_id, r.total_bar,     0, dateTo, r.staff_type).score
+        const qs = computeKpiScore(db, 3, r.branch_id, r.total_qty,     0, dateTo, r.staff_type).score
         teamScore += js + bs + qs
       }
 

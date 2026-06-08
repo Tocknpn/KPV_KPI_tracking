@@ -123,13 +123,20 @@ interface RosterStub {
   nickname?: string | null
   branch_code: string
   supervisor_name?: string | null
+  staff_type?: string | null
+  point_target?: number | null
+  year_month?: string | null
 }
 
 export function generateRosterTemplateXLSX(salesmen: RosterStub[]): Uint8Array {
-  const headers = ['Rep_Code', 'Full_Name', 'Nickname', 'Branch_Code', 'Team_Sup_Name']
+  const headers = ['Rep_Code', 'Full_Name', 'Nickname', 'Branch_Code', 'Team_Sup_Name', 'Staff_Type', 'Year_Month', 'Point_Target']
   const dataRows = salesmen.length > 0
-    ? salesmen.map(s => [s.rep_code ?? '', s.full_name, s.nickname ?? '', s.branch_code, s.supervisor_name ?? ''])
-    : [['', '', '', '', '']] // blank row if no existing reps
+    ? salesmen.map(s => [
+        s.rep_code ?? '', s.full_name, s.nickname ?? '', s.branch_code,
+        s.supervisor_name ?? '', s.staff_type ?? 'b2c', s.year_month ?? '',
+        s.point_target ?? 0,
+      ])
+    : [['', '', '', '', '', 'b2c', '', 0]]
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows])
   ws['!cols'] = [
@@ -138,6 +145,9 @@ export function generateRosterTemplateXLSX(salesmen: RosterStub[]): Uint8Array {
     { wch: 14 }, // Nickname
     { wch: 12 }, // Branch_Code
     { wch: 26 }, // Team_Sup_Name
+    { wch: 12 }, // Staff_Type
+    { wch: 12 }, // Year_Month
+    { wch: 14 }, // Point_Target
   ]
 
   const wb = XLSX.utils.book_new()
