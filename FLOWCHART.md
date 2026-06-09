@@ -127,8 +127,110 @@ flowchart TD
 
 ---
 
+## Diagram 3 — What This App Does (Executive Overview)
+
+> One-page brief for top management. Non-technical.
+
+```mermaid
+flowchart LR
+    subgraph STAFF["Every Working Day"]
+        REP["108 Sales Staff\n4 Branches"]
+        ENTRY["Record Sales\nGold Jewelry · Gold Bar · Quantity"]
+    end
+
+    subgraph SYSTEM["System Automatically"]
+        SCORE["Scores Performance\nB2C & B2B rates apply separately"]
+        RANK["Ranks Each Staff\nKPI% vs monthly target"]
+        CALC["Calculates Commission\nin LAK per staff"]
+    end
+
+    subgraph MGMT["Management Gets"]
+        REPORT["Live KPI Reports\nper rep · per team · per branch"]
+        COMMISSION["Commission Payroll\nstaff + supervisor amounts"]
+        CLOUD["Google Sheets Backup\nauto-sync · always accessible"]
+    end
+
+    REP --> ENTRY --> SCORE --> RANK --> REPORT
+    RANK --> CALC --> COMMISSION
+    SCORE --> CLOUD
+```
+
+---
+
+## Diagram 4 — Organization & Who Sees What
+
+```mermaid
+flowchart TD
+    CEO["Executive / CEO\nFull visibility — all 4 branches\nRead-only · no data entry"]
+
+    CEO --> MM["Morning Market\nBranch Manager"]
+    CEO --> VC["Vientiane Center\nBranch Manager"]
+    CEO --> IT["ITecc\nBranch Manager"]
+    CEO --> VT["VangThong\nBranch Manager"]
+
+    MM --> MM_A["Alpha Team\nSupervisor · 9 staff · B2C"]
+    MM --> MM_B["Beta Team\nSupervisor · 9 staff · B2C"]
+    MM --> MM_G["Gamma Team\nSupervisor · 9 staff · B2B"]
+
+    VC --> VC_A["Alpha Team · B2C"]
+    VC --> VC_B["Beta Team · B2C"]
+    VC --> VC_G["Gamma Team · B2B"]
+
+    IT --> IT_A["Alpha Team · B2C"]
+    IT --> IT_B["Beta Team · B2C"]
+    IT --> IT_G["Gamma Team · B2B"]
+
+    VT --> VT_A["Alpha Team · B2C"]
+    VT --> VT_B["Beta Team · B2C"]
+    VT --> VT_G["Gamma Team · B2B"]
+
+    subgraph TOTAL["Total: 108 Sales Staff"]
+        T1["4 Branches × 3 Teams × 9 Staff"]
+        T2["B2C Teams — retail customers"]
+        T3["B2B Teams — business customers"]
+    end
+```
+
+---
+
+## Diagram 5 — How KPI Score Becomes Commission
+
+```mermaid
+flowchart TD
+    SALE["Daily Sales\nper staff member"]
+
+    SALE --> J["Gold Jewelry sold\nBaht weight"]
+    SALE --> B["Gold Bar sold\nBaht weight"]
+    SALE --> Q["Quantity sold\npieces"]
+
+    J -->|"B2C × 15\nB2B × 20"| PJ["Jewelry Points"]
+    B -->|"B2C × 7.5\nB2B × 10"| PB["Bar Points"]
+    Q -->|"tier multiplier\nbranch-specific"| PQ["Quantity Points"]
+
+    PJ & PB & PQ --> TOTAL["Total Monthly Score"]
+
+    TOTAL --> KPI["KPI%\nScore ÷ Personal Target × 100"]
+
+    KPI -->|"above 100%"| GREEN["High Performer"]
+    KPI -->|"60–100%"| YELLOW["On Track"]
+    KPI -->|"below 60%"| RED["Needs Support"]
+
+    TOTAL --> COMM["Commission Payout"]
+
+    subgraph COMM_CALC["Commission Formula"]
+        C1["Jewelry Baht × LAK rate\n+ Bar Baht × LAK rate\n+ Qty × LAK rate"]
+        C2["Supervisor gets 30%\nof team total"]
+    end
+
+    COMM --> C1
+    C1 --> C2
+```
+
+---
+
 ## Change Log
 
 | Version | Date       | Change |
 |---------|------------|--------|
 | v1.3.1  | 2026-06-09 | Initial flowchart — B2C/B2B split, commission screen, customer type report, individual targets |
+| v1.3.1  | 2026-06-09 | Added Diagrams 3–5: executive overview, org hierarchy, KPI-to-commission |
