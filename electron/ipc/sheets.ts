@@ -141,6 +141,18 @@ export async function syncEntriesToCloudIfConfigured(db: Database): Promise<void
   } catch { /* Sheets unavailable — silently skip */ }
 }
 
+// ── Push only the Roster tab — exported for roster.ts ────────────────────────
+export async function pushRosterIfConfigured(db: Database): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+    await pushRoster(db, sheets, sheetsId)
+  } catch { /* Sheets unavailable — silently skip */ }
+}
+
 // ── Push all config tabs — exported for use in kpi.ts, upload.ts ──────────────
 export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
   const sheetsId = getSetting('sheets_id')
@@ -451,6 +463,41 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       return { success: true }
     } catch (e: unknown) {
       return { success: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
+
+  // Force full sync: reset all entries + clear Entries tab + push everything
+  ipcMain.handle('sheets:forceSyncAll', async (_e, token: string) => {
+    requireAuth(token)
+    const sheetsId = getSetting('sheets_id')
+    const saPath   = getSetting('service_account_path')
+    if (!sheetsId || !saPath) return { success: false, error: 'Google Sheets not configured. Go to Settings.' }
+
+    try {
+      const db     = getDb()
+      const auth   = getServiceAuth(saPath)
+      const sheets = google.sheets({ version: 'v4', auth })
+
+      // Mark ALL entries as unsynced so syncEntriesToCloudIfConfigured re-pushes all
+      prepare(db, `UPDATE daily_entries SET synced=0`).run()
+
+      // Clear the Entries tab so we get a clean rewrite (not duplicates)
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: sheetsId,
+        requestBody: { requests: [{ addSheet: { properties: { title: TABS.ENTRIES } } }] },
+      }).catch(() => {})
+      await sheets.spreadsheets.values.clear({ spreadsheetId: sheetsId, range: 'Entries!A:Z' })
+
+      // Re-push all entries + all config tabs
+      await syncEntriesToCloudIfConfigured(db)
+      await pushAllConfigIfConfigured(db)
+
+      const { n } = prepare(db, `SELECT COUNT(*) AS n FROM daily_entries`).get() as { n: number }
+      return { success: true, count: n }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      prepare(getDb(), `INSERT INTO sync_logs (direction, records_count, status, error_message) VALUES ('push', 0, 'error', ?)`).run(msg)
+      return { success: false, error: msg }
     }
   })
 }

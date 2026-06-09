@@ -16,6 +16,7 @@
  *   email:*         -> email.ts       (SMTP config, scheduled reports)
  *   admin:*         -> admin.ts       (test data seed, data stats)
  *   commission:*    -> commission.ts  (commission configs, report, Sheets sync)
+ *   roster:*        -> roster.ts      (salesman roster CRUD, Sheets push)
  */
 
 import type { IpcMain } from 'electron'
@@ -29,6 +30,7 @@ import { registerSheetsHandlers } from './sheets'
 import { registerEmailHandlers } from './email'
 import { registerAdminHandlers } from './admin'
 import { registerCommissionHandlers } from './commission'
+import { registerRosterHandlers } from './roster'
 
 export { startEmailScheduler } from './email'
 export { computeKpiScore } from './kpi'
@@ -45,4 +47,5 @@ export function registerAllHandlers(ipcMain: IpcMain): void {
   registerEmailHandlers(ipcMain)
   registerAdminHandlers(ipcMain)
   registerCommissionHandlers(ipcMain)
+  registerRosterHandlers(ipcMain)
 }

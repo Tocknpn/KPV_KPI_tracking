@@ -212,6 +212,22 @@ export interface CommissionSupervisorRow {
   sup_pct: number
 }
 
+export interface RosterRow {
+  id: number
+  rep_code: string
+  full_name: string
+  nickname: string
+  branch_id: number
+  branch_name: string
+  branch_code: string
+  supervisor_id: number | null
+  supervisor_name: string | null
+  staff_type: 'b2c' | 'b2b'
+  active: number
+  year_month: string | null
+  point_target: number | null
+}
+
 export interface StaffMonthlyTarget {
   id: number
   salesman_id: number

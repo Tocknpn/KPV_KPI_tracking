@@ -140,6 +140,20 @@ contextBridge.exposeInMainWorld('api', {
   getCommissionReport: (token: string, branchIds: number[], year: number, month: number, dateFrom?: string, dateTo?: string) =>
     ipcRenderer.invoke('commission:getReport', token, branchIds, year, month, dateFrom, dateTo),
 
+  // ── Roster CRUD ───────────────────────────────────────────────────────
+  getRosterAll: (token: string) =>
+    ipcRenderer.invoke('roster:getAll', token),
+  saveRosterRep: (token: string, data: unknown) =>
+    ipcRenderer.invoke('roster:saveRep', token, data),
+  deactivateRosterRep: (token: string, id: number) =>
+    ipcRenderer.invoke('roster:deactivate', token, id),
+  reactivateRosterRep: (token: string, id: number) =>
+    ipcRenderer.invoke('roster:reactivate', token, id),
+
+  // Force full sync to Sheets (all entries + all config tabs)
+  forceSyncAll: (token: string) =>
+    ipcRenderer.invoke('sheets:forceSyncAll', token),
+
   // ── Admin / Test Data ─────────────────────────────────────────────────
   seedTestData: (token: string) =>
     ipcRenderer.invoke('admin:seedTestData', token),

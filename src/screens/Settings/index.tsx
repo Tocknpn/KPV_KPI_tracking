@@ -169,6 +169,7 @@ export default function Settings() {
     setAssignSup(null); loadSupervisors()
   }
 
+  const [isForceSyncing, setIsForceSyncing] = useState(false)
   const [seeding, setSeeding]       = useState(false)
   const [showKpiRef, setShowKpiRef] = useState(false)
   const [sheetsId, setSheetsId] = useState('')
@@ -240,6 +241,17 @@ export default function Settings() {
     if (!token) return
     const path = await window.api.browseSheetsFile(token)
     if (path) setSaPath(path)
+  }
+
+  async function forceSyncAll() {
+    if (!token) return
+    setIsForceSyncing(true)
+    const res = await window.api.forceSyncAll(token)
+    if (res.success) showToast(`Full sync complete — ${res.count} entries + all config tabs pushed.`)
+    else showToast(`Force sync failed: ${res.error}`)
+    window.api.getSyncLogs(token).then(setSyncLogs)
+    refreshLastSync()
+    setIsForceSyncing(false)
   }
 
   async function pullFromCloud() {
@@ -756,9 +768,20 @@ export default function Settings() {
                   )}
                 </button>
               </div>
+              <button
+                onClick={forceSyncAll}
+                disabled={isForceSyncing}
+                className="w-full py-2 bg-surface-container-high text-on-surface border border-outline-variant/30 rounded font-label-md text-label-md flex items-center justify-center gap-2 hover:bg-primary/10 hover:text-primary hover:border-primary/30 disabled:opacity-60 transition-colors"
+              >
+                <span className={`material-symbols-outlined text-sm ${isForceSyncing ? 'animate-spin-slow' : ''}`}>
+                  {isForceSyncing ? 'sync' : 'cloud_sync'}
+                </span>
+                {isForceSyncing ? 'Syncing all...' : 'Force Full Sync (All Tabs)'}
+              </button>
               <p className="text-[10px] text-on-surface-variant/60 italic">
                 Push → sends unsynced entries · auto-syncs on every save/upload &nbsp;·&nbsp;
-                Pull → imports all tabs (roster · settings · KPI rates · entries)
+                Pull → imports all tabs (roster · settings · KPI rates · entries) &nbsp;·&nbsp;
+                Force Full Sync → resets + re-pushes ALL entries and ALL config tabs
               </p>
             </div>
           </GlassCard>
