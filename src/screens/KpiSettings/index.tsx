@@ -21,13 +21,10 @@ export default function KpiSettings() {
   const [editingConfigId, setEditingConfigId] = useState<number | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [toast, setToast] = useState('')
-  // Supervisor KPI score weight
-  const [supKpiPct, setSupKpiPct]   = useState(30)
-  const [supPctEdit, setSupPctEdit] = useState('30')
-  const [savingSupPct, setSavingSupPct] = useState(false)
-  // Unified KPI config section
-  const [kpiYear, setKpiYear]     = useState(new Date().getFullYear())
-  const [kpiMonth, setKpiMonth]   = useState(new Date().getMonth() + 1)
+  // Global month filter — controls all sections
+  const [globalYear, setGlobalYear]   = useState(new Date().getFullYear())
+  const [globalMonth, setGlobalMonth] = useState(new Date().getMonth() + 1)
+  // KPI Score Config
   const [jewelryEdit, setJewelryEdit] = useState('')
   const [barEdit, setBarEdit]         = useState('')
   const [showQtyEditor, setShowQtyEditor] = useState(false)
@@ -35,8 +32,6 @@ export default function KpiSettings() {
   // Points-per-unit editor (legacy, kept for simulator)
   const [multiplierEdit, setMultiplierEdit] = useState('')
   // Monthly branch KPI targets
-  const [targetYear, setTargetYear]   = useState(new Date().getFullYear())
-  const [targetMonth, setTargetMonth] = useState(new Date().getMonth() + 1)
   const [monthlyTargets, setMonthlyTargets] = useState<Array<{
     id: number; name: string; code: string; kpi_point_target: number
     monthly_target: number | null; effective_target: number
@@ -45,13 +40,14 @@ export default function KpiSettings() {
   const [savingTargets, setSavingTargets] = useState(false)
   const [targetSaved, setTargetSaved]     = useState(false)
   // Commission rates
-  const [commYear, setCommYear]   = useState(new Date().getFullYear())
-  const [commMonth, setCommMonth] = useState(new Date().getMonth() + 1)
   const [commEdits, setCommEdits] = useState<Record<string, { jewelry: string; bar: string; qty: string }>>({
-    b2c: { jewelry: '5000', bar: '3000', qty: '500' },
-    b2b: { jewelry: '8000', bar: '5000', qty: '800' },
+    b2c: { jewelry: '0', bar: '0', qty: '0' },
+    b2b: { jewelry: '0', bar: '0', qty: '0' },
   })
   const [savingComm, setSavingComm]   = useState<string | null>(null)
+  // Supervisor commission share
+  const [supShareEdit, setSupShareEdit]   = useState('30')
+  const [savingSupShare, setSavingSupShare] = useState(false)
   // Simulator
   const [simActual, setSimActual] = useState('')
   const [simBranch, setSimBranch] = useState<number | null>(null)
@@ -69,43 +65,43 @@ export default function KpiSettings() {
       if (q) setMultiplierEdit(String(q.points_per_unit))
     })
     window.api.getKpiConfigs(token).then(setConfigs)
-    window.api.getSupKpiPct(token).then(({ pct }) => {
-      setSupKpiPct(pct)
-      setSupPctEdit(String(pct))
-    })
   }, [token])
 
-  // Load commission configs when month/year changes
+  // Load commission configs when global month/year changes
   useEffect(() => {
     if (!token) return
-    const yearMonth = `${commYear}${String(commMonth).padStart(2, '0')}`
+    const yearMonth = `${globalYear}${String(globalMonth).padStart(2, '0')}`
     window.api.getCommissionConfigs(token, yearMonth).then((cfgs: Array<{
       staff_type: string; jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number
     }>) => {
       const next: Record<string, { jewelry: string; bar: string; qty: string }> = {
-        b2c: { jewelry: '5000', bar: '3000', qty: '500' },
-        b2b: { jewelry: '8000', bar: '5000', qty: '800' },
+        b2c: { jewelry: '0', bar: '0', qty: '0' },
+        b2b: { jewelry: '0', bar: '0', qty: '0' },
       }
       cfgs.forEach(c => {
-        next[c.staff_type] = {
-          jewelry: String(c.jewelry_rate_lak),
-          bar:     String(c.bar_rate_lak),
-          qty:     String(c.qty_rate_lak),
+        if (c.staff_type === 'supervisor') {
+          setSupShareEdit(String(c.jewelry_rate_lak))
+        } else {
+          next[c.staff_type] = {
+            jewelry: String(c.jewelry_rate_lak),
+            bar:     String(c.bar_rate_lak),
+            qty:     String(c.qty_rate_lak),
+          }
         }
       })
       setCommEdits(next)
     }).catch(console.error)
-  }, [token, commYear, commMonth])
+  }, [token, globalYear, globalMonth])
 
-  // Load monthly targets whenever month/year changes
+  // Load monthly targets whenever global month/year changes
   useEffect(() => {
     if (!token) return
-    window.api.getMonthlyBranchTargets(token, targetYear, targetMonth).then(data => {
+    window.api.getMonthlyBranchTargets(token, globalYear, globalMonth).then(data => {
       setMonthlyTargets(data)
       setTargetEdits(Object.fromEntries(data.map(b => [b.id, String(b.effective_target)])))
       setTargetSaved(false)
     })
-  }, [token, targetYear, targetMonth])
+  }, [token, globalYear, globalMonth])
 
   async function saveMonthlyTargets() {
     if (!token) return
@@ -114,14 +110,13 @@ export default function KpiSettings() {
       branchId: b.id,
       target: parseFloat(targetEdits[b.id] ?? '') || b.effective_target,
     }))
-    await window.api.saveMonthlyBranchTargets(token, targetYear, targetMonth, targets)
-    // Reload to confirm
-    const fresh = await window.api.getMonthlyBranchTargets(token, targetYear, targetMonth)
+    await window.api.saveMonthlyBranchTargets(token, globalYear, globalMonth, targets)
+    const fresh = await window.api.getMonthlyBranchTargets(token, globalYear, globalMonth)
     setMonthlyTargets(fresh)
     setTargetEdits(Object.fromEntries(fresh.map(b => [b.id, String(b.effective_target)])))
     setSavingTargets(false)
     setTargetSaved(true)
-    showToast(`Targets saved for ${MONTH_NAMES[targetMonth - 1]} ${targetYear}.`)
+    showToast(`Targets saved for ${MONTH_NAMES[globalMonth - 1]} ${globalYear}.`)
   }
 
   function copyFromDefaults() {
@@ -223,10 +218,10 @@ export default function KpiSettings() {
 
   function assignDefaultQty() {
     setEditingConfigId(null)
-    setConfigLabel(`Default ${MONTH_NAMES[kpiMonth - 1]} ${kpiYear}`)
-    const lastDay = new Date(kpiYear, kpiMonth, 0).getDate()
-    setEffectiveFrom(`${kpiYear}-${String(kpiMonth).padStart(2,'0')}-01`)
-    setEffectiveTo(`${kpiYear}-${String(kpiMonth).padStart(2,'0')}-${lastDay}`)
+    setConfigLabel(`Default ${MONTH_NAMES[globalMonth - 1]} ${globalYear}`)
+    const lastDay = new Date(globalYear, globalMonth, 0).getDate()
+    setEffectiveFrom(`${globalYear}-${String(globalMonth).padStart(2,'0')}-01`)
+    setEffectiveTo(`${globalYear}-${String(globalMonth).padStart(2,'0')}-${lastDay}`)
     setTiers([
       { threshold_pct: 900, score: 5 }, { threshold_pct: 700, score: 4.5 },
       { threshold_pct: 500, score: 4 }, { threshold_pct: 350, score: 3.5 },
@@ -275,7 +270,7 @@ export default function KpiSettings() {
     if (!token) return
     const e = commEdits[staffType]
     if (!e) return
-    const yearMonth = `${commYear}${String(commMonth).padStart(2, '0')}`
+    const yearMonth = `${globalYear}${String(globalMonth).padStart(2, '0')}`
     setSavingComm(staffType)
     await window.api.saveCommissionConfig(token, {
       staffType, yearMonth,
@@ -283,8 +278,22 @@ export default function KpiSettings() {
       barRateLak:     parseFloat(e.bar)     || 0,
       qtyRateLak:     parseFloat(e.qty)     || 0,
     })
-    showToast(`${staffType.toUpperCase()} commission rates saved for ${MONTH_NAMES[commMonth - 1]} ${commYear}.`)
+    showToast(`${staffType.toUpperCase()} commission rates saved for ${MONTH_NAMES[globalMonth - 1]} ${globalYear}.`)
     setSavingComm(null)
+  }
+
+  async function saveSupShare() {
+    if (!token) return
+    const pct = parseFloat(supShareEdit)
+    if (isNaN(pct) || pct <= 0 || pct > 100) { showToast('Enter 1–100%.'); return }
+    const yearMonth = `${globalYear}${String(globalMonth).padStart(2, '0')}`
+    setSavingSupShare(true)
+    await window.api.saveCommissionConfig(token, {
+      staffType: 'supervisor', yearMonth,
+      jewelryRateLak: pct, barRateLak: 0, qtyRateLak: 0,
+    })
+    showToast(`Supervisor commission share set to ${pct}% for ${MONTH_NAMES[globalMonth - 1]} ${globalYear}.`)
+    setSavingSupShare(false)
   }
 
   async function simulate() {
@@ -331,48 +340,23 @@ export default function KpiSettings() {
         </div>
       </GlassCard>
 
-      {/* Supervisor KPI Score Weight */}
-      <GlassCard className="p-5 mb-6 border-l-4 border-secondary">
-        <div className="flex flex-wrap items-end justify-between gap-5">
-          <div>
-            <h4 className="font-headline-md text-on-surface flex items-center gap-2">
-              <span className="material-symbols-outlined text-secondary">supervisor_account</span>
-              Supervisor Score Weight
-            </h4>
-            <p className="text-body-sm text-on-surface-variant mt-1">
-              Supervisor KPI Score = <strong className="text-secondary">{supKpiPct}%</strong> × team's total KPI points.
-              Controls how much of the team's KPI output counts toward the supervisor's own KPI %. <em>(Separate from commission share.)</em>
-            </p>
-          </div>
-          <div className="flex items-end gap-4">
-            <div>
-              <label className="font-label-md text-label-md block mb-1 text-secondary">Rate (%)</label>
-              <input
-                type="number" min="1" max="100" step="1"
-                value={supPctEdit}
-                onChange={e => setSupPctEdit(e.target.value)}
-                className="w-28 bg-surface-container-low border-b-2 border-secondary px-3 py-2 text-body-sm outline-none font-tabular-nums text-lg font-bold text-secondary"
-              />
-            </div>
-            <button
-              onClick={async () => {
-                if (!token) return
-                const val = parseFloat(supPctEdit)
-                if (isNaN(val) || val <= 0 || val > 100) { showToast('Enter 1–100.'); return }
-                setSavingSupPct(true)
-                await window.api.saveSupKpiPct(token, val)
-                setSupKpiPct(val)
-                showToast(`Supervisor rate set to ${val}%.`)
-                setSavingSupPct(false)
-              }}
-              disabled={savingSupPct}
-              className="bg-secondary text-white px-5 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-sm">save</span>
-              {savingSupPct ? 'Saving...' : 'Save Rate'}
-            </button>
-          </div>
-        </div>
+      {/* Global month / year selector */}
+      <GlassCard className="p-4 mb-6 flex flex-wrap items-center gap-4">
+        <span className="material-symbols-outlined text-primary text-sm">calendar_month</span>
+        <span className="font-label-md text-label-md text-on-surface">Viewing month:</span>
+        <select
+          value={globalMonth}
+          onChange={e => setGlobalMonth(Number(e.target.value))}
+          className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none font-bold text-primary"
+        >
+          {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+        </select>
+        <input
+          type="number" value={globalYear}
+          onChange={e => setGlobalYear(Number(e.target.value))}
+          className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none w-24 font-bold text-primary"
+        />
+        <span className="text-body-sm text-on-surface-variant ml-1">— all sections below reflect this month</span>
       </GlassCard>
 
       {/* Commission Rates Config */}
@@ -381,25 +365,11 @@ export default function KpiSettings() {
           <div>
             <h4 className="font-headline-md text-on-surface flex items-center gap-2">
               <span className="material-symbols-outlined text-tertiary">payments</span>
-              Commission Rates (LAK)
+              Commission Rates (LAK) — {MONTH_NAMES[globalMonth - 1]} {globalYear}
             </h4>
             <p className="text-body-sm text-on-surface-variant mt-1">
-              Commission = (Jewelry Baht × rate) + (Bar Baht × rate) + (Qty × rate). Saved per staff type per month. Synced to Google Sheets CommissionConfig tab.
+              Rep commission = (Jewelry Baht × rate) + (Bar Baht × rate) + (Qty × rate). Synced to Google Sheets CommissionConfig tab. Shows 0 if no config saved for this month.
             </p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <select
-              value={commMonth}
-              onChange={e => setCommMonth(Number(e.target.value))}
-              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none"
-            >
-              {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-            </select>
-            <input
-              type="number" value={commYear}
-              onChange={e => setCommYear(Number(e.target.value))}
-              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none w-24"
-            />
           </div>
         </div>
 
@@ -411,7 +381,7 @@ export default function KpiSettings() {
                   ${type === 'b2b' ? 'bg-secondary text-white' : 'bg-primary text-white'}`}>
                   {type.toUpperCase()}
                 </span>
-                <span className="text-on-surface-variant text-body-sm">{MONTH_NAMES[commMonth - 1]} {commYear}</span>
+                <span className="text-on-surface-variant text-body-sm">{MONTH_NAMES[globalMonth - 1]} {globalYear}</span>
               </div>
               <div className="grid grid-cols-3 gap-3 mb-4">
                 {[
@@ -448,41 +418,62 @@ export default function KpiSettings() {
             </div>
           ))}
         </div>
+
+        {/* Supervisor Commission Share */}
+        <div className="mt-6 rounded-xl p-5 border bg-secondary/5 border-secondary/20">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="material-symbols-outlined text-secondary text-sm">supervisor_account</span>
+                <span className="font-label-md text-label-md text-secondary font-bold">Supervisor Commission Share</span>
+                <span className="text-on-surface-variant text-body-sm">{MONTH_NAMES[globalMonth - 1]} {globalYear}</span>
+              </div>
+              <p className="text-[11px] text-on-surface-variant">
+                Supervisor commission = team's total rep commission × this %. Stored per month. Default 30% if not set.
+              </p>
+            </div>
+            <div className="flex items-end gap-3">
+              <div>
+                <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">Share (%)</label>
+                <input
+                  type="number" min="1" max="100" step="1"
+                  value={supShareEdit}
+                  onChange={e => setSupShareEdit(e.target.value)}
+                  className="w-28 border-b-2 border-secondary px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold text-secondary bg-white"
+                />
+              </div>
+              <button
+                onClick={saveSupShare}
+                disabled={savingSupShare}
+                className="bg-secondary text-white px-5 py-2.5 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 disabled:opacity-50"
+              >
+                <span className={`material-symbols-outlined text-sm ${savingSupShare ? 'animate-spin-slow' : ''}`}>
+                  {savingSupShare ? 'sync' : 'save'}
+                </span>
+                {savingSupShare ? 'Saving...' : 'Save Sup Share'}
+              </button>
+            </div>
+          </div>
+        </div>
       </GlassCard>
 
       {/* Monthly Branch KPI Point Targets */}
       <GlassCard elevated className="p-5 mb-6">
         <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
           <div>
-            <h4 className="font-headline-md text-headline-md text-on-surface">Monthly KPI Point Targets</h4>
+            <h4 className="font-headline-md text-headline-md text-on-surface">Monthly KPI Point Targets — {MONTH_NAMES[globalMonth - 1]} {globalYear}</h4>
             <p className="text-body-sm text-on-surface-variant mt-0.5">
               KPI % = (Total Score ÷ Branch Target) × 100 &nbsp;·&nbsp; Targets saved per month
             </p>
           </div>
-          {/* Month / Year picker */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <select
-              value={targetMonth}
-              onChange={e => setTargetMonth(Number(e.target.value))}
-              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none"
-            >
-              {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-            </select>
-            <input
-              type="number"
-              value={targetYear}
-              onChange={e => setTargetYear(Number(e.target.value))}
-              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none w-24"
-            />
-            <button
-              onClick={copyFromDefaults}
-              className="text-on-surface-variant border border-outline-variant px-3 py-2 rounded-lg text-body-sm hover:bg-surface-container transition-colors flex items-center gap-1"
-              title="Copy branch defaults to this month"
-            >
-              <span className="material-symbols-outlined text-sm">content_copy</span>
-              Use Defaults
-            </button>
-          </div>
+          <button
+            onClick={copyFromDefaults}
+            className="text-on-surface-variant border border-outline-variant px-3 py-2 rounded-lg text-body-sm hover:bg-surface-container transition-colors flex items-center gap-1"
+            title="Copy branch defaults to this month"
+          >
+            <span className="material-symbols-outlined text-sm">content_copy</span>
+            Use Defaults
+          </button>
         </div>
 
         {/* Per-branch target inputs */}
@@ -531,7 +522,7 @@ export default function KpiSettings() {
             <span className={`material-symbols-outlined text-sm ${savingTargets ? 'animate-spin-slow' : ''}`}>
               {savingTargets ? 'sync' : 'save'}
             </span>
-            {savingTargets ? 'Saving...' : `Save for ${MONTH_NAMES[targetMonth - 1]} ${targetYear}`}
+            {savingTargets ? 'Saving...' : `Save for ${MONTH_NAMES[globalMonth - 1]} ${globalYear}`}
           </button>
           {targetSaved && (
             <div className="flex items-center gap-1.5 text-tertiary text-body-sm">
@@ -551,19 +542,11 @@ export default function KpiSettings() {
           <div>
             <h4 className="font-headline-md text-on-surface flex items-center gap-2">
               <span className="material-symbols-outlined text-primary">tune</span>
-              KPI Score Config
+              KPI Score Config — {MONTH_NAMES[globalMonth - 1]} {globalYear}
             </h4>
             <p className="text-body-sm text-on-surface-variant mt-1">
-              Jewelry &amp; Bar: global pts/g multiplier. Qty: tier config — select month to view/assign.
+              Jewelry &amp; Bar: global pts/g multiplier. Qty: tier config for selected month.
             </p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <select value={kpiMonth} onChange={e => setKpiMonth(Number(e.target.value))}
-              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none">
-              {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-            </select>
-            <input type="number" value={kpiYear} onChange={e => setKpiYear(Number(e.target.value))}
-              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none w-24" />
           </div>
         </div>
 
@@ -601,7 +584,7 @@ export default function KpiSettings() {
 
           {/* Qty — month-scoped */}
           {(() => {
-            const kpiDate = `${kpiYear}-${String(kpiMonth).padStart(2,'0')}-15`
+            const kpiDate = `${globalYear}-${String(globalMonth).padStart(2,'0')}-15`
             const active = configs.find(c =>
               c.metric_id === 3 &&
               (selectedBranch === null ? c.branch_id === null : c.branch_id === selectedBranch) &&
@@ -614,7 +597,7 @@ export default function KpiSettings() {
                   <span className="material-symbols-outlined text-tertiary text-sm">inventory_2</span>
                   <span className="font-label-md text-label-md text-tertiary font-bold">Qty Tiers</span>
                   <span className="ml-auto text-[10px] text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">
-                    {MONTH_NAMES[kpiMonth - 1]} {kpiYear}
+                    {MONTH_NAMES[globalMonth - 1]} {globalYear}
                   </span>
                 </div>
                 {active ? (
@@ -634,7 +617,7 @@ export default function KpiSettings() {
                   </div>
                 ) : (
                   <div>
-                    <p className="text-body-sm text-on-surface-variant">No config for {MONTH_NAMES[kpiMonth - 1]} {kpiYear}</p>
+                    <p className="text-body-sm text-on-surface-variant">No config for {MONTH_NAMES[globalMonth - 1]} {globalYear}</p>
                     <p className="text-[10px] text-on-surface-variant mt-1">All qty values will score 0</p>
                     <button onClick={assignDefaultQty}
                       className="mt-3 w-full py-2 rounded-lg bg-tertiary text-white font-label-md text-[11px] flex items-center justify-center gap-1 hover:opacity-90 transition-all">

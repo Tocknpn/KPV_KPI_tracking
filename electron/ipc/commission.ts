@@ -186,9 +186,9 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
       return { ...r, commission_lak: commission, rate_applied: cfg }
     })
 
-    // Supervisor commission = 30% of their team's total
-    const supPctRow = prepare(db, `SELECT value FROM app_settings WHERE key='sup_kpi_pct'`).get() as { value: string } | undefined
-    const supPct    = parseFloat(supPctRow?.value ?? '30') / 100
+    // Supervisor commission share — read from commission_configs (staff_type='supervisor') for the month
+    const supCfg = getEffectiveConfig(db, 'supervisor', yearMonth)
+    const supPct = supCfg ? supCfg.jewelry_rate_lak / 100 : 0.30
 
     const supCommission = new Map<number, number>()
     for (const r of repRows) {
