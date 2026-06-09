@@ -42,6 +42,8 @@ function createWindow(): void {
   }
 }
 
+let isDbReady = false
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.salestrackpro.app')
 
@@ -49,11 +51,27 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // Initialize SQLite database (async — loads WASM, creates tables + seeds)
+  // Allow renderer to poll readiness synchronously (handles fast-startup race)
+  ipcMain.handle('app:isReady', () => isDbReady)
+
+  // Create window immediately so OS event pump stays alive while DB loads.
+  // Window stays hidden (show:false) until ready-to-show fires — user sees the
+  // loading spinner, not a frozen grey shell. Fixes "App not responding" caused
+  // by AV scanning the new binary before WASM can load (20-30s on fresh install).
+  createWindow()
+
+  // Initialize SQLite (loads WASM + runs schema migrations — slow on first run)
   await initDatabase()
 
-  // Register all IPC handlers (see electron/ipc/index.ts for full channel map)
+  // Register IPC handlers now that DB is ready
   registerAllHandlers(ipcMain)
+
+  isDbReady = true
+
+  // Signal renderer: DB is ready, hide loading spinner
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('app:ready')
+  }
 
   // Auto-pull config + data from Google Sheets on startup (if credentials configured)
   const sheetsId = getSetting('sheets_id')
@@ -66,8 +84,6 @@ app.whenReady().then(async () => {
 
   // Start scheduled email jobs
   startEmailScheduler()
-
-  createWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

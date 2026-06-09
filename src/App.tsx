@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Login from './screens/Login'
 import Dashboard from './screens/Dashboard'
@@ -11,6 +12,34 @@ import UserManagement from './screens/UserManagement'
 import UploadHistory from './screens/UploadHistory'
 
 export default function App() {
+  // DB initialises after window opens (WASM load can take 20-30s on fresh install
+  // due to AV scanning the new binary). Block routes until main process signals ready.
+  const [dbReady, setDbReady] = useState(false)
+
+  useEffect(() => {
+    // Poll once: if DB already ready (fast startup), resolve immediately.
+    // Otherwise register listener for the event (normal 20-30s startup).
+    window.api.checkAppReady().then((ready: boolean) => {
+      if (ready) setDbReady(true)
+      else window.api.onAppReady(() => setDbReady(true))
+    })
+  }, [])
+
+  if (!dbReady) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-primary/10 to-secondary/5 gap-6">
+        <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center shadow-lg">
+          <span className="text-white font-bold text-2xl">S</span>
+        </div>
+        <div className="flex flex-col items-center gap-3">
+          <span className="material-symbols-outlined animate-spin text-4xl text-primary" style={{ animationDuration: '1s' }}>sync</span>
+          <p className="text-on-surface font-bold text-lg">SalesTrack Pro</p>
+          <p className="text-on-surface-variant text-sm">Starting up…</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <Routes>
       <Route path="/login"          element={<Login />} />

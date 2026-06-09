@@ -162,6 +162,10 @@ contextBridge.exposeInMainWorld('api', {
   forceSyncAll: (token: string) =>
     ipcRenderer.invoke('sheets:forceSyncAll', token),
 
+  // ── Startup lifecycle ─────────────────────────────────────────────────
+  checkAppReady: () => ipcRenderer.invoke('app:isReady') as Promise<boolean>,
+  onAppReady: (cb: () => void) => ipcRenderer.once('app:ready', cb),
+
   // ── Admin / Test Data ─────────────────────────────────────────────────
   seedTestData: (token: string) =>
     ipcRenderer.invoke('admin:seedTestData', token),
