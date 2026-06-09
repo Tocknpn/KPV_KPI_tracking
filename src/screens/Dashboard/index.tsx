@@ -150,12 +150,30 @@ function MonthDropdown({ year, month, onChange }: MonthDropdownProps) {
   )
 }
 
+// ── Column config for sortable Top 10 table ──────────────────────────────
+const PERF_COLS: Array<{ label: string; key: string }> = [
+  { label: 'Sales Member',   key: 'full_name'        },
+  { label: 'Position',       key: 'position'         },
+  { label: 'Jewelry (Baht)', key: 'total_jewelry'    },
+  { label: 'Bar (Baht)',     key: 'total_bar'        },
+  { label: 'Qty',            key: 'total_qty'        },
+  { label: 'Actual Pts',     key: 'kpi_total_score'  },
+  { label: '%KPI',           key: 'kpi_pct'          },
+]
+
 // ── Dashboard ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { token, user, branches } = useAuthStore()
   const { selectedBranchIds, setSelectedBranchIds } = useAppStore()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [sortCol, setSortCol] = useState<string>('kpi_total_score')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
+  function handleSort(key: string) {
+    if (sortCol === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(key); setSortDir('desc') }
+  }
 
   // ── Local date state (independent from global app store) ──
   const now = new Date()
@@ -190,6 +208,14 @@ export default function Dashboard() {
   }, [token, JSON.stringify(effectiveBranchIds), year, month, dateFrom, dateTo])
 
   const s = stats
+
+  const sortedPerformers = [...(s?.topPerformers ?? [])].sort((a, b) => {
+    const av = (a as Record<string, unknown>)[sortCol]
+    const bv = (b as Record<string, unknown>)[sortCol]
+    if (typeof av === 'string' && typeof bv === 'string')
+      return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
+    return sortDir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number)
+  })
 
   const target      = s?.kpiPointTarget ?? 0
   const pctJewelry  = target > 0 ? Math.min((s?.kpiScoreJewelry ?? 0) / target * 100, 999) : 0
@@ -364,15 +390,25 @@ export default function Dashboard() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-surface-container/30">
-                      {['Sales Member','Position','Jewelry (Baht)','Bar (Baht)','Qty','Actual Pts','%KPI'].map(h => (
-                        <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase">
-                          {h}
+                      {PERF_COLS.map(col => (
+                        <th
+                          key={col.key}
+                          onClick={() => handleSort(col.key)}
+                          className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase cursor-pointer select-none hover:text-primary transition-colors"
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            {col.label}
+                            {sortCol === col.key
+                              ? <span className="material-symbols-outlined text-[14px] text-primary">{sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward'}</span>
+                              : <span className="material-symbols-outlined text-[14px] opacity-25">unfold_more</span>
+                            }
+                          </span>
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
-                    {(s?.topPerformers ?? []).map((p) => (
+                    {sortedPerformers.map((p) => (
                       <tr key={p.id} className="hover:bg-surface-variant/20 transition-colors">
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-3">
@@ -385,7 +421,7 @@ export default function Dashboard() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-5 py-3 text-body-sm text-on-surface-variant">{p.position}</td>
+                        <td className="px-5 py-3 text-body-sm text-on-surface-variant">Sales Rep</td>
                         <td className="px-5 py-3 font-tabular-nums text-tabular-nums">{fmt(p.total_jewelry)}</td>
                         <td className="px-5 py-3 font-tabular-nums text-tabular-nums">{fmt(p.total_bar)}</td>
                         <td className="px-5 py-3 font-tabular-nums text-tabular-nums">{p.total_qty}</td>
