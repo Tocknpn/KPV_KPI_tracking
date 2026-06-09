@@ -8,13 +8,16 @@ import type { Database } from 'sql.js'
 
 // ── Tab name registry ─────────────────────────────────────────────────────────
 const TABS = {
-  ENTRIES:    'Entries',
-  SETTINGS:   'Settings',
-  BRANCHES:   'Branches',
-  KPI_RATES:  'KPIRates',
-  QTY_TIERS:  'QtyTiers',
-  ROSTER:     'Roster',
-  COMMISSION: 'CommissionConfig',
+  ENTRIES:         'Entries',
+  SETTINGS:        'Settings',
+  BRANCHES:        'Branches',
+  KPI_RATES:       'KPIRates',
+  QTY_TIERS:       'QtyTiers',
+  ROSTER:          'Roster',
+  COMMISSION:      'CommissionConfig',
+  USERS:           'Users',
+  SUPERVISORS:     'Supervisors',
+  MONTHLY_TARGETS: 'MonthlyBranchTargets',
 } as const
 
 const SHEET_HEADERS = ['Date', 'Branch', 'Rep Code', 'Salesman Name', 'Jewelry (Baht)', 'Bar (Baht)', 'Qty']
@@ -108,6 +111,43 @@ async function pushCommission(db: Database, sheets: ReturnType<typeof google.she
   await writeTab(sheets, spreadsheetId, TABS.COMMISSION, ['Staff_Type', 'Year_Month', 'Jewelry_Rate_LAK', 'Bar_Rate_LAK', 'Qty_Rate_LAK'], rows)
 }
 
+async function pushUsers(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  // NOTE: password_hash is bcrypt — one-way hash, safe to store in Sheets.
+  // Required for multi-device login sync: new device pulls Sheets and gets all user accounts.
+  const rows = (prepare(db, `
+    SELECT u.username, u.full_name, u.role, b.code AS branch_code,
+           sv.full_name AS supervisor_name, u.active, u.password_hash
+    FROM users u
+    LEFT JOIN branches b ON b.id = u.branch_id
+    LEFT JOIN supervisors sv ON sv.id = u.supervisor_id
+    ORDER BY u.role, u.username
+  `).all() as Array<{ username: string; full_name: string; role: string; branch_code: string | null; supervisor_name: string | null; active: number; password_hash: string }>)
+    .map(r => [r.username, r.full_name, r.role, r.branch_code ?? '', r.supervisor_name ?? '', r.active, r.password_hash])
+  await writeTab(sheets, spreadsheetId, TABS.USERS, ['username', 'full_name', 'role', 'branch_code', 'supervisor_name', 'active', 'password_hash'], rows)
+}
+
+async function pushSupervisors(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  const rows = (prepare(db, `
+    SELECT sv.full_name, sv.nickname, b.code AS branch_code, sv.staff_type, sv.active
+    FROM supervisors sv
+    JOIN branches b ON b.id = sv.branch_id
+    ORDER BY b.code, sv.full_name
+  `).all() as Array<{ full_name: string; nickname: string; branch_code: string; staff_type: string; active: number }>)
+    .map(r => [r.full_name, r.nickname, r.branch_code, r.staff_type, r.active])
+  await writeTab(sheets, spreadsheetId, TABS.SUPERVISORS, ['full_name', 'nickname', 'branch_code', 'staff_type', 'active'], rows)
+}
+
+async function pushMonthlyBranchTargets(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  const rows = (prepare(db, `
+    SELECT b.code AS branch_code, t.year, t.month, t.kpi_point_target
+    FROM branch_kpi_monthly_targets t
+    JOIN branches b ON b.id = t.branch_id
+    ORDER BY t.year, t.month, b.code
+  `).all() as Array<{ branch_code: string; year: number; month: number; kpi_point_target: number }>)
+    .map(r => [r.branch_code, r.year, r.month, r.kpi_point_target])
+  await writeTab(sheets, spreadsheetId, TABS.MONTHLY_TARGETS, ['branch_code', 'year', 'month', 'kpi_point_target'], rows)
+}
+
 // ── Push all unsynced daily entries — exported for use in entries.ts, upload.ts ─
 export async function syncEntriesToCloudIfConfigured(db: Database): Promise<void> {
   const sheetsId = getSetting('sheets_id')
@@ -153,6 +193,42 @@ export async function pushRosterIfConfigured(db: Database): Promise<void> {
   } catch { /* Sheets unavailable — silently skip */ }
 }
 
+// ── Push only the Users tab — exported for auth.ts ───────────────────────────
+export async function pushUsersIfConfigured(db: Database): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+    await pushUsers(db, sheets, sheetsId)
+  } catch { /* Sheets unavailable — silently skip */ }
+}
+
+// ── Push only the Supervisors tab — exported for entries.ts ─────────────────
+export async function pushSupervisorsIfConfigured(db: Database): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+    await pushSupervisors(db, sheets, sheetsId)
+  } catch { /* Sheets unavailable — silently skip */ }
+}
+
+// ── Push only the MonthlyBranchTargets tab — exported for kpi.ts ────────────
+export async function pushMonthlyTargetsIfConfigured(db: Database): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+    await pushMonthlyBranchTargets(db, sheets, sheetsId)
+  } catch { /* Sheets unavailable — silently skip */ }
+}
+
 // ── Push all config tabs — exported for use in kpi.ts, upload.ts ──────────────
 export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
   const sheetsId = getSetting('sheets_id')
@@ -168,6 +244,9 @@ export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
       pushQtyTiers(db, sheets, sheetsId),
       pushRoster(db, sheets, sheetsId),
       pushCommission(db, sheets, sheetsId),
+      pushUsers(db, sheets, sheetsId),
+      pushSupervisors(db, sheets, sheetsId),
+      pushMonthlyBranchTargets(db, sheets, sheetsId),
     ])
   } catch { /* Sheets unavailable — silently skip */ }
 }
@@ -178,7 +257,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
   counts: { entries: number; configs: number; settings: number; branches: number; kpiRates: number; roster: number; qtyTiers: number }
   error?: string
 }> {
-  const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, qtyTiers: 0 }
+  const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, qtyTiers: 0, users: 0, supervisors: 0, monthlyTargets: 0 }
   try {
     const auth   = getServiceAuth(saPath)
     const sheets = google.sheets({ version: 'v4', auth })
@@ -260,6 +339,28 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
       }
     }
 
+    // ── Supervisors (must run before Roster so supervisor links resolve) ─
+    const supRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Supervisors!A:E' }).catch(() => null)
+    if (supRes) {
+      const all = supRes.data.values ?? []
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'full_name' ? all.slice(1) : all
+      for (const row of data) {
+        const [fullName, nickname, branchCode, staffTypeRaw, activeStr] = row as string[]
+        if (!fullName || !branchCode) continue
+        const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
+        if (!branch) continue
+        const staffType = staffTypeRaw === 'b2b' ? 'b2b' : 'b2c'
+        const active = activeStr === '0' ? 0 : 1
+        const existing = prepare(db, `SELECT id FROM supervisors WHERE full_name = ? AND branch_id = ?`).get(fullName, branch.id) as { id: number } | undefined
+        if (existing) {
+          prepare(db, `UPDATE supervisors SET nickname=?, staff_type=?, active=? WHERE id=?`).run(nickname ?? '', staffType, active, existing.id)
+        } else {
+          prepare(db, `INSERT INTO supervisors (full_name, nickname, branch_id, staff_type, active) VALUES (?,?,?,?,?)`).run(fullName, nickname ?? '', branch.id, staffType, active)
+        }
+        counts.supervisors++
+      }
+    }
+
     // ── Roster ─────────────────────────────────────────────────────────
     const rosterRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Roster!A:H' }).catch(() => null)
     if (rosterRes) {
@@ -321,6 +422,57 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
           ON CONFLICT(staff_type, year_month) DO UPDATE SET jewelry_rate_lak=excluded.jewelry_rate_lak, bar_rate_lak=excluded.bar_rate_lak, qty_rate_lak=excluded.qty_rate_lak
         `).run(staffType, yearMonth, parseFloat(jRate) || 0, parseFloat(bRate) || 0, parseFloat(qRate) || 0)
         counts.configs++
+      }
+    }
+
+    // ── Users ──────────────────────────────────────────────────────────
+    // password_hash is bcrypt — syncing enables multi-device login without
+    // manually recreating accounts on every new install.
+    const usersRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Users!A:G' }).catch(() => null)
+    if (usersRes) {
+      const all = usersRes.data.values ?? []
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'username' ? all.slice(1) : all
+      for (const row of data) {
+        const [username, fullName, role, branchCode, supervisorName, activeStr, passwordHash] = row as string[]
+        if (!username || !role || !passwordHash) continue
+        const branch = branchCode ? prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined : undefined
+        let supId: number | null = null
+        if (supervisorName && branch) {
+          const sup = prepare(db, `SELECT id FROM supervisors WHERE branch_id = ? AND (full_name = ? OR nickname = ?)`).get(branch.id, supervisorName, supervisorName) as { id: number } | undefined
+          supId = sup?.id ?? null
+        }
+        const active = activeStr === '0' ? 0 : 1
+        const existing = prepare(db, `SELECT id FROM users WHERE username = ?`).get(username) as { id: number } | undefined
+        if (existing) {
+          prepare(db, `UPDATE users SET full_name=?, role=?, branch_id=?, supervisor_id=?, active=?, password_hash=? WHERE username=?`)
+            .run(fullName ?? '', role, branch?.id ?? null, supId, active, passwordHash, username)
+        } else {
+          prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id, supervisor_id, active) VALUES (?,?,?,?,?,?,?)`)
+            .run(username, passwordHash, fullName ?? '', role, branch?.id ?? null, supId, active)
+        }
+        counts.users++
+      }
+    }
+
+    // ── Monthly Branch Targets ─────────────────────────────────────────
+    const mbtRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'MonthlyBranchTargets!A:D' }).catch(() => null)
+    if (mbtRes) {
+      const all = mbtRes.data.values ?? []
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'branch_code' ? all.slice(1) : all
+      for (const row of data) {
+        const [branchCode, yearStr, monthStr, targetStr] = row as string[]
+        if (!branchCode) continue
+        const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
+        if (!branch) continue
+        const year   = parseInt(yearStr)
+        const month  = parseInt(monthStr)
+        const target = parseFloat(targetStr)
+        if (isNaN(year) || isNaN(month) || isNaN(target)) continue
+        prepare(db, `
+          INSERT OR REPLACE INTO branch_kpi_monthly_targets (branch_id, year, month, kpi_point_target)
+          VALUES (?,?,?,?)
+        `).run(branch.id, year, month, target)
+        counts.monthlyTargets++
       }
     }
 
@@ -448,7 +600,7 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
         success: true,
         count: c.entries,
         configsImported: c.configs,
-        message: `Pulled: ${c.entries} entries · ${c.roster} roster · ${c.settings} settings · ${c.branches} branches · ${c.kpiRates} KPI rates · ${c.qtyTiers} tier updates · ${c.configs} commission configs`,
+        message: `Pulled: ${c.entries} entries · ${c.roster} roster · ${c.users} users · ${c.supervisors} supervisors · ${c.monthlyTargets} monthly targets · ${c.settings} settings · ${c.branches} branches · ${c.kpiRates} KPI rates · ${c.qtyTiers} tier updates · ${c.configs} commission configs`,
       }
     }
     return { success: false, error: result.error }

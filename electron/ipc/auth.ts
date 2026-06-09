@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { randomBytes } from 'crypto'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
+import { pushUsersIfConfigured } from './sheets'
 
 function generateToken(): string {
   return randomBytes(32).toString('hex')
@@ -74,9 +75,11 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
   }) => {
     requireAdmin(token)
     try {
+      const db   = getDb()
       const hash = bcrypt.hashSync(data.password, 10)
-      const result = prepare(getDb(), `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
+      const result = prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
         .run(data.username, hash, data.fullName, data.role, data.branchId)
+      pushUsersIfConfigured(db).catch(() => {})
       return { success: true, id: result.lastInsertRowid }
     } catch (e: unknown) {
       return { success: false, error: e instanceof Error ? e.message : 'Unknown error' }
@@ -93,12 +96,15 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
     if (data.role !== undefined) prepare(db, `UPDATE users SET role = ? WHERE id = ?`).run(data.role, id)
     if (data.branchId !== undefined) prepare(db, `UPDATE users SET branch_id = ? WHERE id = ?`).run(data.branchId, id)
     if (data.active !== undefined) prepare(db, `UPDATE users SET active = ? WHERE id = ?`).run(data.active, id)
+    pushUsersIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
   ipcMain.handle('auth:deleteUser', async (_e, token: string, id: number) => {
     requireAdmin(token)
-    prepare(getDb(), `UPDATE users SET active = 0 WHERE id = ?`).run(id)
+    const db = getDb()
+    prepare(db, `UPDATE users SET active = 0 WHERE id = ?`).run(id)
+    pushUsersIfConfigured(db).catch(() => {})
     return { success: true }
   })
 

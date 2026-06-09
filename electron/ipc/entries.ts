@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth } from './auth'
-import { syncEntriesToCloudIfConfigured } from './sheets'
+import { syncEntriesToCloudIfConfigured, pushSupervisorsIfConfigured, pushRosterIfConfigured } from './sheets'
 
 export function registerEntryHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('entry:getSalesmen', async (_e, token: string, branchId?: number) => {
@@ -181,10 +181,12 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     if (data.id) {
       prepare(db, `UPDATE supervisors SET full_name=?,nickname=?,branch_id=?,active=? WHERE id=?`)
         .run(data.fullName, data.nickname, data.branchId, data.active ?? 1, data.id)
+      pushSupervisorsIfConfigured(db).catch(() => {})
       return { success: true, id: data.id }
     }
     const r = prepare(db, `INSERT INTO supervisors (full_name, nickname, branch_id) VALUES (?,?,?)`)
       .run(data.fullName, data.nickname, data.branchId)
+    pushSupervisorsIfConfigured(db).catch(() => {})
     return { success: true, id: r.lastInsertRowid }
   })
 
@@ -194,6 +196,7 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     // Unlink reps before deactivating
     prepare(db, `UPDATE salesmen SET supervisor_id = NULL WHERE supervisor_id = ?`).run(id)
     prepare(db, `UPDATE supervisors SET active = 0 WHERE id = ?`).run(id)
+    pushSupervisorsIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
@@ -208,6 +211,7 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
         prepare(db, `UPDATE salesmen SET supervisor_id = ? WHERE id = ?`).run(supervisorId, sid)
       }
     })
+    pushRosterIfConfigured(db).catch(() => {})
     return { success: true }
   })
 

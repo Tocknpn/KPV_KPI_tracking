@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin } from './auth'
-import { pushAllConfigIfConfigured } from './sheets'
+import { pushAllConfigIfConfigured, pushMonthlyTargetsIfConfigured } from './sheets'
 import type { Database } from 'sql.js'
 
 export function computeKpiScore(
@@ -181,6 +181,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
         `).run(branchId, year, month, target)
       }
     })
+    pushMonthlyTargetsIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
