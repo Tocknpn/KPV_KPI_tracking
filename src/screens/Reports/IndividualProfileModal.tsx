@@ -85,22 +85,20 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
 
   const drillChartData = useMemo(() => {
     if (granularity === 'week') {
-      const weeks: Record<string, { label: string; jewelry: number; bar: number; qty: number }> = {}
+      const weeks: Record<string, { label: string; weight: number; qty: number }> = {}
       for (const e of drillEntries) {
         const day = parseInt(e.entry_date.slice(8))
         const key = `W${Math.ceil(day / 7)}`
-        if (!weeks[key]) weeks[key] = { label: key, jewelry: 0, bar: 0, qty: 0 }
-        weeks[key].jewelry += e.jewelry_weight_g
-        weeks[key].bar     += e.bar_weight_g
-        weeks[key].qty     += e.quantity
+        if (!weeks[key]) weeks[key] = { label: key, weight: 0, qty: 0 }
+        weeks[key].weight += e.jewelry_weight_g + e.bar_weight_g
+        weeks[key].qty    += e.quantity
       }
       return Object.values(weeks)
     }
     return drillEntries.map(e => ({
-      label: e.entry_date.slice(5),
-      jewelry: e.jewelry_weight_g,
-      bar: e.bar_weight_g,
-      qty: e.quantity,
+      label:  e.entry_date.slice(5),
+      weight: e.jewelry_weight_g + e.bar_weight_g,
+      qty:    e.quantity,
     }))
   }, [granularity, drillEntries])
 
@@ -214,12 +212,18 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
                     {!showKpiLine && <YAxis yAxisId="qty" orientation="right" tick={{ fontSize: 10, fill: '#666' }} width={40} />}
                     <Tooltip content={<ChartTooltip />} />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar yAxisId="vol" dataKey="jewelry" name="Jewelry (g)" fill="#004f96" fillOpacity={0.7} radius={[3,3,0,0]} />
-                    <Bar yAxisId="vol" dataKey="bar"     name="Bar (g)"     fill="#735c00" fillOpacity={0.7} radius={[3,3,0,0]} />
-                    {showKpiLine
-                      ? <Line yAxisId="pct" type="monotone" dataKey="kpi" name="KPI %" stroke="#17575c" strokeWidth={2.5} dot={{ r: 4, fill: '#17575c' }} />
-                      : <Line yAxisId="qty" type="monotone" dataKey="qty" name="Qty" stroke="#9c6e1b" strokeWidth={2} dot={{ r: 3, fill: '#9c6e1b' }} strokeDasharray="4 2" />
-                    }
+                    {showKpiLine ? (
+                      <>
+                        <Bar yAxisId="vol" dataKey="jewelry" name="Jewelry (g)" fill="#004f96" fillOpacity={0.7} radius={[3,3,0,0]} />
+                        <Bar yAxisId="vol" dataKey="bar"     name="Bar (g)"     fill="#735c00" fillOpacity={0.7} radius={[3,3,0,0]} />
+                        <Line yAxisId="pct" type="monotone" dataKey="kpi" name="KPI %" stroke="#17575c" strokeWidth={2.5} dot={{ r: 4, fill: '#17575c' }} />
+                      </>
+                    ) : (
+                      <>
+                        <Bar yAxisId="vol" dataKey="weight" name="Total Weight (g)" fill="#004f96" fillOpacity={0.75} radius={[3,3,0,0]} />
+                        <Line yAxisId="qty" type="monotone" dataKey="qty" name="Qty" stroke="#9c6e1b" strokeWidth={2.5} dot={{ r: 3.5, fill: '#9c6e1b' }} strokeDasharray="4 2" />
+                      </>
+                    )}
                   </ComposedChart>
                 </ResponsiveContainer>
               )}
