@@ -2,6 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin } from './auth'
+import { pushAllConfigIfConfigured } from './sheets'
 import type { Database } from 'sql.js'
 
 export function computeKpiScore(
@@ -121,6 +122,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
           .run(configId, t.thresholdPct, t.score, i + 1)
       })
     })
+    pushAllConfigIfConfigured(db).catch(() => {})
     return { success: true, id: configId! }
   })
 
@@ -142,7 +144,9 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('kpi:saveBranchKpiTarget', async (_e, token: string, branchId: number, target: number) => {
     requireAdmin(token)
-    prepare(getDb(), `UPDATE branches SET kpi_point_target = ? WHERE id = ?`).run(target, branchId)
+    const db = getDb()
+    prepare(db, `UPDATE branches SET kpi_point_target = ? WHERE id = ?`).run(target, branchId)
+    pushAllConfigIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
@@ -196,6 +200,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     const db = getDb()
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('kpi_total_base', ?)`  ).run(String(base))
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('kpi_total_weight', ?)`).run(String(weight))
+    pushAllConfigIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
@@ -213,7 +218,9 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('kpi:saveSupKpiPct', async (_e, token: string, pct: number) => {
     requireAdmin(token)
-    prepare(getDb(), `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('sup_kpi_pct', ?)`).run(String(pct))
+    const db = getDb()
+    prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('sup_kpi_pct', ?)`).run(String(pct))
+    pushAllConfigIfConfigured(db).catch(() => {})
     return { success: true }
   })
 }

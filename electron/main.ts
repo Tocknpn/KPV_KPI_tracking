@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase } from './db/connection'
 import { registerAllHandlers, startEmailScheduler } from './ipc/index'
+import { pullAllFromCloud, getSetting } from './ipc/sheets'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -53,6 +54,15 @@ app.whenReady().then(async () => {
 
   // Register all IPC handlers (see electron/ipc/index.ts for full channel map)
   registerAllHandlers(ipcMain)
+
+  // Auto-pull config + data from Google Sheets on startup (if credentials configured)
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (sheetsId && saPath) {
+    pullAllFromCloud(sheetsId, saPath)
+      .then(r => { if (r.success) console.log('[startup] Sheets pull:', r.counts); else console.warn('[startup] Sheets pull failed:', r.error) })
+      .catch(e => console.warn('[startup] Sheets pull error:', e?.message))
+  }
 
   // Start scheduled email jobs
   startEmailScheduler()

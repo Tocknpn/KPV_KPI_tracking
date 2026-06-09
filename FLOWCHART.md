@@ -234,3 +234,4 @@ flowchart TD
 |---------|------------|--------|
 | v1.3.1  | 2026-06-09 | Initial flowchart — B2C/B2B split, commission screen, customer type report, individual targets |
 | v1.3.1  | 2026-06-09 | Added Diagrams 3–5: executive overview, org hierarchy, KPI-to-commission |
+| v1.3.2  | 2026-06-09 | Bidirectional Sheets sync: Settings/Branches/KPIRates/QtyTiers/Roster tabs; auto-pull on startup |

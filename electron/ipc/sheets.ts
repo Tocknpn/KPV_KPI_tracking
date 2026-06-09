@@ -4,9 +4,22 @@ import { readFileSync, existsSync } from 'fs'
 import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
 import { requireAuth } from './auth'
+import type { Database } from 'sql.js'
+
+// ── Tab name registry ─────────────────────────────────────────────────────────
+const TABS = {
+  ENTRIES:    'Entries',
+  SETTINGS:   'Settings',
+  BRANCHES:   'Branches',
+  KPI_RATES:  'KPIRates',
+  QTY_TIERS:  'QtyTiers',
+  ROSTER:     'Roster',
+  COMMISSION: 'CommissionConfig',
+} as const
 
 const SHEET_HEADERS = ['Date', 'Branch', 'Rep Code', 'Salesman Name', 'Jewelry (Baht)', 'Bar (Baht)', 'Qty']
 
+// ── Auth helpers ──────────────────────────────────────────────────────────────
 export function getServiceAuth(serviceAccountPath: string) {
   if (!existsSync(serviceAccountPath)) throw new Error(`Service account file not found: ${serviceAccountPath}`)
   const key = JSON.parse(readFileSync(serviceAccountPath, 'utf8'))
@@ -18,6 +31,266 @@ export function getSetting(key: string): string {
   return row?.value ?? ''
 }
 
+// ── Tab write helper: create if missing, clear, rewrite ───────────────────────
+async function writeTab(
+  sheets: ReturnType<typeof google.sheets>,
+  spreadsheetId: string,
+  tabName: string,
+  headers: string[],
+  rows: (string | number | null)[][]
+): Promise<void> {
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
+  }).catch(() => { /* tab already exists */ })
+  await sheets.spreadsheets.values.clear({ spreadsheetId, range: `${tabName}!A:Z` })
+  await sheets.spreadsheets.values.update({
+    spreadsheetId, range: `${tabName}!A1`, valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [headers, ...rows] },
+  })
+}
+
+// ── Individual push functions ─────────────────────────────────────────────────
+
+async function pushSettings(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  const rows = (prepare(db, `SELECT key, value FROM app_settings WHERE key IN ('sup_kpi_pct','kpi_total_base','kpi_total_weight') ORDER BY key`).all() as Array<{ key: string; value: string }>)
+    .map(r => [r.key, r.value])
+  await writeTab(sheets, spreadsheetId, TABS.SETTINGS, ['key', 'value'], rows)
+}
+
+async function pushBranches(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  const rows = (prepare(db, `SELECT code, name, kpi_point_target FROM branches ORDER BY id`).all() as Array<{ code: string; name: string; kpi_point_target: number }>)
+    .map(r => [r.code, r.name, r.kpi_point_target])
+  await writeTab(sheets, spreadsheetId, TABS.BRANCHES, ['code', 'name', 'kpi_point_target'], rows)
+}
+
+async function pushKpiRates(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  const rows = (prepare(db, `SELECT metric_id, staff_type, points_per_unit FROM kpi_metric_type_rates ORDER BY metric_id, staff_type`).all() as Array<{ metric_id: number; staff_type: string; points_per_unit: number }>)
+    .map(r => [r.metric_id, r.staff_type, r.points_per_unit])
+  await writeTab(sheets, spreadsheetId, TABS.KPI_RATES, ['metric_id', 'staff_type', 'points_per_unit'], rows)
+}
+
+async function pushQtyTiers(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  const rows = (prepare(db, `
+    SELECT COALESCE(b.code, 'Global') AS branch_code, t.threshold_pct, t.score, t.tier_order
+    FROM kpi_tiers t
+    JOIN kpi_tier_configs c ON c.id = t.config_id
+    LEFT JOIN branches b ON b.id = c.branch_id
+    WHERE c.metric_id = 3 AND c.is_active = 1
+    ORDER BY COALESCE(b.code, 'Global'), t.tier_order
+  `).all() as Array<{ branch_code: string; threshold_pct: number; score: number; tier_order: number }>)
+    .map(r => [r.branch_code, r.threshold_pct, r.score, r.tier_order])
+  await writeTab(sheets, spreadsheetId, TABS.QTY_TIERS, ['branch_code', 'threshold', 'multiplier', 'tier_order'], rows)
+}
+
+async function pushRoster(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  const rows = (prepare(db, `
+    SELECT s.rep_code, s.full_name, s.nickname, b.code AS branch_code,
+           sup.full_name AS supervisor_name, s.staff_type,
+           smt.year_month, smt.point_target
+    FROM salesmen s
+    JOIN branches b ON b.id = s.branch_id
+    LEFT JOIN supervisors sup ON sup.id = s.supervisor_id
+    LEFT JOIN staff_monthly_targets smt ON smt.salesman_id = s.id
+      AND smt.year_month = (
+        SELECT MAX(year_month) FROM staff_monthly_targets WHERE salesman_id = s.id
+      )
+    WHERE s.active = 1
+    ORDER BY b.code, s.rep_code
+  `).all() as Array<{ rep_code: string; full_name: string; nickname: string | null; branch_code: string; supervisor_name: string | null; staff_type: string; year_month: string | null; point_target: number | null }>)
+    .map(r => [r.rep_code, r.full_name, r.nickname ?? '', r.branch_code, r.supervisor_name ?? '', r.staff_type, r.year_month ?? '', r.point_target ?? ''])
+  await writeTab(sheets, spreadsheetId, TABS.ROSTER, ['rep_code', 'full_name', 'nickname', 'branch_code', 'supervisor_name', 'staff_type', 'year_month', 'point_target'], rows)
+}
+
+async function pushCommission(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  const rows = (prepare(db, `SELECT staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak FROM commission_configs ORDER BY year_month, staff_type`).all() as Array<{ staff_type: string; year_month: string; jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number }>)
+    .map(r => [r.staff_type, r.year_month, r.jewelry_rate_lak, r.bar_rate_lak, r.qty_rate_lak])
+  await writeTab(sheets, spreadsheetId, TABS.COMMISSION, ['Staff_Type', 'Year_Month', 'Jewelry_Rate_LAK', 'Bar_Rate_LAK', 'Qty_Rate_LAK'], rows)
+}
+
+// ── Push all config tabs — exported for use in kpi.ts, upload.ts ──────────────
+export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+    await Promise.all([
+      pushSettings(db, sheets, sheetsId),
+      pushBranches(db, sheets, sheetsId),
+      pushKpiRates(db, sheets, sheetsId),
+      pushQtyTiers(db, sheets, sheetsId),
+      pushRoster(db, sheets, sheetsId),
+      pushCommission(db, sheets, sheetsId),
+    ])
+  } catch { /* Sheets unavailable — silently skip */ }
+}
+
+// ── Pull all config + entries from Sheets (standalone, callable from main.ts) ─
+export async function pullAllFromCloud(sheetsId: string, saPath: string): Promise<{
+  success: boolean
+  counts: { entries: number; configs: number; settings: number; branches: number; kpiRates: number; roster: number; qtyTiers: number }
+  error?: string
+}> {
+  const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, qtyTiers: 0 }
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+    const db     = getDb()
+    const now    = new Date().toISOString()
+
+    // Keys NOT overwritten from Sheets (device-local only)
+    const SKIP_KEYS = new Set(['sheets_id', 'service_account_path', 'last_synced_at'])
+
+    // ── Settings ───────────────────────────────────────────────────────
+    const settRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Settings!A:B' }).catch(() => null)
+    if (settRes) {
+      const all = settRes.data.values ?? []
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'key' ? all.slice(1) : all
+      for (const row of data) {
+        const [key, value] = row as string[]
+        if (!key || SKIP_KEYS.has(key)) continue
+        prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES (?,?)`).run(key, value ?? '')
+        counts.settings++
+      }
+    }
+
+    // ── Branches ──────────────────────────────────────────────────────
+    const brRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Branches!A:C' }).catch(() => null)
+    if (brRes) {
+      const all = brRes.data.values ?? []
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'code' ? all.slice(1) : all
+      for (const row of data) {
+        const [code, , targetStr] = row as string[]
+        if (!code) continue
+        const target = parseFloat(targetStr)
+        if (isNaN(target)) continue
+        prepare(db, `UPDATE branches SET kpi_point_target = ? WHERE code = ?`).run(target, code)
+        counts.branches++
+      }
+    }
+
+    // ── KPI Rates ─────────────────────────────────────────────────────
+    const rateRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'KPIRates!A:C' }).catch(() => null)
+    if (rateRes) {
+      const all = rateRes.data.values ?? []
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'metric_id' ? all.slice(1) : all
+      for (const row of data) {
+        const [metricIdStr, staffType, ppuStr] = row as string[]
+        const metricId = parseInt(metricIdStr)
+        const ppu = parseFloat(ppuStr)
+        if (!metricId || !staffType || isNaN(ppu)) continue
+        prepare(db, `
+          INSERT INTO kpi_metric_type_rates (metric_id, staff_type, points_per_unit) VALUES (?,?,?)
+          ON CONFLICT(metric_id, staff_type) DO UPDATE SET points_per_unit = excluded.points_per_unit
+        `).run(metricId, staffType, ppu)
+        counts.kpiRates++
+      }
+    }
+
+    // ── Qty Tiers (update multiplier only — does not add/remove tiers) ─
+    const tierRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'QtyTiers!A:D' }).catch(() => null)
+    if (tierRes) {
+      const all = tierRes.data.values ?? []
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'branch_code' ? all.slice(1) : all
+      for (const row of data) {
+        const [branchCode, thresholdStr, multiplierStr] = row as string[]
+        const threshold  = parseFloat(thresholdStr)
+        const multiplier = parseFloat(multiplierStr)
+        if (isNaN(threshold) || isNaN(multiplier)) continue
+        const branchRow = branchCode && branchCode !== 'Global'
+          ? prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
+          : undefined
+        const configRow = prepare(db, `
+          SELECT c.id FROM kpi_tier_configs c
+          WHERE c.metric_id = 3 AND c.is_active = 1
+            AND (c.branch_id = ? OR c.branch_id IS NULL)
+          ORDER BY CASE WHEN c.branch_id IS NULL THEN 1 ELSE 0 END
+          LIMIT 1
+        `).get(branchRow?.id ?? null) as { id: number } | undefined
+        if (!configRow) continue
+        prepare(db, `UPDATE kpi_tiers SET score = ? WHERE config_id = ? AND threshold_pct = ?`).run(multiplier, configRow.id, threshold)
+        counts.qtyTiers++
+      }
+    }
+
+    // ── Roster ─────────────────────────────────────────────────────────
+    const rosterRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Roster!A:H' }).catch(() => null)
+    if (rosterRes) {
+      const all = rosterRes.data.values ?? []
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'rep_code' ? all.slice(1) : all
+      for (const row of data) {
+        const [repCode, fullName, nickname, branchCode, supervisorName, staffTypeRaw, yearMonth, ptStr] = row as string[]
+        if (!repCode || !fullName || !branchCode) continue
+        const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
+        if (!branch) continue
+        let supId: number | null = null
+        if (supervisorName) {
+          const sup = prepare(db, `SELECT id FROM supervisors WHERE branch_id = ? AND (full_name = ? OR nickname = ?)`).get(branch.id, supervisorName, supervisorName) as { id: number } | undefined
+          supId = sup?.id ?? null
+        }
+        const staffType = staffTypeRaw === 'b2b' ? 'b2b' : 'b2c'
+        const existing = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(repCode) as { id: number } | undefined
+        let salesmanId: number
+        if (existing) {
+          prepare(db, `UPDATE salesmen SET full_name=?, nickname=?, branch_id=?, supervisor_id=?, staff_type=?, active=1 WHERE rep_code=?`).run(fullName, nickname ?? '', branch.id, supId, staffType, repCode)
+          salesmanId = existing.id
+        } else {
+          const ins = prepare(db, `INSERT INTO salesmen (rep_code, full_name, nickname, branch_id, staff_type, position, department, active, supervisor_id) VALUES (?,?,?,?,?,'Sales Representative','Sales',1,?)`).run(repCode, fullName, nickname ?? '', branch.id, staffType, supId)
+          salesmanId = Number(ins.lastInsertRowid)
+        }
+        const pointTarget = parseFloat(ptStr)
+        if (!isNaN(pointTarget) && yearMonth && /^\d{6}$/.test(yearMonth)) {
+          prepare(db, `INSERT INTO staff_monthly_targets (salesman_id, year_month, point_target) VALUES (?,?,?) ON CONFLICT(salesman_id, year_month) DO UPDATE SET point_target = excluded.point_target`).run(salesmanId, yearMonth, pointTarget)
+        }
+        counts.roster++
+      }
+    }
+
+    // ── Daily Entries ─────────────────────────────────────────────────
+    const entryRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A:G' }).catch(() => ({ data: { values: [] } }))
+    const allEntries = entryRes.data.values ?? []
+    const firstIsHeader = allEntries[0] && !String(allEntries[0][0]).match(/^\d{4}-\d{2}-\d{2}$/)
+    const entryRows = firstIsHeader ? allEntries.slice(1) : allEntries
+    for (const row of entryRows) {
+      const [entryDate, , repCode, , jewelryStr, barStr, qtyStr] = row as string[]
+      if (!entryDate || !repCode) continue
+      const sm = prepare(db, `SELECT id, branch_id FROM salesmen WHERE rep_code = ? AND active = 1`).get(repCode) as { id: number; branch_id: number } | undefined
+      if (!sm) continue
+      prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(sm.id, entryDate)
+      prepare(db, `INSERT INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at) VALUES (?,?,?,?,?,?,1,?)`).run(sm.id, sm.branch_id, entryDate, parseFloat(jewelryStr) || 0, parseFloat(barStr) || 0, parseInt(qtyStr) || 0, now)
+      counts.entries++
+    }
+
+    // ── Commission Configs ─────────────────────────────────────────────
+    const cfgRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'CommissionConfig!A:E' }).catch(() => null)
+    if (cfgRes) {
+      const all = cfgRes.data.values ?? []
+      const data = all.length > 0 && String(all[0][0]).toLowerCase().includes('type') ? all.slice(1) : all
+      for (const row of data) {
+        const [staffType, yearMonth, jRate, bRate, qRate] = row as string[]
+        if (!staffType || !yearMonth) continue
+        prepare(db, `
+          INSERT INTO commission_configs (staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak) VALUES (?,?,?,?,?)
+          ON CONFLICT(staff_type, year_month) DO UPDATE SET jewelry_rate_lak=excluded.jewelry_rate_lak, bar_rate_lak=excluded.bar_rate_lak, qty_rate_lak=excluded.qty_rate_lak
+        `).run(staffType, yearMonth, parseFloat(jRate) || 0, parseFloat(bRate) || 0, parseFloat(qRate) || 0)
+        counts.configs++
+      }
+    }
+
+    prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now)
+    prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('pull', ?, 'success')`).run(counts.entries)
+
+    return { success: true, counts }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    try { prepare(getDb(), `INSERT INTO sync_logs (direction, records_count, status, error_message) VALUES ('pull', 0, 'error', ?)`).run(msg) } catch { /* ignore */ }
+    return { success: false, counts, error: msg }
+  }
+}
+
+// ── IPC handlers ──────────────────────────────────────────────────────────────
 export function registerSheetsHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('sheets:getConfig', async (_e, token: string) => {
     requireAuth(token)
@@ -52,8 +325,7 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       const sheetNames = (res.data.sheets ?? []).map(s => s.properties?.title ?? '')
       return { success: true, title, sheetNames }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
-      return { success: false, error: msg }
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
     }
   })
 
@@ -87,14 +359,13 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
 
       if (unsynced.length === 0) return { success: true, count: 0, message: 'Nothing to sync.' }
 
-      // Auto-create "Entries" tab with header if cell A1 is empty
       const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A1' }).catch(() => null)
       const hasHeader = headerCheck?.data?.values?.[0]?.[0]
       if (!hasHeader) {
         await sheets.spreadsheets.batchUpdate({
           spreadsheetId: sheetsId,
-          requestBody: { requests: [{ addSheet: { properties: { title: 'Entries' } } }] },
-        }).catch(() => { /* tab may already exist */ })
+          requestBody: { requests: [{ addSheet: { properties: { title: TABS.ENTRIES } } }] },
+        }).catch(() => {})
         await sheets.spreadsheets.values.update({
           spreadsheetId: sheetsId, range: 'Entries!A1', valueInputOption: 'USER_ENTERED',
           requestBody: { values: [SHEET_HEADERS] },
@@ -124,72 +395,29 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
     const sheetsId = getSetting('sheets_id')
     const saPath   = getSetting('service_account_path')
     if (!sheetsId || !saPath) return { success: false, error: 'Google Sheets not configured.' }
-    try {
-      const auth   = getServiceAuth(saPath)
-      const sheets = google.sheets({ version: 'v4', auth })
-      const db     = getDb()
 
-      // ── Pull entries from Entries!A:G ─────────────────────────────────
-      // Columns: entry_date | branch_code | rep_code | full_name | jewelry | bar | qty
-      const entryRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A:G' })
-      const allRows = entryRes.data.values ?? []
-      // Skip header row if A1 is not a date
-      const firstIsHeader = allRows[0] && !String(allRows[0][0]).match(/^\d{4}-\d{2}-\d{2}$/)
-      const rows = firstIsHeader ? allRows.slice(1) : allRows
-
-      let imported = 0
-      const now = new Date().toISOString()
-
-      for (const row of rows) {
-        const [entryDate, , repCode, , jewelryStr, barStr, qtyStr] = row as string[]
-        if (!entryDate || !repCode) continue
-
-        // Resolve rep_code → salesman
-        const sm = prepare(db, `SELECT id, branch_id FROM salesmen WHERE rep_code = ? AND active = 1`).get(repCode) as
-          { id: number; branch_id: number } | undefined
-        if (!sm) continue
-
-        const jewelry = parseFloat(jewelryStr) || 0
-        const bar     = parseFloat(barStr)     || 0
-        const qty     = parseInt(qtyStr)       || 0
-
-        prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(sm.id, entryDate)
-        prepare(db, `
-          INSERT INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, 1, ?)
-        `).run(sm.id, sm.branch_id, entryDate, jewelry, bar, qty, now)
-        imported++
+    const result = await pullAllFromCloud(sheetsId, saPath)
+    if (result.success) {
+      const c = result.counts
+      return {
+        success: true,
+        count: c.entries,
+        configsImported: c.configs,
+        message: `Pulled: ${c.entries} entries · ${c.roster} roster · ${c.settings} settings · ${c.branches} branches · ${c.kpiRates} KPI rates · ${c.qtyTiers} tier updates · ${c.configs} commission configs`,
       }
+    }
+    return { success: false, error: result.error }
+  })
 
-      // ── Pull commission configs from CommissionConfig tab ─────────────
-      let configsImported = 0
-      try {
-        const cfgRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'CommissionConfig!A:E' }).catch(() => null)
-        const cfgRows = cfgRes?.data?.values ?? []
-        const cfgDataRows = cfgRows.length > 0 && String(cfgRows[0][0]).toLowerCase().includes('type') ? cfgRows.slice(1) : cfgRows
-        for (const row of cfgDataRows) {
-          const [staffType, yearMonth, jRate, bRate, qRate] = row as string[]
-          if (!staffType || !yearMonth) continue
-          prepare(db, `
-            INSERT INTO commission_configs (staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak)
-            VALUES (?,?,?,?,?)
-            ON CONFLICT(staff_type, year_month) DO UPDATE SET
-              jewelry_rate_lak = excluded.jewelry_rate_lak,
-              bar_rate_lak     = excluded.bar_rate_lak,
-              qty_rate_lak     = excluded.qty_rate_lak
-          `).run(staffType, yearMonth, parseFloat(jRate) || 0, parseFloat(bRate) || 0, parseFloat(qRate) || 0)
-          configsImported++
-        }
-      } catch { /* CommissionConfig tab may not exist yet */ }
-
-      prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now)
-      prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('pull', ?, 'success')`).run(imported)
-
-      return { success: true, count: imported, configsImported, message: `Pulled ${imported} entries and ${configsImported} commission configs from Google Sheets.` }
+  // Push all config tabs (Settings, Branches, KPIRates, QtyTiers, Roster, CommissionConfig)
+  ipcMain.handle('sheets:pushConfig', async (_e, token: string) => {
+    requireAuth(token)
+    const db = getDb()
+    try {
+      await pushAllConfigIfConfigured(db)
+      return { success: true }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
-      prepare(getDb(), `INSERT INTO sync_logs (direction, records_count, status, error_message) VALUES ('pull', 0, 'error', ?)`).run(msg)
-      return { success: false, error: msg }
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
     }
   })
 }

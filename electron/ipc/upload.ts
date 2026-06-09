@@ -2,6 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin } from './auth'
+import { pushAllConfigIfConfigured } from './sheets'
 
 export interface DailyRow {
   date: string           // YYYY-MM-DD
@@ -171,6 +172,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           }
         }
       })
+      pushAllConfigIfConfigured(db).catch(() => {})
       return { success: true, created, updated, skipped: skipped.length, skippedCodes: skipped }
     } catch (e: unknown) {
       return { success: false, error: e instanceof Error ? e.message : String(e) }
