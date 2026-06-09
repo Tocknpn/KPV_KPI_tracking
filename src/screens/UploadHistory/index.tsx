@@ -188,15 +188,18 @@ export default function UploadHistory() {
   // ── Roster state ──────────────────────────────────────────────────────
   const [roster, setRoster]           = useState<RosterRow[]>([])
   const [supervisors, setSupervisors] = useState<Supervisor[]>([])
+  const [availableMonths, setAvailableMonths] = useState<string[]>([])
+  const [rosterYearMonth, setRosterYearMonth] = useState<string>('')
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterSyncing, setRosterSyncing] = useState(false)
   const [repModal, setRepModal]       = useState<'create' | 'edit' | null>(null)
   const [editRep, setEditRep]         = useState<RosterRow | null>(null)
   const [rosterToast, setRosterToast] = useState('')
-  const [filterRBranch, setFilterRBranch] = useState<number | 'all'>('all')
-  const [filterRType, setFilterRType]     = useState<'all' | 'b2c' | 'b2b'>('all')
-  const [filterRSearch, setFilterRSearch] = useState('')
-  const [showInactive, setShowInactive]   = useState(false)
+  const [filterRBranch, setFilterRBranch]   = useState<number | 'all'>('all')
+  const [filterRSup, setFilterRSup]         = useState<number | 'all'>('all')
+  const [filterRType, setFilterRType]       = useState<'all' | 'b2c' | 'b2b'>('all')
+  const [filterRSearch, setFilterRSearch]   = useState('')
+  const [showInactive, setShowInactive]     = useState(false)
 
   const defaultYearMonth = String(selectedYear) + String(selectedMonth).padStart(2, '0')
 
@@ -218,14 +221,19 @@ export default function UploadHistory() {
     } finally { setLoading(false) }
   }
 
-  async function loadRoster() {
+  async function loadRoster(ym?: string) {
     if (!token || !isAdmin) return
     setRosterLoading(true)
     try {
-      const [reps, sups] = await Promise.all([
-        window.api.getRosterAll(token),
+      const targetYm = ym ?? (rosterYearMonth || undefined)
+      const [reps, sups, rawMonths] = await Promise.all([
+        window.api.getRosterAll(token, targetYm),
         window.api.getSupervisors(token),
+        window.api.getRosterAvailableMonths(token),
       ])
+      const monthList = (rawMonths as { year_month: string }[]).map(m => m.year_month)
+      setAvailableMonths(monthList)
+      if (!rosterYearMonth && monthList.length > 0) setRosterYearMonth(monthList[0])
       setRoster(reps as RosterRow[])
       setSupervisors(sups as Supervisor[])
     } finally { setRosterLoading(false) }
@@ -278,6 +286,7 @@ export default function UploadHistory() {
   const filteredRoster = roster.filter(r => {
     if (!showInactive && r.active === 0) return false
     if (filterRBranch !== 'all' && r.branch_id !== filterRBranch) return false
+    if (filterRSup !== 'all' && r.supervisor_id !== filterRSup) return false
     if (filterRType !== 'all' && r.staff_type !== filterRType) return false
     if (filterRSearch) {
       const q = filterRSearch.toLowerCase()
@@ -496,10 +505,28 @@ export default function UploadHistory() {
         <>
           {/* Action bar */}
           <div className="flex flex-wrap gap-3 mb-5 items-center">
-            <select value={filterRBranch} onChange={e => setFilterRBranch(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+            {/* Month selector */}
+            <select value={rosterYearMonth} onChange={e => { const ym = e.target.value; setRosterYearMonth(ym); loadRoster(ym) }}
+              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none font-mono min-w-[130px]">
+              {availableMonths.length === 0
+                ? <option value="">No months</option>
+                : availableMonths.map(ym => <option key={ym} value={ym}>{ym.slice(0,4)}-{ym.slice(4)}</option>)
+              }
+            </select>
+
+            <select value={filterRBranch} onChange={e => { setFilterRBranch(e.target.value === 'all' ? 'all' : Number(e.target.value)); setFilterRSup('all') }}
               className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none">
               <option value="all">All Branches</option>
               {branches.map(b => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
+            </select>
+
+            {/* Supervisor filter */}
+            <select value={filterRSup} onChange={e => setFilterRSup(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none">
+              <option value="all">All Supervisors</option>
+              {(filterRBranch !== 'all' ? supervisors.filter(s => s.branch_id === filterRBranch) : supervisors).map(s => (
+                <option key={s.id} value={s.id}>{s.full_name}</option>
+              ))}
             </select>
 
             <div className="flex bg-surface-container rounded-lg p-0.5">

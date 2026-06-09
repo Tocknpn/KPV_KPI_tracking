@@ -95,6 +95,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('report:executive', token, year, month, dateFrom, dateTo),
   getBranchAnalytics: (token: string, year: number, month: number, dateFrom: string, dateTo: string) =>
     ipcRenderer.invoke('report:branchAnalytics', token, year, month, dateFrom, dateTo),
+  getRepHistory: (token: string, salesmanId: number, numMonths?: number) =>
+    ipcRenderer.invoke('report:repHistory', token, salesmanId, numMonths),
+  getSupHistory: (token: string, supId: number, numMonths?: number) =>
+    ipcRenderer.invoke('report:supHistory', token, supId, numMonths),
   getTeamPerformance: (token: string, branchIds: number[], year: number, month: number, dateFrom: string, dateTo: string) =>
     ipcRenderer.invoke('report:teamPerformance', token, branchIds, year, month, dateFrom, dateTo),
 
@@ -141,8 +145,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('commission:getReport', token, branchIds, year, month, dateFrom, dateTo),
 
   // ── Roster CRUD ───────────────────────────────────────────────────────
-  getRosterAll: (token: string) =>
-    ipcRenderer.invoke('roster:getAll', token),
+  getRosterAll: (token: string, yearMonth?: string) =>
+    ipcRenderer.invoke('roster:getAll', token, yearMonth),
+  getRosterAvailableMonths: (token: string) =>
+    ipcRenderer.invoke('roster:getAvailableMonths', token),
   saveRosterRep: (token: string, data: unknown) =>
     ipcRenderer.invoke('roster:saveRep', token, data),
   deactivateRosterRep: (token: string, id: number) =>

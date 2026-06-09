@@ -300,6 +300,86 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     })
   })
 
+  // 6-month individual rep trend
+  ipcMain.handle('report:repHistory', async (_e, token: string, salesmanId: number, numMonths = 6) => {
+    requireAuth(token)
+    const db = getDb()
+    const rep = prepare(db, `
+      SELECT s.id, s.rep_code, s.full_name, s.nickname,
+             s.branch_id, b.name AS branch_name, b.code AS branch_code,
+             s.supervisor_id, sup.full_name AS supervisor_name, s.staff_type, s.active
+      FROM salesmen s
+      JOIN branches b ON b.id = s.branch_id
+      LEFT JOIN supervisors sup ON sup.id = s.supervisor_id
+      WHERE s.id = ?
+    `).get(salesmanId) as {
+      id: number; rep_code: string; full_name: string; nickname: string
+      branch_id: number; branch_name: string; branch_code: string
+      supervisor_id: number | null; supervisor_name: string | null; staff_type: string; active: number
+    } | undefined
+    if (!rep) return null
+
+    const months: Array<{ year: number; month: number; ym: string }> = []
+    const now = new Date()
+    for (let i = numMonths - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      months.push({ year: d.getFullYear(), month: d.getMonth() + 1, ym: String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0') })
+    }
+
+    const history = months.map(m => {
+      const dateFrom = `${m.year}-${String(m.month).padStart(2,'0')}-01`
+      const dateTo   = `${m.year}-${String(m.month).padStart(2,'0')}-${new Date(m.year, m.month, 0).getDate()}`
+      const act = prepare(db, `
+        SELECT COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b,
+               COALESCE(SUM(quantity),0) AS q, COUNT(DISTINCT entry_date) AS days
+        FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ?
+      `).get(salesmanId, dateFrom, dateTo) as { j: number; b: number; q: number; days: number }
+      const targetRow = prepare(db, `SELECT point_target FROM staff_monthly_targets WHERE salesman_id=? AND year_month=?`).get(salesmanId, m.ym) as { point_target: number } | undefined
+      const j = act?.j ?? 0; const bar = act?.b ?? 0; const qty = act?.q ?? 0; const pt = targetRow?.point_target ?? 0
+      const js = computeKpiScore(db, 1, rep.branch_id, j, 0, dateTo, rep.staff_type).score
+      const bs = computeKpiScore(db, 2, rep.branch_id, bar, 0, dateTo, rep.staff_type).score
+      const qs = computeKpiScore(db, 3, rep.branch_id, qty, 0, dateTo, rep.staff_type).score
+      const total = js + bs + qs
+      return { year: m.year, month: m.month, year_month: m.ym, actual_jewelry: j, actual_bar: bar, actual_qty: qty, kpi_score_jewelry: js, kpi_score_bar: bs, kpi_score_qty: qs, kpi_total_score: total, kpi_pct: pt > 0 ? (total / pt) * 100 : 0, point_target: pt, days_with_entries: act?.days ?? 0 }
+    })
+    return { ...rep, history }
+  })
+
+  // 6-month supervisor team trend
+  ipcMain.handle('report:supHistory', async (_e, token: string, supId: number, numMonths = 6) => {
+    requireAuth(token)
+    const db = getDb()
+    const sup = prepare(db, `
+      SELECT sv.id, sv.full_name, sv.nickname, sv.branch_id, b.name AS branch_name, b.code AS branch_code, sv.staff_type, sv.active
+      FROM supervisors sv JOIN branches b ON b.id=sv.branch_id WHERE sv.id=?
+    `).get(supId) as { id: number; full_name: string; nickname: string; branch_id: number; branch_name: string; branch_code: string; staff_type: string; active: number } | undefined
+    if (!sup) return null
+
+    const reps = prepare(db, `SELECT id, branch_id, staff_type FROM salesmen WHERE supervisor_id=? AND active=1`).all(supId) as Array<{ id: number; branch_id: number; staff_type: string }>
+
+    const months: Array<{ year: number; month: number; ym: string }> = []
+    const now = new Date()
+    for (let i = numMonths - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      months.push({ year: d.getFullYear(), month: d.getMonth() + 1, ym: String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0') })
+    }
+
+    const history = months.map(m => {
+      const dateFrom = `${m.year}-${String(m.month).padStart(2,'0')}-01`
+      const dateTo   = `${m.year}-${String(m.month).padStart(2,'0')}-${new Date(m.year, m.month, 0).getDate()}`
+      let teamScore = 0; let teamTarget = 0; let teamJ = 0; let teamBar = 0; let teamQty = 0
+      for (const r of reps) {
+        const act = prepare(db, `SELECT COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ?`).get(r.id, dateFrom, dateTo) as { j: number; b: number; q: number }
+        const tRow = prepare(db, `SELECT point_target FROM staff_monthly_targets WHERE salesman_id=? AND year_month=?`).get(r.id, m.ym) as { point_target: number } | undefined
+        const j = act?.j ?? 0; const bar = act?.b ?? 0; const qty = act?.q ?? 0; const pt = tRow?.point_target ?? 0
+        teamJ += j; teamBar += bar; teamQty += qty; teamTarget += pt
+        teamScore += computeKpiScore(db, 1, r.branch_id, j, 0, dateTo, r.staff_type).score + computeKpiScore(db, 2, r.branch_id, bar, 0, dateTo, r.staff_type).score + computeKpiScore(db, 3, r.branch_id, qty, 0, dateTo, r.staff_type).score
+      }
+      return { year: m.year, month: m.month, year_month: m.ym, actual_jewelry: teamJ, actual_bar: teamBar, actual_qty: teamQty, team_total_score: teamScore, team_kpi_pct: teamTarget > 0 ? (teamScore / teamTarget) * 100 : 0, team_point_target: teamTarget, rep_count: reps.length }
+    })
+    return { ...sup, rep_count: reps.length, history }
+  })
+
   ipcMain.handle('report:branchAnalytics', async (_e,
     token: string, year: number, month: number,
     dateFrom: string, dateTo: string,

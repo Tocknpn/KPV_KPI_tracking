@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import { getDefaultDateRange } from '../../utils/dates'
 import type { MonthlyReportRow, TeamPerformanceRow } from '../../types'
+import { RepProfileModal, SupProfileModal } from './IndividualProfileModal'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -262,6 +263,10 @@ export default function Reports() {
   const [supSortCol, setSupSortCol] = useState('team_kpi_pct')
   const [supSortDir, setSupSortDir] = useState<'asc' | 'desc'>('desc')
 
+  // ── Individual profile modal state ────────────────────────────────────
+  const [profileRepId, setProfileRepId] = useState<number | null>(null)
+  const [profileSupId, setProfileSupId] = useState<number | null>(null)
+
   // ── Commission tab state ───────────────────────────────────────────────
   const [commReps, setCommReps]   = useState<CommRepRow[]>([])
   const [commSups, setCommSups]   = useState<CommSupRow[]>([])
@@ -478,6 +483,13 @@ export default function Reports() {
         </div>
       )}
 
+      {profileRepId != null && token && (
+        <RepProfileModal id={profileRepId} token={token} onClose={() => setProfileRepId(null)} />
+      )}
+      {profileSupId != null && token && (
+        <SupProfileModal id={profileSupId} token={token} onClose={() => setProfileSupId(null)} />
+      )}
+
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
         <div>
@@ -591,7 +603,7 @@ export default function Reports() {
                   const pct    = r.kpiScore.pct
                   const eomPct = r.eomKpiPct
                   return (
-                    <tr key={r.id} className="hover:bg-primary/[0.02] transition-colors">
+                    <tr key={r.id} onClick={() => setProfileRepId(r.id)} className="hover:bg-primary/[0.06] transition-colors cursor-pointer" title="Click to view individual trend">
                       <td className="px-5 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold uppercase">
@@ -698,7 +710,7 @@ export default function Reports() {
                     {loading ? (
                       <tr><td colSpan={6} className="py-8 text-center text-on-surface-variant text-body-sm">Loading...</td></tr>
                     ) : sortTypeRows(typeRows).map(r => (
-                      <tr key={r.id} className="hover:bg-primary/[0.02] transition-colors">
+                      <tr key={r.id} onClick={() => setProfileRepId(r.id)} className="hover:bg-primary/[0.06] transition-colors cursor-pointer" title="Click to view individual trend">
                         <td className="px-5 py-3 whitespace-nowrap">
                           <p className="font-label-md text-label-md font-bold">{r.full_name}</p>
                           <p className="text-[10px] text-on-surface-variant font-mono">{r.rep_code ?? r.supervisor_name ?? '—'}</p>
@@ -773,7 +785,7 @@ export default function Reports() {
                     No supervisors found for current filters.
                   </td></tr>
                 ) : sortedSupRows.map(r => (
-                  <tr key={r.id} className="hover:bg-primary/[0.02] transition-colors">
+                  <tr key={r.id} onClick={() => setProfileSupId(r.id)} className="hover:bg-secondary/[0.06] transition-colors cursor-pointer" title="Click to view team trend">
                     <td className="px-5 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold uppercase">

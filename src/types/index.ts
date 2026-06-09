@@ -212,6 +212,36 @@ export interface CommissionSupervisorRow {
   sup_pct: number
 }
 
+export interface RepHistoryPoint {
+  year: number; month: number; year_month: string
+  actual_jewelry: number; actual_bar: number; actual_qty: number
+  kpi_score_jewelry: number; kpi_score_bar: number; kpi_score_qty: number
+  kpi_total_score: number; kpi_pct: number
+  point_target: number; days_with_entries: number
+}
+
+export interface RepHistoryProfile {
+  id: number; rep_code: string; full_name: string; nickname: string
+  branch_id: number; branch_name: string; branch_code: string
+  supervisor_id: number | null; supervisor_name: string | null
+  staff_type: string; active: number
+  history: RepHistoryPoint[]
+}
+
+export interface SupHistoryPoint {
+  year: number; month: number; year_month: string
+  actual_jewelry: number; actual_bar: number; actual_qty: number
+  team_total_score: number; team_kpi_pct: number; team_point_target: number
+  rep_count: number
+}
+
+export interface SupHistoryProfile {
+  id: number; full_name: string; nickname: string
+  branch_id: number; branch_name: string; branch_code: string
+  staff_type: string; active: number; rep_count: number
+  history: SupHistoryPoint[]
+}
+
 export interface RosterRow {
   id: number
   rep_code: string
