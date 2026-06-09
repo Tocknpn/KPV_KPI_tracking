@@ -172,9 +172,11 @@ KPV sale performance tracking/
 │       ├── entries.ts          <- entry:getSalesmen/getEntries/save + supervisor:getAll/save
 │       ├── targets.ts          <- target:getTargets/saveTargets
 │       ├── kpi.ts              <- kpi:getMetrics/getConfigs/saveConfig + computeKpiScore()
-│       ├── reports.ts          <- report:dashboard/monthly/executive/branchAnalytics/teamPerformance
+│       ├── reports.ts          <- report:dashboard/monthly/executive/teamPerformance/repHistory/supHistory/repDailyEntries
 │       ├── upload.ts           <- upload:daily/targets/roster/getLogs/getCoverage
-│       ├── sheets.ts           <- sheets:syncToCloud/pullFromCloud/testConnection/browseFile
+│       ├── sheets.ts           <- sheets:syncToCloud/forceSyncAll/pullFromCloud/testConnection/browseFile
+│       ├── roster.ts           <- roster:getAll/saveRep/deactivate/reactivate/getAvailableMonths
+│       ├── commission.ts       <- commission:getConfigs/saveConfig/getReport
 │       ├── email.ts            <- email:getConfig/saveConfig/sendTest + cron scheduler
 │       └── admin.ts            <- admin:seedTestData/dataStats
 │
@@ -206,12 +208,13 @@ KPV sale performance tracking/
 │       ├── Login/              <- username/password form
 │       ├── Dashboard/          <- MTD stats, KPI gauge, top performers
 │       ├── DailyEntry/         <- manual entry table + XLSX upload + roster upload
-│       ├── Reports/            <- monthly performance table per rep
+│       ├── Reports/            <- monthly perf table per rep (4 tabs) + IndividualProfileModal (rep/sup drill-down)
 │       ├── TeamPerformance/    <- supervisor KPI% + team assignment UI
 │       ├── Analytics/          <- branch-level charts (pie, line, matrix)
 │       ├── Executive/          <- company-wide KPI, branch comparison, sup chart
-│       ├── KpiSettings/        <- admin: multipliers, tier config, branch targets
-│       ├── Settings/           <- Google Sheets config, email config
+│       ├── KpiSettings/        <- admin: unified KPI config (Jewelry/Bar/Qty inline + month scope), branch targets, commission rates
+│       ├── Settings/           <- Google Sheets config (incl. Force Full Sync), email config
+│       ├── UploadHistory/      <- Upload History tab + Roster tab (admin: inline CRUD, month/sup/branch filters)
 │       └── UserManagement/     <- admin: user CRUD
 │
 ├── credentials/                <- GITIGNORED — never commit contents
@@ -251,7 +254,7 @@ KPV sale performance tracking/
 
 | Table | Purpose |
 |-------|---------|
-| `app_settings` | Key-value config store (schema_version, sheets_id, kpi settings) |
+| `app_settings` | Key-value config store (schema_version, sheets_id, kpi settings, sup_kpi_pct) |
 | `branches` | 4 branches: Morning Market, Vientiane Center, ITecc, VangThong |
 | `users` | Login accounts — roles: admin/supervisor/branch_manager/executive |
 | `sessions` | Auth tokens — 8-hour expiry, validated on every IPC call |
@@ -259,10 +262,13 @@ KPV sale performance tracking/
 | `targets` | Monthly targets per salesman (jewelry/bar/qty) |
 | `daily_entries` | One row per salesman per date. `synced=0` = not yet pushed to Sheets |
 | `kpi_metrics` | 3 rows: Jewelry (id=1), Bar (id=2), Quantity (id=3). Stores `points_per_unit` |
+| `kpi_metric_type_rates` | `(metric_id, staff_type)` → `points_per_unit` (B2C vs B2B split rates) |
 | `kpi_tier_configs` | Config set per metric+branch combo (effective date range) |
 | `kpi_tiers` | Rows under a config: threshold qty → multiplier |
 | `branch_kpi_monthly_targets` | Override per branch per month (fallback: `branches.kpi_point_target`) |
+| `staff_monthly_targets` | Per-rep point target per year_month (YYYYMM). Loaded from roster upload |
 | `supervisors` | Team supervisor records (separate from user accounts) |
+| `commission_configs` | LAK commission rates per `(staff_type, year_month)` — editable in KPI Settings |
 | `sync_logs` | History of push/pull operations to Google Sheets |
 | `upload_logs` | History of XLSX bulk imports |
 | `email_config` | SMTP settings + schedule for automated reports |
@@ -292,6 +298,7 @@ kpi_tier_configs (1) ── (N) kpi_tiers
 | v7 | `supervisors` table + `salesmen.supervisor_id` + `sup_kpi_pct` setting |
 | v8 | `users.supervisor_id` — links login account to a supervisor record |
 | v9 | `salesmen.rep_code` TEXT UNIQUE — company-issued rep ID for cross-machine sync |
+| v10 | `staff_monthly_targets` + `commission_configs` + `kpi_metric_type_rates` tables; `salesmen.staff_type` column |
 
 ---
 
@@ -366,6 +373,9 @@ All calls go through `window.api.*` (defined in `electron/preload.ts`).
 | `getExecutiveReport(token, y, m, from, to)` | `report:executive` |
 | `getBranchAnalytics(token, y, m, from, to)` | `report:branchAnalytics` |
 | `getTeamPerformance(token, branchIds[], y, m, from, to)` | `report:teamPerformance` |
+| `getRepHistory(token, salesmanId, numMonths?)` | `report:repHistory` — 6-month trend + commission per month |
+| `getRepDailyEntries(token, salesmanId, year, month)` | `report:repDailyEntries` — daily entries for drill-down chart |
+| `getSupHistory(token, supId, numMonths?)` | `report:supHistory` — supervisor team 6-month trend |
 
 #### Upload (`electron/ipc/upload.ts`)
 
@@ -386,10 +396,29 @@ All calls go through `window.api.*` (defined in `electron/preload.ts`).
 | `getSheetsConfig(token)` | `sheets:getConfig` |
 | `saveSheetsConfig(token, config)` | `sheets:saveConfig` |
 | `getSyncLogs(token)` | `sheets:getSyncLogs` |
-| `syncToCloud(token)` | `sheets:syncToCloud` |
+| `syncToCloud(token)` | `sheets:syncToCloud` — pushes unsynced entries only |
+| `forceSyncAll(token)` | `sheets:forceSyncAll` — resets all synced=0, clears Entries tab, re-pushes ALL entries + all 6 config tabs |
 | `pullFromCloud(token)` | `sheets:pullFromCloud` |
 | `testSheetsConnection(token)` | `sheets:testConnection` |
 | `browseSheetsFile(token)` | `sheets:browseFile` — opens native file dialog |
+
+#### Roster CRUD (`electron/ipc/roster.ts`)
+
+| `window.api` method | IPC channel | Notes |
+|---------------------|-------------|-------|
+| `getRosterAll(token, yearMonth?)` | `roster:getAll` | admin only; yearMonth=YYYYMM filters staff_monthly_targets LEFT JOIN |
+| `getRosterAvailableMonths(token)` | `roster:getAvailableMonths` | admin only |
+| `saveRosterRep(token, data)` | `roster:saveRep` | admin only; upsert salesman + target |
+| `deactivateRosterRep(token, id)` | `roster:deactivate` | admin only |
+| `reactivateRosterRep(token, id)` | `roster:reactivate` | admin only |
+
+#### Commission (`electron/ipc/commission.ts`)
+
+| `window.api` method | IPC channel |
+|---------------------|-------------|
+| `getCommissionConfigs(token, yearMonth?)` | `commission:getConfigs` |
+| `saveCommissionConfig(token, data)` | `commission:saveConfig` — also pushes CommissionConfig tab to Sheets |
+| `getCommissionReport(token, branchIds[], y, m, from?, to?)` | `commission:getReport` |
 
 #### Admin (`electron/ipc/admin.ts`)
 
@@ -622,12 +651,13 @@ Production codes come from the company's HR/payroll system — any unique string
 | `/login` | Login | all | Username + password form |
 | `/dashboard` | Dashboard | all | MTD KPI gauge, top performers, quick stats |
 | `/daily-entry` | DailyEntry | all | Manual entry + XLSX upload + roster upload (admin) |
-| `/reports` | Reports | all | Monthly performance table per rep, branch/supervisor filters |
+| `/reports` | Reports | all | Monthly performance table per rep, branch/supervisor filters; 4 tabs: Performance / Customer Type / Supervisor / Commission; click rep/sup row → individual profile modal with trend chart + history table |
 | `/team-performance` | TeamPerformance | admin, branch_manager, executive | Supervisor KPI%, team assignment UI |
 | `/analytics` | Analytics | admin, branch_manager, executive | Branch charts: pie, line, comparison matrix |
 | `/executive` | Executive | admin, executive | Company-wide KPI, branch comparison, supervisor chart |
-| `/kpi-settings` | KpiSettings | admin only | Scoring multipliers, tier tables, branch targets |
-| `/settings` | Settings | admin, supervisor, branch_manager | Google Sheets config, email config, test connection |
+| `/kpi-settings` | KpiSettings | admin only | Unified KPI config per month (Jewelry/Bar/Qty cards), tier tables, branch targets, score simulator |
+| `/upload-history` | UploadHistory | all (Roster tab: admin only) | Upload History tab + Roster tab (admin: view/edit all reps with month/branch/supervisor filters) |
+| `/settings` | Settings | admin, supervisor, branch_manager | Google Sheets config (Force Full Sync), email config, test data loader |
 | `/users` | UserManagement | admin only | User CRUD |
 
 ### Filter Visibility by Role
@@ -796,4 +826,4 @@ c) Rewrite git history (BFG Repo Cleaner or `git filter-branch`)
 ---
 
 *SalesTrack Pro — KPV Gold & Jewelry Sales Performance System*  
-*GuideBook last updated: 2026-06-06 · Schema v9 · App v1.2.6*
+*GuideBook last updated: 2026-06-09 · Schema v10 · App v1.3.7*

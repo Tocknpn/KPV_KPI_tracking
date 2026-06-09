@@ -1,6 +1,6 @@
 # KPV Sales Performance — System Flowcharts
 
-> Version: **v1.3.1** — Update this header + diagram whenever app changes screens, roles, or data flow.
+> Version: **v1.3.7** — Update this header + diagram whenever app changes screens, roles, or data flow.
 
 Paste each diagram block into [mermaid.live](https://mermaid.live) to render.
 
@@ -33,22 +33,21 @@ flowchart TD
 
     subgraph NAV["Screens ( /route — Label )"]
         DASH["/dashboard — Dashboard"]
-        ENTRY["/entry — Daily Entry"]
-        REPORTS["/reports — Reports"]
-        COMM["/commission — Commission"]
+        ENTRY["/daily-entry — Daily Entry"]
+        REPORTS["/reports — Reports\n4 tabs: Performance · Customer Type · Supervisor · Commission\nclick rep/sup row → Individual Profile Modal"]
         ANAL["/analytics — Analytics"]
         EXECV["/executive — Executive View"]
-        TEAM["/team — Team Performance"]
-        UPLOAD["/upload-history — Upload History"]
-        SETT["/settings — Settings"]
+        TEAM["/team-performance — Team Performance"]
+        UPLOAD["/upload-history — Upload History\nUpload History tab + Roster tab (admin only)"]
+        SETT["/settings — Settings\nSheets config · Force Full Sync · Test Data"]
         USERS["/users — User Management"]
-        KPISET["/kpi-settings — KPI Settings"]
+        KPISET["/kpi-settings — KPI Settings\nUnified KPI config per month · Score simulator"]
     end
 
-    ADMIN --> DASH & ENTRY & REPORTS & COMM & ANAL & EXECV & TEAM & UPLOAD & SETT & USERS & KPISET
-    BM    --> DASH & ENTRY & REPORTS & COMM & TEAM & UPLOAD & SETT
-    SUP   --> DASH & ENTRY & REPORTS & COMM & UPLOAD & SETT
-    EXEC  --> DASH & ANAL & EXECV & TEAM & COMM & UPLOAD & SETT
+    ADMIN --> DASH & ENTRY & REPORTS & ANAL & EXECV & TEAM & UPLOAD & SETT & USERS & KPISET
+    BM    --> DASH & ENTRY & REPORTS & TEAM & UPLOAD & SETT
+    SUP   --> DASH & ENTRY & REPORTS & UPLOAD & SETT
+    EXEC  --> DASH & ANAL & EXECV & TEAM & REPORTS & UPLOAD & SETT
 ```
 
 ---
@@ -58,16 +57,18 @@ flowchart TD
 ```mermaid
 flowchart TD
     subgraph INPUT["Data Input"]
-        MANUAL["Manual Daily Entry\n/entry screen\nper rep · per day"]
+        MANUAL["Manual Daily Entry\n/daily-entry screen\nper rep · per day"]
         XLSUP["XLSX/CSV Upload\n/upload-history\nbulk daily entries"]
-        ROSTERUP["Roster Upload\n/upload-history\nrep codes + point targets + staff_type"]
-        PULL["Pull from Cloud\nSettings → Pull from Cloud\nGoogle Sheets → SQLite\n(also restores CommissionConfig)"]
+        ROSTERUP["Roster Upload CSV/XLSX\n/daily-entry (admin)\nrep codes + point targets + staff_type"]
+        ROSTERCRUD["Roster Tab CRUD\n/upload-history (admin)\nadd/edit/deactivate reps · set targets"]
+        PULL["Pull from Cloud\nSettings → Pull from Cloud\nGoogle Sheets → SQLite\n(restores Entries + CommissionConfig)"]
     end
 
     MANUAL   -->|"upload:daily IPC"| DEDB
     XLSUP    -->|"upload:daily IPC"| DEDB
     PULL     -->|"sheets.pullFromCloud"| DEDB
     ROSTERUP -->|"upload:roster IPC"| REPDB
+    ROSTERCRUD -->|"roster:saveRep / deactivate IPC\n→ pushRosterIfConfigured"| REPDB
 
     REPDB[("salesmen\nstaff_monthly_targets\nsupervisors")]
     DEDB[("daily_entries\nSQLite\nsynced = 0")]
@@ -88,40 +89,42 @@ flowchart TD
     end
 
     KPI --> RSCREEN
-    KPI --> CSCREEN
 
-    subgraph RSCREEN["/reports — Reports Screen"]
+    subgraph RSCREEN["/reports — Reports Screen (4 Tabs)"]
         PTAB["Performance Tab\nper-rep KPI% · EOM forecast\nB2C / B2B chip filter · supervisor filter"]
         CTTAB["Customer Type Tab\nB2C vs B2B group stats\nside-by-side totals + detail tables"]
-    end
-
-    subgraph CSCREEN["/commission — Commission Screen"]
-        CCFG["commission_configs\nLAK rates per staff_type per month"]
-        REPCOMM["Rep Commission\nJewelry_Baht × rate_j\n+ Bar_Baht × rate_b\n+ Qty × rate_q  (LAK)"]
-        SUPCOMM["Supervisor Commission\nteam_total_LAK × sup_kpi_pct (default 30%)"]
-        CCFG --> REPCOMM --> SUPCOMM
+        SUPTAB["Supervisor Tab\nsup KPI%, team breakdown"]
+        COMMTAB["Commission Tab\nrep + supervisor LAK amounts"]
+        REPMODAL["Rep Profile Modal\ntrend chart Month/Week/Day granularity\nhistory table + Commission ₭ column"]
+        SUPMODAL["Sup Profile Modal\ntrend chart · history table"]
+        PTAB --> REPMODAL
+        SUPTAB --> SUPMODAL
     end
 
     subgraph KPISETT["/kpi-settings — KPI Settings (Admin Only)"]
+        KPICFG["Unified KPI Config per month\nJewelry multiplier · Bar multiplier\nQty tier assign"]
         BTGT["Branch KPI Targets\nkpi_point_target per branch"]
-        QTIER["Qty Tier Config\nthreshold → multiplier per branch"]
         COMMR["Commission Rates LAK\nper staff_type per month\n(saves + pushes CommissionConfig tab)"]
-        SUPRATE["Supervisor Rate\nsup_kpi_pct setting"]
-        MTGT["Per-Rep Point Targets\nvia Roster upload CSV/XLSX"]
+        SUPRATE["Supervisor Score Weight\nsup_kpi_pct — % of team KPI credited to sup score"]
+        SIMUL["Score Simulator\ntest any weight/qty against config"]
     end
 
     KPISETT -.->|"config used by"| KPI
-    KPISETT -.->|"config used by"| CSCREEN
+    KPISETT -.->|"commission rates used by"| RSCREEN
 
     subgraph OUTPUT["Output / Sync"]
-        PUSHDATA["Push to Google Sheets\nSettings → Push to Cloud\nmarks daily_entries.synced = 1"]
+        PUSHDATA["Push to Cloud (incremental)\nSettings → Sync to Cloud\nonly synced=0 entries → marks synced=1"]
+        FORCESYNC["Force Full Sync\nSettings → Force Full Sync\nresets ALL entries synced=0\nclears Entries tab\npushes ALL entries + 6 config tabs"]
         PUSHCFG["Save Commission Config\ncommission:saveConfig IPC\nwrites CommissionConfig tab in Sheets"]
+        PUSHROSTER["Auto Push Roster\nafter any roster:saveRep / deactivate\npushRosterIfConfigured (fire-and-forget)"]
         EMAILRPT["Email Report\nnodemailer\n(email_config required)"]
     end
 
     DEDB    -->|"synced=0 rows"| PUSHDATA
-    CSCREEN -->|"admin saves rates"| PUSHCFG
-    PULL    -.->|"restores CommissionConfig tab"| CCFG
+    DEDB    -->|"all entries"| FORCESYNC
+    KPISETT -->|"admin saves rates"| PUSHCFG
+    REPDB   -->|"roster change"| PUSHROSTER
+    PULL    -.->|"restores data"| REPDB
     RSCREEN -->|"admin action"| EMAILRPT
 ```
 
@@ -232,6 +235,11 @@ flowchart TD
 
 | Version | Date       | Change |
 |---------|------------|--------|
-| v1.3.1  | 2026-06-09 | Initial flowchart — B2C/B2B split, commission screen, customer type report, individual targets |
-| v1.3.1  | 2026-06-09 | Added Diagrams 3–5: executive overview, org hierarchy, KPI-to-commission |
-| v1.3.2  | 2026-06-09 | Bidirectional Sheets sync: Settings/Branches/KPIRates/QtyTiers/Roster tabs; auto-pull on startup |
+| v1.3.1  | 2026-06-06 | Initial flowchart — B2C/B2B split, commission screen, customer type report, individual targets |
+| v1.3.1  | 2026-06-06 | Added Diagrams 3–5: executive overview, org hierarchy, KPI-to-commission |
+| v1.3.2  | 2026-06-06 | Bidirectional Sheets sync: Settings/Branches/KPIRates/QtyTiers/Roster tabs; auto-pull on startup |
+| v1.3.3  | 2026-06-07 | Commission integrated as tab 4 in /reports (no longer separate /commission route); Supervisor tab added |
+| v1.3.4  | 2026-06-07 | Schema v9: kpi_metric_type_rates + commission_configs + staff_monthly_targets tables; test data loader in Settings |
+| v1.3.5  | 2026-06-07 | Roster CRUD IPC (roster.ts); Roster tab in Upload History (admin only); Force Full Sync in Settings |
+| v1.3.6  | 2026-06-08 | Roster tab: month filter + supervisor filter; Individual Profile Modals in Reports (rep + supervisor) |
+| v1.3.7  | 2026-06-09 | Modal drill-down granularity (Month/Week/Day); Commission ₭ column in history table; Supervisor Score Weight rename; Unified KPI Config section per month; GitHub Actions manual-only builds |
