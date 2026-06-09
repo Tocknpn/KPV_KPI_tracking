@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer,
 } from 'recharts'
-import type { RepHistoryProfile, SupHistoryProfile } from '../../types'
+import type { RepDailyEntry, RepHistoryProfile, SupHistoryProfile } from '../../types'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 function fmt(n: number, d = 1) { return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) }
 function fmtPct(n: number) { return `${fmt(n, 1)}%` }
+function fmtLak(n: number) { return n >= 1000000 ? `${(n/1000000).toFixed(1)}M` : n >= 1000 ? `${(n/1000).toFixed(0)}K` : n.toLocaleString('en-US',{maximumFractionDigits:0}) }
 
 function kpiColor(pct: number) {
   if (pct >= 80)  return 'text-green-600'
@@ -23,7 +24,6 @@ function trendIcon(current: number, prev: number) {
   return <span className="material-symbols-outlined text-on-surface-variant text-base">trending_flat</span>
 }
 
-// ── Custom tooltip ────────────────────────────────────────────────────────────
 function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) {
   if (!active || !payload?.length) return null
   return (
@@ -32,36 +32,82 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
       {payload.map(p => (
         <div key={p.name} className="flex justify-between gap-4 mb-1">
           <span style={{ color: p.color }} className="font-medium">{p.name}</span>
-          <span className="font-tabular-nums font-bold">{p.name === 'KPI %' ? `${fmt(p.value, 1)}%` : fmt(p.value, 1)}</span>
+          <span className="font-tabular-nums font-bold">
+            {p.name === 'KPI %' ? `${fmt(p.value, 1)}%` : p.name === 'Qty' ? p.value : fmt(p.value, 1)}
+          </span>
         </div>
       ))}
     </div>
   )
 }
 
+type Granularity = 'month' | 'week' | 'day'
+
 // ── Rep profile modal ─────────────────────────────────────────────────────────
 interface RepModalProps { id: number; token: string; onClose: () => void }
 
 export function RepProfileModal({ id, token, onClose }: RepModalProps) {
-  const [data, setData]       = useState<RepHistoryProfile | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [data, setData]             = useState<RepHistoryProfile | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [granularity, setGranularity] = useState<Granularity>('month')
+  const [drillYM, setDrillYM]       = useState<string>('')
+  const [drillEntries, setDrillEntries] = useState<RepDailyEntry[]>([])
+  const [drillLoading, setDrillLoading] = useState(false)
 
   useEffect(() => {
     setLoading(true)
     window.api.getRepHistory(token, id, 6)
-      .then(d => setData(d as RepHistoryProfile | null))
+      .then(d => {
+        const profile = d as RepHistoryProfile | null
+        setData(profile)
+        if (profile?.history.length) setDrillYM(profile.history[profile.history.length - 1].year_month)
+      })
       .finally(() => setLoading(false))
   }, [id, token])
 
-  const current   = data?.history[data.history.length - 1]
-  const prev      = data?.history[data.history.length - 2]
-  const allMonths = data?.history.map(h => ({
+  useEffect(() => {
+    if (granularity === 'month' || !drillYM || !token) { setDrillEntries([]); return }
+    const year = parseInt(drillYM.slice(0, 4))
+    const month = parseInt(drillYM.slice(4))
+    setDrillLoading(true)
+    window.api.getRepDailyEntries(token, id, year, month)
+      .then(d => setDrillEntries(d as RepDailyEntry[]))
+      .finally(() => setDrillLoading(false))
+  }, [drillYM, granularity, id, token])
+
+  const current = data?.history[data.history.length - 1]
+  const prev    = data?.history[data.history.length - 2]
+
+  const monthChartData = useMemo(() => (data?.history ?? []).map(h => ({
     label: `${MONTHS[h.month - 1]} ${String(h.year).slice(2)}`,
-    jewelry: h.actual_jewelry,
-    bar:     h.actual_bar,
-    qty:     h.actual_qty,
-    kpi:     h.kpi_pct,
-  })) ?? []
+    jewelry: h.actual_jewelry, bar: h.actual_bar, qty: h.actual_qty, kpi: h.kpi_pct,
+  })), [data])
+
+  const drillChartData = useMemo(() => {
+    if (granularity === 'week') {
+      const weeks: Record<string, { label: string; jewelry: number; bar: number; qty: number }> = {}
+      for (const e of drillEntries) {
+        const day = parseInt(e.entry_date.slice(8))
+        const key = `W${Math.ceil(day / 7)}`
+        if (!weeks[key]) weeks[key] = { label: key, jewelry: 0, bar: 0, qty: 0 }
+        weeks[key].jewelry += e.jewelry_weight_g
+        weeks[key].bar     += e.bar_weight_g
+        weeks[key].qty     += e.quantity
+      }
+      return Object.values(weeks)
+    }
+    return drillEntries.map(e => ({
+      label: e.entry_date.slice(5),
+      jewelry: e.jewelry_weight_g,
+      bar: e.bar_weight_g,
+      qty: e.quantity,
+    }))
+  }, [granularity, drillEntries])
+
+  const chartData  = granularity === 'month' ? monthChartData : drillChartData
+  const showKpiLine = granularity === 'month'
+
+  const drillMonthLabel = drillYM ? `${MONTHS[parseInt(drillYM.slice(4)) - 1]} ${drillYM.slice(0, 4)}` : ''
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -105,34 +151,10 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
             {/* Summary cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                {
-                  label: 'This Month KPI%',
-                  value: current ? fmtPct(current.kpi_pct) : '—',
-                  sub: current ? `${current.kpi_total_score.toLocaleString('en-US', {maximumFractionDigits:0})} pts` : '',
-                  color: current ? kpiColor(current.kpi_pct) : '',
-                  icon: 'target',
-                },
-                {
-                  label: 'vs Last Month',
-                  value: current && prev ? `${current.kpi_pct - prev.kpi_pct > 0 ? '+' : ''}${fmt(current.kpi_pct - prev.kpi_pct, 1)}%` : '—',
-                  sub: prev ? `Last: ${fmtPct(prev.kpi_pct)}` : 'First month',
-                  color: current && prev ? (current.kpi_pct >= prev.kpi_pct ? 'text-green-600' : 'text-red-500') : 'text-on-surface-variant',
-                  icon: current && prev && current.kpi_pct >= prev.kpi_pct ? 'trending_up' : 'trending_down',
-                },
-                {
-                  label: 'Active Days',
-                  value: current ? String(current.days_with_entries) : '—',
-                  sub: 'this month',
-                  color: 'text-on-surface',
-                  icon: 'calendar_today',
-                },
-                {
-                  label: 'Point Target',
-                  value: current?.point_target ? current.point_target.toLocaleString('en-US', {maximumFractionDigits:0}) : '—',
-                  sub: current?.year_month ? `${current.year_month.slice(0,4)}-${current.year_month.slice(4)}` : '',
-                  color: 'text-on-surface',
-                  icon: 'adjust',
-                },
+                { label: 'This Month KPI%', value: current ? fmtPct(current.kpi_pct) : '—', sub: current ? `${current.kpi_total_score.toLocaleString('en-US',{maximumFractionDigits:0})} pts` : '', color: current ? kpiColor(current.kpi_pct) : '', icon: 'target' },
+                { label: 'vs Last Month', value: current && prev ? `${current.kpi_pct - prev.kpi_pct > 0 ? '+' : ''}${fmt(current.kpi_pct - prev.kpi_pct, 1)}%` : '—', sub: prev ? `Last: ${fmtPct(prev.kpi_pct)}` : 'First month', color: current && prev ? (current.kpi_pct >= prev.kpi_pct ? 'text-green-600' : 'text-red-500') : 'text-on-surface-variant', icon: current && prev && current.kpi_pct >= prev.kpi_pct ? 'trending_up' : 'trending_down' },
+                { label: 'Active Days', value: current ? String(current.days_with_entries) : '—', sub: 'this month', color: 'text-on-surface', icon: 'calendar_today' },
+                { label: 'Point Target', value: current?.point_target ? current.point_target.toLocaleString('en-US',{maximumFractionDigits:0}) : '—', sub: current?.year_month ? `${current.year_month.slice(0,4)}-${current.year_month.slice(4)}` : '', color: 'text-on-surface', icon: 'adjust' },
               ].map(c => (
                 <div key={c.label} className="bg-surface-container/40 rounded-xl p-3">
                   <div className="flex items-center gap-1.5 mb-1">
@@ -145,22 +167,62 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
               ))}
             </div>
 
-            {/* Trend chart */}
+            {/* Trend chart with drill-down controls */}
             <div className="bg-surface-container/30 rounded-xl p-4">
-              <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-3 tracking-wider">Volume & KPI% Trend — Last 6 Months</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <ComposedChart data={allMonths} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#666' }} />
-                  <YAxis yAxisId="vol" tick={{ fontSize: 10, fill: '#666' }} width={52} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
-                  <YAxis yAxisId="pct" orientation="right" tick={{ fontSize: 10, fill: '#666' }} width={46} tickFormatter={v => `${v.toFixed(0)}%`} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar yAxisId="vol" dataKey="jewelry" name="Jewelry (g)" fill="#004f96" fillOpacity={0.7} radius={[3,3,0,0]} />
-                  <Bar yAxisId="vol" dataKey="bar"     name="Bar (g)"     fill="#735c00" fillOpacity={0.7} radius={[3,3,0,0]} />
-                  <Line yAxisId="pct" type="monotone" dataKey="kpi" name="KPI %" stroke="#17575c" strokeWidth={2.5} dot={{ r: 4, fill: '#17575c' }} />
-                </ComposedChart>
-              </ResponsiveContainer>
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
+                  {granularity === 'month' ? 'Volume & KPI% Trend — Last 6 Months' : `${granularity === 'week' ? 'Weekly' : 'Daily'} Breakdown — ${drillMonthLabel}`}
+                </p>
+                <div className="flex items-center gap-2">
+                  {/* Granularity toggle */}
+                  <div className="flex bg-white/60 rounded-lg p-0.5 border border-outline-variant/20">
+                    {(['month','week','day'] as Granularity[]).map(g => (
+                      <button key={g} onClick={() => setGranularity(g)}
+                        className={`px-3 py-1 rounded-md font-label-md text-[11px] capitalize transition-all ${granularity === g ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:text-primary'}`}>
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Month selector for week/day drill */}
+                  {granularity !== 'month' && (
+                    <select value={drillYM} onChange={e => setDrillYM(e.target.value)}
+                      className="bg-white/70 border border-outline-variant/20 rounded-lg px-2 py-1 text-[11px] outline-none font-mono">
+                      {data.history.filter(h => h.days_with_entries > 0).map(h => (
+                        <option key={h.year_month} value={h.year_month}>
+                          {MONTHS[h.month - 1]} {h.year}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+              {(drillLoading) ? (
+                <div className="flex items-center justify-center h-[220px]">
+                  <span className="material-symbols-outlined animate-spin-slow text-2xl text-primary">sync</span>
+                </div>
+              ) : chartData.length === 0 ? (
+                <div className="flex items-center justify-center h-[220px] text-on-surface-variant text-body-sm">
+                  No entries for {drillMonthLabel}.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <ComposedChart data={chartData} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#666' }} interval={granularity === 'day' ? 'preserveStartEnd' : 0} />
+                    <YAxis yAxisId="vol" tick={{ fontSize: 10, fill: '#666' }} width={52} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
+                    {showKpiLine && <YAxis yAxisId="pct" orientation="right" tick={{ fontSize: 10, fill: '#666' }} width={46} tickFormatter={v => `${v.toFixed(0)}%`} />}
+                    {!showKpiLine && <YAxis yAxisId="qty" orientation="right" tick={{ fontSize: 10, fill: '#666' }} width={40} />}
+                    <Tooltip content={<ChartTooltip />} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar yAxisId="vol" dataKey="jewelry" name="Jewelry (g)" fill="#004f96" fillOpacity={0.7} radius={[3,3,0,0]} />
+                    <Bar yAxisId="vol" dataKey="bar"     name="Bar (g)"     fill="#735c00" fillOpacity={0.7} radius={[3,3,0,0]} />
+                    {showKpiLine
+                      ? <Line yAxisId="pct" type="monotone" dataKey="kpi" name="KPI %" stroke="#17575c" strokeWidth={2.5} dot={{ r: 4, fill: '#17575c' }} />
+                      : <Line yAxisId="qty" type="monotone" dataKey="qty" name="Qty" stroke="#9c6e1b" strokeWidth={2} dot={{ r: 3, fill: '#9c6e1b' }} strokeDasharray="4 2" />
+                    }
+                  </ComposedChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
             {/* Monthly history table */}
@@ -168,7 +230,7 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
               <table className="w-full text-left border-collapse text-sm">
                 <thead className="bg-surface-container/60">
                   <tr>
-                    {['Month','Jewelry (g)','Bar (g)','Qty','KPI Score','KPI %','Target','Days'].map(h => (
+                    {['Month','Jewelry (g)','Bar (g)','Qty','KPI Score','KPI %','Target','Days','Commission (₭)'].map(h => (
                       <th key={h} className="px-4 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -189,12 +251,15 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
                         <td className="px-4 py-2.5 tabular-nums">{fmt(h.actual_jewelry, 1)}</td>
                         <td className="px-4 py-2.5 tabular-nums">{fmt(h.actual_bar, 1)}</td>
                         <td className="px-4 py-2.5 tabular-nums">{h.actual_qty}</td>
-                        <td className="px-4 py-2.5 tabular-nums">{h.kpi_total_score.toLocaleString('en-US', {maximumFractionDigits:0})} pts</td>
+                        <td className="px-4 py-2.5 tabular-nums">{h.kpi_total_score.toLocaleString('en-US',{maximumFractionDigits:0})} pts</td>
                         <td className="px-4 py-2.5">
                           <span className={`font-bold tabular-nums ${kpiColor(h.kpi_pct)}`}>{fmtPct(h.kpi_pct)}</span>
                         </td>
                         <td className="px-4 py-2.5 tabular-nums text-on-surface-variant">{h.point_target ? h.point_target.toLocaleString('en-US',{maximumFractionDigits:0}) : '—'}</td>
                         <td className="px-4 py-2.5 tabular-nums text-on-surface-variant">{h.days_with_entries}</td>
+                        <td className="px-4 py-2.5 tabular-nums text-tertiary font-bold">
+                          {h.commission_lak > 0 ? fmtLak(h.commission_lak) : <span className="text-on-surface-variant font-normal">—</span>}
+                        </td>
                       </tr>
                     )
                   })}
@@ -214,6 +279,7 @@ interface SupModalProps { id: number; token: string; onClose: () => void }
 export function SupProfileModal({ id, token, onClose }: SupModalProps) {
   const [data, setData]       = useState<SupHistoryProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [granularity, setGranularity] = useState<Granularity>('month')
 
   useEffect(() => {
     setLoading(true)
@@ -224,13 +290,10 @@ export function SupProfileModal({ id, token, onClose }: SupModalProps) {
 
   const current = data?.history[data.history.length - 1]
   const prev    = data?.history[data.history.length - 2]
-  const allMonths = data?.history.map(h => ({
+  const allMonths = (data?.history ?? []).map(h => ({
     label: `${MONTHS[h.month - 1]} ${String(h.year).slice(2)}`,
-    jewelry: h.actual_jewelry,
-    bar:     h.actual_bar,
-    qty:     h.actual_qty,
-    kpi:     h.team_kpi_pct,
-  })) ?? []
+    jewelry: h.actual_jewelry, bar: h.actual_bar, qty: h.actual_qty, kpi: h.team_kpi_pct,
+  }))
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -272,34 +335,10 @@ export function SupProfileModal({ id, token, onClose }: SupModalProps) {
           <div className="p-6 space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                {
-                  label: 'Team KPI % (This Month)',
-                  value: current ? fmtPct(current.team_kpi_pct) : '—',
-                  sub: current ? `${current.team_total_score.toLocaleString('en-US',{maximumFractionDigits:0})} pts` : '',
-                  color: current ? kpiColor(current.team_kpi_pct) : '',
-                  icon: 'groups',
-                },
-                {
-                  label: 'vs Last Month',
-                  value: current && prev ? `${current.team_kpi_pct - prev.team_kpi_pct > 0 ? '+' : ''}${fmt(current.team_kpi_pct - prev.team_kpi_pct, 1)}%` : '—',
-                  sub: prev ? `Last: ${fmtPct(prev.team_kpi_pct)}` : 'First month',
-                  color: current && prev ? (current.team_kpi_pct >= prev.team_kpi_pct ? 'text-green-600' : 'text-red-500') : 'text-on-surface-variant',
-                  icon: current && prev && current.team_kpi_pct >= prev.team_kpi_pct ? 'trending_up' : 'trending_down',
-                },
-                {
-                  label: 'Team Size',
-                  value: String(data.rep_count),
-                  sub: 'active reps',
-                  color: 'text-on-surface',
-                  icon: 'badge',
-                },
-                {
-                  label: 'Team Target',
-                  value: current?.team_point_target ? current.team_point_target.toLocaleString('en-US',{maximumFractionDigits:0}) : '—',
-                  sub: 'combined pts',
-                  color: 'text-on-surface',
-                  icon: 'adjust',
-                },
+                { label: 'Team KPI % (This Month)', value: current ? fmtPct(current.team_kpi_pct) : '—', sub: current ? `${current.team_total_score.toLocaleString('en-US',{maximumFractionDigits:0})} pts` : '', color: current ? kpiColor(current.team_kpi_pct) : '', icon: 'groups' },
+                { label: 'vs Last Month', value: current && prev ? `${current.team_kpi_pct - prev.team_kpi_pct > 0 ? '+' : ''}${fmt(current.team_kpi_pct - prev.team_kpi_pct, 1)}%` : '—', sub: prev ? `Last: ${fmtPct(prev.team_kpi_pct)}` : 'First month', color: current && prev ? (current.team_kpi_pct >= prev.team_kpi_pct ? 'text-green-600' : 'text-red-500') : 'text-on-surface-variant', icon: current && prev && current.team_kpi_pct >= prev.team_kpi_pct ? 'trending_up' : 'trending_down' },
+                { label: 'Team Size', value: String(data.rep_count), sub: 'active reps', color: 'text-on-surface', icon: 'badge' },
+                { label: 'Team Target', value: current?.team_point_target ? current.team_point_target.toLocaleString('en-US',{maximumFractionDigits:0}) : '—', sub: 'combined pts', color: 'text-on-surface', icon: 'adjust' },
               ].map(c => (
                 <div key={c.label} className="bg-surface-container/40 rounded-xl p-3">
                   <div className="flex items-center gap-1.5 mb-1">
@@ -313,7 +352,17 @@ export function SupProfileModal({ id, token, onClose }: SupModalProps) {
             </div>
 
             <div className="bg-surface-container/30 rounded-xl p-4">
-              <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-3 tracking-wider">Team Volume & KPI% Trend — Last 6 Months</p>
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Team Volume & KPI% Trend — Last 6 Months</p>
+                <div className="flex bg-white/60 rounded-lg p-0.5 border border-outline-variant/20">
+                  {(['month'] as Granularity[]).map(g => (
+                    <button key={g} onClick={() => setGranularity(g)}
+                      className={`px-3 py-1 rounded-md font-label-md text-[11px] capitalize transition-all ${granularity === g ? 'bg-secondary text-white shadow-sm' : 'text-on-surface-variant hover:text-secondary'}`}>
+                      Month
+                    </button>
+                  ))}
+                </div>
+              </div>
               <ResponsiveContainer width="100%" height={220}>
                 <ComposedChart data={allMonths} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />

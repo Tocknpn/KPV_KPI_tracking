@@ -217,7 +217,14 @@ export interface RepHistoryPoint {
   actual_jewelry: number; actual_bar: number; actual_qty: number
   kpi_score_jewelry: number; kpi_score_bar: number; kpi_score_qty: number
   kpi_total_score: number; kpi_pct: number
-  point_target: number; days_with_entries: number
+  point_target: number; days_with_entries: number; commission_lak: number
+}
+
+export interface RepDailyEntry {
+  entry_date: string
+  jewelry_weight_g: number
+  bar_weight_g: number
+  quantity: number
 }
 
 export interface RepHistoryProfile {

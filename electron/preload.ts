@@ -97,6 +97,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('report:branchAnalytics', token, year, month, dateFrom, dateTo),
   getRepHistory: (token: string, salesmanId: number, numMonths?: number) =>
     ipcRenderer.invoke('report:repHistory', token, salesmanId, numMonths),
+  getRepDailyEntries: (token: string, salesmanId: number, year: number, month: number) =>
+    ipcRenderer.invoke('report:repDailyEntries', token, salesmanId, year, month),
   getSupHistory: (token: string, supId: number, numMonths?: number) =>
     ipcRenderer.invoke('report:supHistory', token, supId, numMonths),
   getTeamPerformance: (token: string, branchIds: number[], year: number, month: number, dateFrom: string, dateTo: string) =>

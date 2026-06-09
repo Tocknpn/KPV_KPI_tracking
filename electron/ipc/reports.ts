@@ -340,9 +340,20 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       const bs = computeKpiScore(db, 2, rep.branch_id, bar, 0, dateTo, rep.staff_type).score
       const qs = computeKpiScore(db, 3, rep.branch_id, qty, 0, dateTo, rep.staff_type).score
       const total = js + bs + qs
-      return { year: m.year, month: m.month, year_month: m.ym, actual_jewelry: j, actual_bar: bar, actual_qty: qty, kpi_score_jewelry: js, kpi_score_bar: bs, kpi_score_qty: qs, kpi_total_score: total, kpi_pct: pt > 0 ? (total / pt) * 100 : 0, point_target: pt, days_with_entries: act?.days ?? 0 }
+      const commCfg = prepare(db, `SELECT jewelry_rate_lak, bar_rate_lak, qty_rate_lak FROM commission_configs WHERE staff_type=? AND year_month=?`).get(rep.staff_type, m.ym) as { jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number } | undefined
+      const commission_lak = commCfg ? j * commCfg.jewelry_rate_lak + bar * commCfg.bar_rate_lak + qty * commCfg.qty_rate_lak : 0
+      return { year: m.year, month: m.month, year_month: m.ym, actual_jewelry: j, actual_bar: bar, actual_qty: qty, kpi_score_jewelry: js, kpi_score_bar: bs, kpi_score_qty: qs, kpi_total_score: total, kpi_pct: pt > 0 ? (total / pt) * 100 : 0, point_target: pt, days_with_entries: act?.days ?? 0, commission_lak }
     })
     return { ...rep, history }
+  })
+
+  // Daily entries for a rep in a specific month (for drill-down chart)
+  ipcMain.handle('report:repDailyEntries', async (_e, token: string, salesmanId: number, year: number, month: number) => {
+    requireAuth(token)
+    const db = getDb()
+    const dateFrom = `${year}-${String(month).padStart(2,'0')}-01`
+    const dateTo   = `${year}-${String(month).padStart(2,'0')}-${new Date(year, month, 0).getDate()}`
+    return prepare(db, `SELECT entry_date, jewelry_weight_g, bar_weight_g, quantity FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ? ORDER BY entry_date`).all(salesmanId, dateFrom, dateTo)
   })
 
   // 6-month supervisor team trend
