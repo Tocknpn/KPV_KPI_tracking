@@ -121,16 +121,17 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
     }
   })
 
-  // Commission report: per-rep actuals + commission for a month
+  // Commission report: per-rep actuals + commission for a month (optional date range override)
   ipcMain.handle('commission:getReport', async (_e,
     token: string, branchIds: number[], year: number, month: number,
+    dfFrom?: string, dfTo?: string,
   ) => {
     const user = requireAuth(token)
     const db = getDb()
 
     const yearMonth = `${year}${String(month).padStart(2, '0')}`
-    const dateFrom  = `${year}-${String(month).padStart(2, '0')}-01`
-    const dateTo    = `${year}-${String(month).padStart(2, '0')}-${new Date(year, month, 0).getDate()}`
+    const dateFrom  = dfFrom ?? `${year}-${String(month).padStart(2, '0')}-01`
+    const dateTo    = dfTo   ?? `${year}-${String(month).padStart(2, '0')}-${new Date(year, month, 0).getDate()}`
 
     let effectiveBranchIds = branchIds
     let supervisorFilter: number | null = null

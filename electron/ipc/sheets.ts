@@ -108,6 +108,39 @@ async function pushCommission(db: Database, sheets: ReturnType<typeof google.she
   await writeTab(sheets, spreadsheetId, TABS.COMMISSION, ['Staff_Type', 'Year_Month', 'Jewelry_Rate_LAK', 'Bar_Rate_LAK', 'Qty_Rate_LAK'], rows)
 }
 
+// ── Push all unsynced daily entries — exported for use in entries.ts, upload.ts ─
+export async function syncEntriesToCloudIfConfigured(db: Database): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+
+    const unsynced = prepare(db, `
+      SELECT de.*, s.rep_code, s.full_name, b.code AS branch_code
+      FROM daily_entries de JOIN salesmen s ON s.id=de.salesman_id JOIN branches b ON b.id=de.branch_id
+      WHERE de.synced=0 ORDER BY de.entry_date, de.branch_id
+    `).all() as Array<{ id: number; rep_code: string | null; full_name: string; branch_code: string; entry_date: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number }>
+
+    if (!unsynced.length) return
+
+    const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A1' }).catch(() => null)
+    if (!headerCheck?.data?.values?.[0]?.[0]) {
+      await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetsId, requestBody: { requests: [{ addSheet: { properties: { title: TABS.ENTRIES } } }] } }).catch(() => {})
+      await sheets.spreadsheets.values.update({ spreadsheetId: sheetsId, range: 'Entries!A1', valueInputOption: 'USER_ENTERED', requestBody: { values: [SHEET_HEADERS] } })
+    }
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: sheetsId, range: 'Entries!A:G', valueInputOption: 'USER_ENTERED',
+      requestBody: { values: unsynced.map(e => [e.entry_date, e.branch_code, e.rep_code ?? '', e.full_name, e.jewelry_weight_g, e.bar_weight_g, e.quantity]) },
+    })
+    const now = new Date().toISOString()
+    unsynced.forEach(e => prepare(db, `UPDATE daily_entries SET synced=1 WHERE id=?`).run(e.id))
+    prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now)
+    prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('push', ?, 'success')`).run(unsynced.length)
+  } catch { /* Sheets unavailable — silently skip */ }
+}
+
 // ── Push all config tabs — exported for use in kpi.ts, upload.ts ──────────────
 export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
   const sheetsId = getSetting('sheets_id')

@@ -2,6 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth } from './auth'
+import { syncEntriesToCloudIfConfigured } from './sheets'
 
 export function registerEntryHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('entry:getSalesmen', async (_e, token: string, branchId?: number) => {
@@ -121,6 +122,7 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(entry.salesmanId, entry.date)
     prepare(db, `INSERT INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at) VALUES (?,?,?,?,?,?,0,?)`)
       .run(entry.salesmanId, entry.branchId, entry.date, entry.jewelryWeightG, entry.barWeightG, entry.quantity, now)
+    syncEntriesToCloudIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
@@ -138,6 +140,7 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
           .run(e.salesmanId, e.branchId, e.date, e.jewelryWeightG, e.barWeightG, e.quantity, now)
       }
     })
+    syncEntriesToCloudIfConfigured(db).catch(() => {})
     return { success: true, count: entries.length }
   })
 

@@ -2,7 +2,123 @@ import { useEffect, useState } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { useAuthStore } from '../../store/auth.store'
-import type { SyncLog, EmailConfig } from '../../types'
+import type { SyncLog, EmailConfig, Supervisor, SalesmanBrief } from '../../types'
+
+// ── Supervisor create/edit modal ──────────────────────────────────────────
+interface SupModalProps {
+  mode: 'create' | 'edit'
+  initial: { id?: number; full_name: string; nickname: string; branch_id: number }
+  branches: Array<{ id: number; name: string; code: string }>
+  onSave: (data: { id?: number; fullName: string; nickname: string; branchId: number }) => void
+  onClose: () => void
+}
+function SupModal({ mode, initial, branches, onSave, onClose }: SupModalProps) {
+  const [name, setName]     = useState(initial.full_name)
+  const [nick, setNick]     = useState(initial.nickname)
+  const [branchId, setBranchId] = useState(initial.branch_id)
+  return (
+    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-7 animate-slide-in">
+        <div className="flex justify-between items-center mb-5">
+          <h3 className="font-headline-md text-on-surface">{mode === 'create' ? 'New Supervisor' : 'Edit Supervisor'}</h3>
+          <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors">
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="font-label-md text-label-md block mb-1 text-primary">Full Name *</label>
+            <input autoFocus value={name} onChange={e => setName(e.target.value)}
+              className="w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none" placeholder="e.g. Somchai Phommachan" />
+          </div>
+          <div>
+            <label className="font-label-md text-label-md block mb-1 text-primary">Nickname</label>
+            <input value={nick} onChange={e => setNick(e.target.value)}
+              className="w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none" placeholder="e.g. Som" />
+          </div>
+          <div>
+            <label className="font-label-md text-label-md block mb-1 text-primary">Branch *</label>
+            <select value={branchId} onChange={e => setBranchId(Number(e.target.value))}
+              className="w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none">
+              <option value={0}>— Select branch —</option>
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="flex gap-3 mt-6">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border border-outline-variant text-on-surface-variant font-label-md hover:bg-surface-container transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={() => { if (name.trim() && branchId > 0) onSave({ id: initial.id, fullName: name.trim(), nickname: nick.trim(), branchId }) }}
+            disabled={!name.trim() || branchId === 0}
+            className="flex-1 py-2.5 rounded-lg bg-primary text-white font-label-md flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 shadow-primary">
+            <span className="material-symbols-outlined text-sm">save</span>
+            {mode === 'create' ? 'Create' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Assign reps modal ─────────────────────────────────────────────────────
+interface AssignModalProps {
+  supervisor: Supervisor
+  branchSalesmen: SalesmanBrief[]
+  onSave: (ids: number[]) => void
+  onClose: () => void
+}
+function AssignModal({ supervisor, branchSalesmen, onSave, onClose }: AssignModalProps) {
+  const [selected, setSelected] = useState<Set<number>>(
+    new Set(branchSalesmen.filter(s => s.supervisor_id === supervisor.id).map(s => s.id))
+  )
+  function toggle(id: number) {
+    setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  }
+  return (
+    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-7 animate-slide-in">
+        <div className="flex justify-between items-center mb-5">
+          <div>
+            <h3 className="font-headline-md text-on-surface">Assign Reps</h3>
+            <p className="text-body-sm text-on-surface-variant mt-0.5">{supervisor.full_name} · {supervisor.branch_name}</p>
+          </div>
+          <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors">
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        <div className="max-h-72 overflow-y-auto space-y-1 mb-5">
+          {branchSalesmen.length === 0 ? (
+            <p className="text-body-sm text-on-surface-variant text-center py-6">No sales reps in this branch.</p>
+          ) : branchSalesmen.map(s => (
+            <label key={s.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-container cursor-pointer transition-colors">
+              <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggle(s.id)} className="accent-primary w-4 h-4" />
+              <div className="flex-1 min-w-0">
+                <p className="font-label-md text-label-md text-on-surface">{s.full_name}</p>
+                <p className="text-[10px] text-on-surface-variant">{s.position}
+                  {s.supervisor_id && s.supervisor_id !== supervisor.id && (
+                    <span className="ml-1 text-secondary"> · currently under {s.supervisor_name}</span>
+                  )}
+                </p>
+              </div>
+            </label>
+          ))}
+        </div>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border border-outline-variant text-on-surface-variant font-label-md hover:bg-surface-container transition-colors">
+            Cancel
+          </button>
+          <button onClick={() => onSave([...selected])}
+            className="flex-1 py-2.5 rounded-lg bg-primary text-white font-label-md flex items-center justify-center gap-2 hover:opacity-90 shadow-primary">
+            <span className="material-symbols-outlined text-sm">group</span>
+            Save Team ({selected.size} reps)
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const DEFAULT_EMAIL: EmailConfig = {
   id: 1, recipients: [], frequency: 'daily', dispatch_time: '08:00',
@@ -11,7 +127,48 @@ const DEFAULT_EMAIL: EmailConfig = {
 }
 
 export default function Settings() {
-  const { token } = useAuthStore()
+  const { token, branches } = useAuthStore()
+
+  // ── Team Setup state ────────────────────────────────────────────────────
+  const [supervisors, setSupervisors] = useState<Supervisor[]>([])
+  const [supModal, setSupModal]       = useState<'create' | 'edit' | null>(null)
+  const [editSup, setEditSup]         = useState<Supervisor | null>(null)
+  const [assignSup, setAssignSup]     = useState<Supervisor | null>(null)
+  const [branchReps, setBranchReps]   = useState<SalesmanBrief[]>([])
+  const [teamSetupOpen, setTeamSetupOpen] = useState(true)
+
+  async function loadSupervisors() {
+    if (!token) return
+    const data = await window.api.getSupervisors(token)
+    setSupervisors(data as Supervisor[])
+  }
+  async function handleSaveSup(data: { id?: number; fullName: string; nickname: string; branchId: number }) {
+    if (!token) return
+    await window.api.saveSupervisor(token, data)
+    showToast(data.id ? 'Supervisor updated.' : 'Supervisor created.')
+    setSupModal(null); setEditSup(null)
+    loadSupervisors()
+  }
+  async function handleDeleteSup(sup: Supervisor) {
+    if (!token) return
+    if (!confirm(`Remove supervisor "${sup.full_name}"? Their reps will be unassigned.`)) return
+    await window.api.deleteSupervisor(token, sup.id)
+    showToast(`Supervisor "${sup.full_name}" removed.`)
+    loadSupervisors()
+  }
+  async function openAssign(sup: Supervisor) {
+    if (!token) return
+    const reps = await window.api.getSalesmenForBranch(token, sup.branch_id)
+    setBranchReps(reps as SalesmanBrief[])
+    setAssignSup(sup)
+  }
+  async function handleAssign(ids: number[]) {
+    if (!token || !assignSup) return
+    await window.api.assignSalesmen(token, assignSup.id, ids)
+    showToast(`Team updated — ${ids.length} rep(s) assigned.`)
+    setAssignSup(null); loadSupervisors()
+  }
+
   const [seeding, setSeeding]       = useState(false)
   const [showKpiRef, setShowKpiRef] = useState(false)
   const [sheetsId, setSheetsId] = useState('')
@@ -41,6 +198,7 @@ export default function Settings() {
     })
     window.api.getSyncLogs(token).then(setSyncLogs)
     window.api.getEmailConfig(token).then(setEmail)
+    loadSupervisors()
   }, [token])
 
   async function saveSheets() {
@@ -51,6 +209,10 @@ export default function Settings() {
     setIsSaving(false)
   }
 
+  async function refreshLastSync() {
+    window.api.getSheetsConfig(token!).then(cfg => setLastSync(cfg.lastSyncedAt))
+  }
+
   async function forceSync() {
     if (!token) return
     setIsSyncing(true)
@@ -58,6 +220,7 @@ export default function Settings() {
     if (res.success) showToast(res.message ?? `Pushed ${res.count} records to Sheets.`)
     else showToast(`Sync failed: ${res.error}`)
     window.api.getSyncLogs(token).then(setSyncLogs)
+    refreshLastSync()
     setIsSyncing(false)
   }
 
@@ -86,6 +249,7 @@ export default function Settings() {
     if (res.success) showToast(res.message ?? `Pulled ${res.count} entries from Sheets.`)
     else showToast(`Pull failed: ${res.error}`)
     window.api.getSyncLogs(token).then(setSyncLogs)
+    refreshLastSync()
     setIsSyncing(false)
   }
 
@@ -143,6 +307,104 @@ export default function Settings() {
           Save All Changes
         </button>
       </div>
+
+      {/* ── Team Setup ─────────────────────────────────────────────────── */}
+      <GlassCard className="mb-6 border-l-4 border-primary overflow-hidden">
+        <div className="p-5 flex items-center justify-between cursor-pointer" onClick={() => setTeamSetupOpen(v => !v)}>
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-primary text-2xl">supervisor_account</span>
+            <div>
+              <h4 className="font-headline-md text-on-surface !text-base">Team Setup</h4>
+              <p className="text-body-sm text-on-surface-variant mt-0.5">
+                {supervisors.length} supervisor(s) · Manage roster and rep assignments
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={e => { e.stopPropagation(); setEditSup(null); setSupModal('create') }}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary"
+            >
+              <span className="material-symbols-outlined text-sm">add</span>
+              New Supervisor
+            </button>
+            <span className="material-symbols-outlined text-on-surface-variant">{teamSetupOpen ? 'expand_less' : 'expand_more'}</span>
+          </div>
+        </div>
+
+        {teamSetupOpen && (
+          <div className="overflow-x-auto border-t border-white/20">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-surface-container/30">
+                  {['Supervisor','Branch','Team Size','Actions'].map(h => (
+                    <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {supervisors.length === 0 ? (
+                  <tr><td colSpan={4} className="py-10 text-center text-on-surface-variant text-body-sm">
+                    No supervisors yet. Click "New Supervisor" to create one.
+                  </td></tr>
+                ) : supervisors.map(sup => (
+                  <tr key={sup.id} className="hover:bg-surface-container/20 transition-colors group">
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center text-secondary text-xs font-bold uppercase">
+                          {sup.full_name.slice(0, 1)}
+                        </div>
+                        <p className="font-bold text-body-sm">{sup.full_name}</p>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 text-body-sm text-on-surface-variant">{sup.branch_name}</td>
+                    <td className="px-5 py-3">
+                      <span className="bg-primary/10 text-primary font-bold text-xs px-2 py-1 rounded-full">
+                        {sup.rep_count} rep{sup.rep_count !== 1 ? 's' : ''}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => openAssign(sup)}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors text-body-sm font-label-md">
+                          <span className="material-symbols-outlined text-sm">group</span> Assign Reps
+                        </button>
+                        <button onClick={() => { setEditSup(sup); setSupModal('edit') }}
+                          className="p-1.5 text-on-surface-variant hover:bg-surface-variant/30 rounded-lg transition-colors">
+                          <span className="material-symbols-outlined text-sm">edit</span>
+                        </button>
+                        <button onClick={() => handleDeleteSup(sup)}
+                          className="p-1.5 text-error hover:bg-error-container/30 rounded-lg transition-colors">
+                          <span className="material-symbols-outlined text-sm">delete</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </GlassCard>
+
+      {/* Modals */}
+      {supModal && (
+        <SupModal
+          mode={supModal}
+          initial={editSup ?? { full_name: '', nickname: '', branch_id: 0 }}
+          branches={branches}
+          onSave={handleSaveSup}
+          onClose={() => { setSupModal(null); setEditSup(null) }}
+        />
+      )}
+      {assignSup && (
+        <AssignModal
+          supervisor={assignSup}
+          branchSalesmen={branchReps}
+          onSave={handleAssign}
+          onClose={() => setAssignSup(null)}
+        />
+      )}
 
       {/* Test Data Panel — deterministic KPI verification data */}
       <GlassCard className="mb-6 p-6 border-l-4 border-secondary">
@@ -466,23 +728,37 @@ export default function Settings() {
                 <button
                   onClick={forceSync}
                   disabled={isSyncing}
-                  className="flex-1 py-2 bg-tertiary text-white rounded font-label-md text-label-md flex items-center justify-center gap-1 hover:opacity-90 disabled:opacity-60 transition-opacity"
+                  className="flex-1 py-2 bg-tertiary text-white rounded font-label-md text-label-md flex flex-col items-center justify-center gap-0.5 hover:opacity-90 disabled:opacity-60 transition-opacity"
                 >
-                  <span className={`material-symbols-outlined text-sm ${isSyncing ? 'animate-spin-slow' : ''}`}>cloud_upload</span>
-                  {isSyncing ? 'Pushing...' : 'Push to Sheets'}
+                  <span className="flex items-center gap-1">
+                    <span className={`material-symbols-outlined text-sm ${isSyncing ? 'animate-spin-slow' : ''}`}>cloud_upload</span>
+                    {isSyncing ? 'Pushing...' : 'Push to Sheets'}
+                  </span>
+                  {lastSync && !isSyncing && (
+                    <span className="text-[9px] opacity-70">
+                      {new Date(lastSync).toLocaleString()}
+                    </span>
+                  )}
                 </button>
                 <button
                   onClick={pullFromCloud}
                   disabled={isSyncing}
-                  className="flex-1 py-2 bg-primary text-white rounded font-label-md text-label-md flex items-center justify-center gap-1 hover:opacity-90 disabled:opacity-60 transition-opacity"
+                  className="flex-1 py-2 bg-primary text-white rounded font-label-md text-label-md flex flex-col items-center justify-center gap-0.5 hover:opacity-90 disabled:opacity-60 transition-opacity"
                 >
-                  <span className={`material-symbols-outlined text-sm ${isSyncing ? 'animate-spin-slow' : ''}`}>cloud_download</span>
-                  {isSyncing ? 'Pulling...' : 'Pull from Sheets'}
+                  <span className="flex items-center gap-1">
+                    <span className={`material-symbols-outlined text-sm ${isSyncing ? 'animate-spin-slow' : ''}`}>cloud_download</span>
+                    {isSyncing ? 'Pulling...' : 'Pull from Sheets'}
+                  </span>
+                  {lastSync && !isSyncing && (
+                    <span className="text-[9px] opacity-70">
+                      {new Date(lastSync).toLocaleString()}
+                    </span>
+                  )}
                 </button>
               </div>
               <p className="text-[10px] text-on-surface-variant/60 italic">
-                Push → sends unsynced entries · auto-creates header row on first push &nbsp;·&nbsp;
-                Pull → imports all Sheets entries into local DB
+                Push → sends unsynced entries · auto-syncs on every save/upload &nbsp;·&nbsp;
+                Pull → imports all tabs (roster · settings · KPI rates · entries)
               </p>
             </div>
           </GlassCard>

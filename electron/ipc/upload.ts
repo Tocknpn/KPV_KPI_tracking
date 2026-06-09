@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin } from './auth'
-import { pushAllConfigIfConfigured } from './sheets'
+import { pushAllConfigIfConfigured, syncEntriesToCloudIfConfigured } from './sheets'
 
 export interface DailyRow {
   date: string           // YYYY-MM-DD
@@ -79,6 +79,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
       `).run(meta.branchId, user.id, meta.filename, imported, meta.dateFrom ?? null, meta.dateTo ?? null,
         skipped.length ? `Skipped unknown codes: ${skipped.slice(0,5).join(', ')}${skipped.length > 5 ? '…' : ''}` : null)
 
+      syncEntriesToCloudIfConfigured(db).catch(() => {})
       return { success: true, count: imported, skipped: skipped.length }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)

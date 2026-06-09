@@ -163,6 +163,7 @@ export interface TeamPerformanceRow {
   nickname: string
   branch_id: number
   branch_name: string
+  staff_type: string
   rep_count: number
   team_total_score: number
   team_kpi_pct: number

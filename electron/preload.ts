@@ -137,8 +137,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('commission:saveConfig', token, data),
   pullCommissionConfigs: (token: string) =>
     ipcRenderer.invoke('commission:pullConfigs', token),
-  getCommissionReport: (token: string, branchIds: number[], year: number, month: number) =>
-    ipcRenderer.invoke('commission:getReport', token, branchIds, year, month),
+  getCommissionReport: (token: string, branchIds: number[], year: number, month: number, dateFrom?: string, dateTo?: string) =>
+    ipcRenderer.invoke('commission:getReport', token, branchIds, year, month, dateFrom, dateTo),
 
   // ── Admin / Test Data ─────────────────────────────────────────────────
   seedTestData: (token: string) =>

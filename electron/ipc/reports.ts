@@ -247,12 +247,12 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
 
     const { sql: bSql, params: bParams } = buildSalesmenBranchFilter(effectiveBranchIds)
     const supervisors = prepare(db, `
-      SELECT sv.id, sv.full_name, sv.nickname, sv.branch_id, b.name AS branch_name
+      SELECT sv.id, sv.full_name, sv.nickname, sv.branch_id, sv.staff_type, b.name AS branch_name
       FROM supervisors sv
       JOIN branches b ON b.id = sv.branch_id
       WHERE sv.active = 1 ${effectiveBranchIds.length > 0 ? `AND sv.branch_id IN (${effectiveBranchIds.map(() => '?').join(',')})` : ''}
       ORDER BY sv.branch_id, sv.full_name
-    `).all(...bParams) as Array<{ id: number; full_name: string; nickname: string; branch_id: number; branch_name: string }>
+    `).all(...bParams) as Array<{ id: number; full_name: string; nickname: string; branch_id: number; staff_type: string; branch_name: string }>
 
     return supervisors.map(sup => {
       const reps = prepare(db, `
@@ -288,6 +288,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
         nickname:  sup.nickname,
         branch_id: sup.branch_id,
         branch_name: sup.branch_name,
+        staff_type: sup.staff_type,
         rep_count:        reps.length,
         team_total_score: teamScore,
         team_kpi_pct:     teamKpiPct,
