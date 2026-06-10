@@ -10,6 +10,7 @@ import Settings from './screens/Settings'
 import KpiSettings from './screens/KpiSettings'
 import UserManagement from './screens/UserManagement'
 import UploadHistory from './screens/UploadHistory'
+import SaleReport from './screens/SaleReport'
 
 export default function App() {
   // DB initialises after window opens (WASM load can take 20-30s on fresh install
@@ -52,6 +53,7 @@ export default function App() {
       <Route path="/kpi-settings"   element={<KpiSettings />} />
       <Route path="/users"          element={<UserManagement />} />
       <Route path="/upload-history" element={<UploadHistory />} />
+      <Route path="/sale-report"    element={<SaleReport />} />
       {/* Legacy redirects */}
       <Route path="/executive"      element={<Navigate to="/reports" replace />} />
       <Route path="/commission"     element={<Navigate to="/reports" replace />} />

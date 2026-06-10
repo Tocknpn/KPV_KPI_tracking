@@ -31,6 +31,7 @@ import { registerEmailHandlers } from './email'
 import { registerAdminHandlers } from './admin'
 import { registerCommissionHandlers } from './commission'
 import { registerRosterHandlers } from './roster'
+import { registerSalesHandlers } from './sales'
 
 export { startEmailScheduler } from './email'
 export { computeKpiScore } from './kpi'
@@ -48,4 +49,5 @@ export function registerAllHandlers(ipcMain: IpcMain): void {
   registerAdminHandlers(ipcMain)
   registerCommissionHandlers(ipcMain)
   registerRosterHandlers(ipcMain)
+  registerSalesHandlers(ipcMain)
 }

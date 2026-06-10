@@ -162,6 +162,10 @@ contextBridge.exposeInMainWorld('api', {
   forceSyncAll: (token: string) =>
     ipcRenderer.invoke('sheets:forceSyncAll', token),
 
+  // ── Sales Report ──────────────────────────────────────────────────────
+  getSalesReport: (token: string, branchIds: number[], year: number, month: number, dateFrom: string, dateTo: string, staffType?: string) =>
+    ipcRenderer.invoke('sales:getReport', token, branchIds, year, month, dateFrom, dateTo, staffType),
+
   // ── Startup lifecycle ─────────────────────────────────────────────────
   checkAppReady: () => ipcRenderer.invoke('app:isReady') as Promise<boolean>,
   onAppReady: (cb: () => void) => ipcRenderer.once('app:ready', cb),

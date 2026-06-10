@@ -6,6 +6,7 @@ const navItems = [
   { to: '/dashboard',      icon: 'dashboard',          label: 'Dashboard',        roles: ['admin','supervisor','branch_manager','executive'] },
   { to: '/entry',          icon: 'edit_document',      label: 'Daily Entry',      roles: ['admin','supervisor','branch_manager'] },
   { to: '/reports',        icon: 'leaderboard',        label: 'KPI Report',       roles: ['admin','supervisor','branch_manager','executive'] },
+  { to: '/sale-report',    icon: 'bar_chart',          label: 'Sale Report',      roles: ['admin','supervisor','branch_manager','executive'] },
   { to: '/analytics',      icon: 'monitoring',         label: 'Analytics',        roles: ['admin','executive'] },
   { to: '/upload-history', icon: 'history',            label: 'Upload History',   roles: ['admin','supervisor','branch_manager','executive'] },
   { to: '/settings',       icon: 'settings',           label: 'Settings',         roles: ['admin','supervisor','branch_manager','executive'] },
