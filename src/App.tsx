@@ -53,6 +53,7 @@ export default function App() {
       <Route path="/users"          element={<UserManagement />} />
       <Route path="/upload-history" element={<UploadHistory />} />
       {/* Legacy redirects */}
+      <Route path="/executive"      element={<Navigate to="/reports" replace />} />
       <Route path="/commission"     element={<Navigate to="/reports" replace />} />
       <Route path="/team"           element={<Navigate to="/reports" replace />} />
       <Route path="*"               element={<Navigate to="/login" replace />} />
