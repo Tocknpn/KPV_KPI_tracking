@@ -247,7 +247,7 @@ export default function TeamPerformance() {
   const avgSupKpi      = rows.length ? rows.reduce((s, r) => s + r.sup_kpi_pct_ach, 0) / rows.length : 0
 
   return (
-    <AppShell title="SalesTrack Pro" allowedRoles={['admin', 'branch_manager', 'executive']}>
+    <AppShell title="SalesTrack Pro" allowedRoles={['admin','branch_manager','top_manager']}>
       {toast && (
         <div className="fixed top-20 right-6 z-50 bg-inverse-surface text-inverse-on-surface px-5 py-3 rounded-xl shadow-lg animate-slide-in text-body-sm">
           {toast}

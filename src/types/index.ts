@@ -1,5 +1,43 @@
 // ── Auth ──────────────────────────────────────────────────────────────────
-export type UserRole = 'admin' | 'supervisor' | 'branch_manager' | 'executive'
+export type UserRole = 'admin' | 'sales_sup' | 'accountant' | 'branch_manager' | 'top_manager' | 'hr'
+
+export const MENU_KEYS = [
+  'dashboard', 'daily_entry', 'kpi_report', 'sale_report', 'analytics',
+  'upload_history', 'upload_status', 'kpi_settings', 'audit_log', 'user_management', 'settings',
+] as const
+export type MenuKey = typeof MENU_KEYS[number]
+
+export const MENU_LABELS: Record<MenuKey, string> = {
+  dashboard:       'Dashboard',
+  daily_entry:     'Daily Entry Upload',
+  kpi_report:      'KPI Report',
+  sale_report:     'Sale Report',
+  analytics:       'Analytics',
+  upload_history:  'Upload History',
+  upload_status:   'Upload Status',
+  kpi_settings:    'KPI Settings',
+  audit_log:       'Audit Log',
+  user_management: 'User Management',
+  settings:        'Settings',
+}
+
+export const ROLE_DEFAULTS: Record<UserRole, MenuKey[]> = {
+  admin:          ['dashboard','daily_entry','kpi_report','sale_report','analytics','upload_history','upload_status','kpi_settings','audit_log','user_management','settings'],
+  sales_sup:      ['dashboard','kpi_report','upload_status'],
+  accountant:     ['dashboard','daily_entry','sale_report','upload_history','upload_status'],
+  branch_manager: ['dashboard','kpi_report','sale_report','upload_status'],
+  top_manager:    ['dashboard','kpi_report','sale_report','analytics'],
+  hr:             ['upload_history','kpi_settings'],
+}
+
+export const ROLE_LABELS: Record<UserRole, string> = {
+  admin:          'Admin',
+  sales_sup:      'Sales Supervisor',
+  accountant:     'Accountant',
+  branch_manager: 'Branch Manager',
+  top_manager:    'Top Manager',
+  hr:             'HR',
+}
 
 export interface AuthUser {
   id: number

@@ -77,7 +77,7 @@ export default function Executive() {
   }))
 
   return (
-    <AppShell title="SalesTrack Pro" allowedRoles={['admin','executive']}>
+    <AppShell title="SalesTrack Pro" allowedRoles={['admin','top_manager']}>
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
         <div>
           <h2 className="font-headline-lg text-headline-lg text-on-background">Company Overview</h2>

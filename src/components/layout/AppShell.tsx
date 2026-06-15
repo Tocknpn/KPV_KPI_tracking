@@ -13,7 +13,7 @@ interface Props {
 }
 
 export function AppShell({ children, title, allowedRoles }: Props) {
-  const { token, user, setBranches } = useAuthStore()
+  const { token, user, permissions, setPermissions, clearSession, setBranches } = useAuthStore()
   const { setUnsyncedCount, sidebarCollapsed } = useAppStore()
 
   if (!token || !user) return <Navigate to="/login" replace />
@@ -21,11 +21,16 @@ export function AppShell({ children, title, allowedRoles }: Props) {
     return <Navigate to="/dashboard" replace />
   }
 
-  // Load branches and unsynced count once after login
   useEffect(() => {
     if (!token) return
     window.api.getBranches(token).then(setBranches).catch(console.error)
     window.api.getUnsyncedCount(token).then(setUnsyncedCount).catch(console.error)
+    // Re-fetch permissions for stale sessions (e.g. page reload after version update)
+    if (permissions.length === 0) {
+      window.api.getMyPermissions(token)
+        .then((p: string[]) => setPermissions(p))
+        .catch(() => clearSession())
+    }
   }, [token])
 
   return (

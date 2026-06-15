@@ -304,7 +304,7 @@ export default function KpiSettings() {
   }
 
   return (
-    <AppShell title="KPI Settings" allowedRoles={['admin']}>
+    <AppShell title="KPI Settings" allowedRoles={['admin','hr']}>
       {toast && (
         <div className="fixed top-20 right-6 z-50 bg-inverse-surface text-inverse-on-surface px-5 py-3 rounded-xl shadow-lg animate-slide-in font-body-sm">
           {toast}

@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 10
+const SCHEMA_VERSION = 11
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -308,6 +308,45 @@ export function applySchema(db: Database): boolean {
     db.prepare(`INSERT OR IGNORE INTO kpi_metric_type_rates (metric_id, staff_type, points_per_unit) VALUES (1, 'b2b', 20)`).run()
     db.prepare(`INSERT OR IGNORE INTO kpi_metric_type_rates (metric_id, staff_type, points_per_unit) VALUES (2, 'b2b', 10)`).run()
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '10')`).run()
+  }
+
+  if (currentVersion < 11) {
+    // Per-user menu access overrides (admin can toggle any menu on/off per user)
+    db.run(`
+      CREATE TABLE IF NOT EXISTS user_permissions (
+        user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        menu_key TEXT    NOT NULL,
+        enabled  INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (user_id, menu_key)
+      )
+    `)
+    // Event audit trail
+    db.run(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        occurred_at TEXT    NOT NULL DEFAULT (datetime('now')),
+        user_id     INTEGER REFERENCES users(id),
+        username    TEXT    NOT NULL DEFAULT '',
+        role        TEXT    NOT NULL DEFAULT '',
+        event_type  TEXT    NOT NULL,
+        target_type TEXT,
+        target_id   TEXT,
+        detail      TEXT,
+        branch_id   INTEGER
+      )
+    `)
+    // Supervisor code for roster matching
+    try { db.run(`ALTER TABLE supervisors ADD COLUMN sup_code TEXT`) } catch { /* already exists */ }
+    try { db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_supervisors_sup_code ON supervisors(sup_code) WHERE sup_code IS NOT NULL`) } catch { /* already exists */ }
+    // B2B/B2C split on branch KPI monthly targets
+    try { db.run(`ALTER TABLE branch_kpi_monthly_targets ADD COLUMN target_b2c REAL NOT NULL DEFAULT 0`) } catch { /* already exists */ }
+    try { db.run(`ALTER TABLE branch_kpi_monthly_targets ADD COLUMN target_b2b REAL NOT NULL DEFAULT 0`) } catch { /* already exists */ }
+    // Copy old single target to target_b2c as default
+    try { db.run(`UPDATE branch_kpi_monthly_targets SET target_b2c = kpi_point_target WHERE target_b2c = 0 AND kpi_point_target > 0`) } catch { /* ignore */ }
+    // Role migrations: rename old roles to new names
+    db.prepare(`UPDATE users SET role = 'sales_sup'  WHERE role = 'supervisor'`).run()
+    db.prepare(`UPDATE users SET role = 'top_manager' WHERE role = 'executive'`).run()
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '11')`).run()
   }
 
   return false // Existing DB — no seeding needed

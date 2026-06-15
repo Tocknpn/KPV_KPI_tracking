@@ -76,7 +76,7 @@ export default function Analytics() {
     : groupByWeek(daily).map(w => ({ ...w, label: `W:${w.week}` }))
 
   return (
-    <AppShell title="Branch Performance Analytics" allowedRoles={['admin','executive']}>
+    <AppShell title="Branch Performance Analytics" allowedRoles={['admin','top_manager']}>
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
         <div>
           <nav className="flex items-center gap-2 text-label-md text-on-surface-variant mb-2">

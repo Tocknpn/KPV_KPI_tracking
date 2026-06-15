@@ -1,31 +1,50 @@
 import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
+import { ROLE_DEFAULTS } from '../../types'
+import type { MenuKey, UserRole } from '../../types'
 
-const navItems = [
-  { to: '/dashboard',      icon: 'dashboard',          label: 'Dashboard',        roles: ['admin','supervisor','branch_manager','executive'] },
-  { to: '/entry',          icon: 'edit_document',      label: 'Daily Entry',      roles: ['admin','supervisor','branch_manager'] },
-  { to: '/reports',        icon: 'leaderboard',        label: 'KPI Report',       roles: ['admin','supervisor','branch_manager','executive'] },
-  { to: '/sale-report',    icon: 'bar_chart',          label: 'Sale Report',      roles: ['admin','supervisor','branch_manager','executive'] },
-  { to: '/analytics',      icon: 'monitoring',         label: 'Analytics',        roles: ['admin','executive'] },
-  { to: '/upload-history', icon: 'history',            label: 'Upload History',   roles: ['admin','supervisor','branch_manager','executive'] },
-  { to: '/settings',       icon: 'settings',           label: 'Settings',         roles: ['admin','supervisor','branch_manager','executive'] },
-  { to: '/users',          icon: 'manage_accounts',    label: 'User Management',  roles: ['admin'] },
-  { to: '/kpi-settings',   icon: 'tune',               label: 'KPI Settings',     roles: ['admin'] },
+// Each nav item maps to a menu_key — permissions control visibility
+const NAV_ITEMS: Array<{ to: string; icon: string; label: string; key: MenuKey; fallbackRoles?: UserRole[] }> = [
+  { to: '/dashboard',      icon: 'dashboard',       label: 'Dashboard',        key: 'dashboard' },
+  { to: '/entry',          icon: 'edit_document',   label: 'Daily Entry',      key: 'daily_entry' },
+  { to: '/reports',        icon: 'leaderboard',     label: 'KPI Report',       key: 'kpi_report' },
+  { to: '/sale-report',    icon: 'bar_chart',       label: 'Sale Report',      key: 'sale_report' },
+  { to: '/analytics',      icon: 'monitoring',      label: 'Analytics',        key: 'analytics' },
+  { to: '/upload-history', icon: 'history',         label: 'Upload History',   key: 'upload_history' },
+  { to: '/settings',       icon: 'settings',        label: 'Settings',         key: 'settings' },
+  { to: '/users',          icon: 'manage_accounts', label: 'User Management',  key: 'user_management' },
+  { to: '/kpi-settings',   icon: 'tune',            label: 'KPI Settings',     key: 'kpi_settings' },
 ]
 
+const ROLE_COLOR: Record<UserRole, string> = {
+  admin:          'bg-error',
+  sales_sup:      'bg-secondary',
+  accountant:     'bg-tertiary',
+  branch_manager: 'bg-primary',
+  top_manager:    'bg-primary',
+  hr:             'bg-secondary',
+}
+
 export function Sidebar() {
-  const { user } = useAuthStore()
+  const { user, permissions } = useAuthStore()
   const { unsyncedCount, sidebarCollapsed, setSidebarCollapsed } = useAppStore()
-  const role = user?.role ?? 'supervisor'
+  const role = (user?.role ?? 'sales_sup') as UserRole
   const c = sidebarCollapsed
 
-  const visibleItems = navItems.filter(item => item.roles.includes(role))
+  // Permission-based filtering with role-defaults fallback for stale sessions
+  const effectivePermissions = permissions.length > 0
+    ? permissions
+    : ROLE_DEFAULTS[role] ?? []
+
+  const visibleItems = NAV_ITEMS.filter(item => effectivePermissions.includes(item.key))
 
   const portalLabel =
-    role === 'executive'       ? 'Executive Portal'
-    : role === 'admin'         ? 'Admin Portal'
+    role === 'admin'          ? 'Admin Portal'
+    : role === 'top_manager'  ? 'Executive Portal'
     : role === 'branch_manager' ? 'Manager Portal'
+    : role === 'accountant'   ? 'Accountant Portal'
+    : role === 'hr'           ? 'HR Portal'
     : 'Supervisor Portal'
 
   return (
@@ -38,14 +57,9 @@ export function Sidebar() {
     >
       {/* ── Brand + toggle ── */}
       <div className={`flex items-center mb-8 px-3 ${c ? 'flex-col gap-2' : 'justify-between gap-3'}`}>
-        {/* Logo icon — always visible */}
         <div className="w-10 h-10 rounded-lg bg-primary-container flex-shrink-0 flex items-center justify-center text-on-primary-container">
-          <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
-            leaderboard
-          </span>
+          <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>leaderboard</span>
         </div>
-
-        {/* Name text — only when expanded */}
         {!c && (
           <div className="flex-1 min-w-0">
             <h1 className="font-headline-md text-[16px] font-bold text-on-surface leading-tight truncate">SalesTrack</h1>
@@ -54,16 +68,12 @@ export function Sidebar() {
             </p>
           </div>
         )}
-
-        {/* Toggle button */}
         <button
           onClick={() => setSidebarCollapsed(!c)}
           title={c ? 'Expand sidebar' : 'Collapse sidebar'}
           className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-variant/40 hover:text-primary transition-colors"
         >
-          <span className="material-symbols-outlined text-[20px]">
-            {c ? 'menu' : 'menu_open'}
-          </span>
+          <span className="material-symbols-outlined text-[20px]">{c ? 'menu' : 'menu_open'}</span>
         </button>
       </div>
 
@@ -85,10 +95,8 @@ export function Sidebar() {
             }
           >
             <span className="material-symbols-outlined flex-shrink-0">{item.icon}</span>
-            {!c && (
-              <span className="font-label-md text-label-md truncate">{item.label}</span>
-            )}
-            {!c && item.to === '/kpi-settings' && (
+            {!c && <span className="font-label-md text-label-md truncate">{item.label}</span>}
+            {!c && item.key === 'kpi_settings' && (
               <span className="ml-auto">
                 <span className="material-symbols-outlined text-sm text-on-surface-variant/50">lock</span>
               </span>
@@ -99,7 +107,6 @@ export function Sidebar() {
 
       {/* ── Footer ── */}
       <div className="mt-auto pt-4 border-t border-white/10 space-y-2 px-2">
-        {/* Sync status */}
         <div
           title={c ? (unsyncedCount > 0 ? `${unsyncedCount} unsynced` : 'Synced') : undefined}
           className={`flex items-center rounded-lg bg-surface-container-highest/20 py-2 ${c ? 'justify-center px-0' : 'justify-between px-3'}`}
@@ -125,20 +132,17 @@ export function Sidebar() {
           )}
         </div>
 
-        {/* User chip */}
         <div
           title={c ? (user?.fullName ?? '') : undefined}
           className={`flex items-center ${c ? 'justify-center' : 'gap-3 px-1'}`}
         >
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold uppercase flex-shrink-0">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold uppercase flex-shrink-0 ${ROLE_COLOR[role] ?? 'bg-primary'}`}>
             {(user?.fullName ?? 'U').slice(0, 1)}
           </div>
           {!c && (
             <div className="overflow-hidden">
-              <p className="font-label-md text-label-md font-bold text-on-surface truncate">
-                {user?.fullName ?? '—'}
-              </p>
-              <p className="text-[10px] text-on-surface-variant capitalize">{user?.role}</p>
+              <p className="font-label-md text-label-md font-bold text-on-surface truncate">{user?.fullName ?? '—'}</p>
+              <p className="text-[10px] text-on-surface-variant capitalize">{role.replace('_', ' ')}</p>
             </div>
           )}
         </div>

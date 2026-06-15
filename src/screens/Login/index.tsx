@@ -20,8 +20,9 @@ export default function Login() {
     try {
       const result = await window.api.login(username, password)
       if (result.success) {
-        setSession(result.token, result.user)
-        navigate('/dashboard')
+        setSession(result.token, result.user, result.permissions ?? [])
+        const landingPage = result.user.role === 'hr' ? '/kpi-settings' : '/dashboard'
+        navigate(landingPage)
       } else {
         setError(result.error ?? 'Invalid username or password')
       }

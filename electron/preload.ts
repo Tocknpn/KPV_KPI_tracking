@@ -166,6 +166,18 @@ contextBridge.exposeInMainWorld('api', {
   getSalesReport: (token: string, branchIds: number[], year: number, month: number, dateFrom: string, dateTo: string, staffType?: string) =>
     ipcRenderer.invoke('sales:getReport', token, branchIds, year, month, dateFrom, dateTo, staffType),
 
+  // ── Permissions ───────────────────────────────────────────────────────
+  getMyPermissions: (token: string) =>
+    ipcRenderer.invoke('auth:getPermissions', token),
+  getUserPermissions: (token: string, userId: number) =>
+    ipcRenderer.invoke('auth:getUserPermissions', token, userId),
+  saveUserPermissions: (token: string, userId: number, allStates: Array<{ menu_key: string; enabled: boolean }>) =>
+    ipcRenderer.invoke('auth:saveUserPermissions', token, userId, allStates),
+
+  // ── Audit Log ─────────────────────────────────────────────────────────
+  getAuditLogs: (token: string, filters: { dateFrom?: string; dateTo?: string; username?: string; eventType?: string; limit?: number; offset?: number }) =>
+    ipcRenderer.invoke('audit:getLogs', token, filters),
+
   // ── Startup lifecycle ─────────────────────────────────────────────────
   checkAppReady: () => ipcRenderer.invoke('app:isReady') as Promise<boolean>,
   onAppReady: (cb: () => void) => ipcRenderer.once('app:ready', cb),

@@ -5,7 +5,7 @@ declare const __APP_VERSION__: string
 interface Window {
   api: {
     // Auth
-    login(username: string, password: string): Promise<{ success: boolean; token: string; user: import('./types').AuthUser; error?: string }>
+    login(username: string, password: string): Promise<{ success: boolean; token: string; user: import('./types').AuthUser; permissions: string[]; error?: string }>
     logout(token: string): Promise<{ success: boolean }>
     getUsers(token: string): Promise<unknown[]>
     createUser(token: string, data: unknown): Promise<{ success: boolean; id?: number; error?: string }>
@@ -62,6 +62,14 @@ interface Window {
     getUploadLogs(token: string, branchId?: number, uploadType?: string, limit?: number): Promise<unknown[]>
     getUploadCoverage(token: string, year: number, month: number): Promise<unknown[]>
     getSalesmenForTemplate(token: string, branchId: number): Promise<unknown[]>
+
+    // Permissions
+    getMyPermissions(token: string): Promise<string[]>
+    getUserPermissions(token: string, userId: number): Promise<string[]>
+    saveUserPermissions(token: string, userId: number, allStates: Array<{ menu_key: string; enabled: boolean }>): Promise<{ success: boolean }>
+
+    // Audit Log
+    getAuditLogs(token: string, filters: { dateFrom?: string; dateTo?: string; username?: string; eventType?: string; limit?: number; offset?: number }): Promise<{ rows: unknown[]; total: number }>
 
     // Admin
     seedTestData(token: string): Promise<{ success: boolean; message?: string; error?: string }>
