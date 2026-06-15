@@ -103,7 +103,8 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     config: { id?: number; metricId: number; branchId: number | null; label: string; effectiveFrom: string; effectiveTo: string | null; isActive: number },
     tiers: Array<{ thresholdPct: number; score: number; tierOrder: number }>
   ) => {
-    requireAdmin(token)
+    const u = requireAuth(token)
+    if (!['admin','hr'].includes(u.role)) throw new Error('Forbidden')
     const db = getDb()
     let configId: number
     transaction(db, () => {
@@ -127,7 +128,8 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
   })
 
   ipcMain.handle('kpi:deleteConfig', async (_e, token: string, configId: number) => {
-    requireAdmin(token)
+    const u = requireAuth(token)
+    if (!['admin','hr'].includes(u.role)) throw new Error('Forbidden')
     const db = getDb()
     transaction(db, () => {
       prepare(db, `DELETE FROM kpi_tiers WHERE config_id = ?`).run(configId)
@@ -137,7 +139,8 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
   })
 
   ipcMain.handle('kpi:saveMetricMultiplier', async (_e, token: string, metricId: number, pointsPerUnit: number) => {
-    requireAdmin(token)
+    const u = requireAuth(token)
+    if (!['admin','hr'].includes(u.role)) throw new Error('Forbidden')
     prepare(getDb(), `UPDATE kpi_metrics SET points_per_unit = ? WHERE id = ?`).run(pointsPerUnit, metricId)
     return { success: true }
   })
@@ -158,27 +161,34 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     }>
     return branches.map(b => {
       const monthly = prepare(db, `
-        SELECT kpi_point_target FROM branch_kpi_monthly_targets WHERE branch_id=? AND year=? AND month=?
-      `).get(b.id, year, month) as { kpi_point_target: number } | undefined
+        SELECT kpi_point_target, target_b2c, target_b2b FROM branch_kpi_monthly_targets WHERE branch_id=? AND year=? AND month=?
+      `).get(b.id, year, month) as { kpi_point_target: number; target_b2c: number | null; target_b2b: number | null } | undefined
       return {
         ...b,
-        monthly_target: monthly?.kpi_point_target ?? null,
+        monthly_target:   monthly?.kpi_point_target ?? null,
         effective_target: monthly?.kpi_point_target ?? b.kpi_point_target,
+        target_b2c:       monthly?.target_b2c ?? null,
+        target_b2b:       monthly?.target_b2b ?? null,
       }
     })
   })
 
   ipcMain.handle('kpi:saveMonthlyBranchTargets', async (_e, token: string, year: number, month: number,
-    targets: Array<{ branchId: number; target: number }>
+    targets: Array<{ branchId: number; target: number; targetB2c?: number | null; targetB2b?: number | null }>
   ) => {
-    requireAdmin(token)
+    const u = requireAuth(token)
+    if (!['admin','hr'].includes(u.role)) throw new Error('Forbidden')
     const db = getDb()
     transaction(db, () => {
-      for (const { branchId, target } of targets) {
+      for (const { branchId, target, targetB2c, targetB2b } of targets) {
         prepare(db, `
-          INSERT OR REPLACE INTO branch_kpi_monthly_targets (branch_id, year, month, kpi_point_target)
-          VALUES (?,?,?,?)
-        `).run(branchId, year, month, target)
+          INSERT INTO branch_kpi_monthly_targets (branch_id, year, month, kpi_point_target, target_b2c, target_b2b)
+          VALUES (?,?,?,?,?,?)
+          ON CONFLICT(branch_id, year, month) DO UPDATE SET
+            kpi_point_target=excluded.kpi_point_target,
+            target_b2c=excluded.target_b2c,
+            target_b2b=excluded.target_b2b
+        `).run(branchId, year, month, target, targetB2c ?? null, targetB2b ?? null)
       }
     })
     pushMonthlyTargetsIfConfigured(db).catch(() => {})

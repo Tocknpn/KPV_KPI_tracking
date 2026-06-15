@@ -4,6 +4,14 @@ import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin } from './auth'
 import { pushAllConfigIfConfigured, syncEntriesToCloudIfConfigured } from './sheets'
 
+export interface UploadRowResult {
+  row: number
+  code: string
+  date?: string
+  status: 'ok' | 'error'
+  reason?: string
+}
+
 export interface DailyRow {
   date: string           // YYYY-MM-DD
   repCode: string        // unique company rep code
@@ -52,35 +60,40 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     const user = requireAuth(token)
     if (!rows.length) return { success: false, error: 'No rows to import.' }
 
-    const skipped: string[] = []
+    const results: UploadRowResult[] = []
     let imported = 0
 
     try {
       transaction(db, () => {
         const now = new Date().toISOString()
-        for (const r of rows) {
-          // Resolve rep_code → salesman
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i]
           const salesman = prepare(db, `SELECT id, branch_id FROM salesmen WHERE rep_code = ? AND active = 1`).get(r.repCode) as
             { id: number; branch_id: number } | undefined
-          if (!salesman) { skipped.push(r.repCode); continue }
+          if (!salesman) {
+            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason: 'Rep code not found in roster' })
+            continue
+          }
 
           prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(salesman.id, r.date)
           prepare(db, `
             INSERT INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, 0, ?)
           `).run(salesman.id, salesman.branch_id, r.date, r.jewelryWeightG, r.barWeightG, r.quantity, now)
+          results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'ok' })
           imported++
         }
       })
 
+      const skippedCodes = results.filter(r => r.status === 'error').map(r => r.code)
       prepare(db, `
         INSERT INTO upload_logs (branch_id, user_id, upload_type, filename, records_count, date_from, date_to, status, notes)
         VALUES (?, ?, 'daily', ?, ?, ?, ?, 'success', ?)
       `).run(meta.branchId, user.id, meta.filename, imported, meta.dateFrom ?? null, meta.dateTo ?? null,
-        skipped.length ? `Skipped unknown codes: ${skipped.slice(0,5).join(', ')}${skipped.length > 5 ? '…' : ''}` : null)
+        skippedCodes.length ? `Skipped unknown codes: ${skippedCodes.slice(0,5).join(', ')}${skippedCodes.length > 5 ? '…' : ''}` : null)
 
       syncEntriesToCloudIfConfigured(db).catch(() => {})
-      return { success: true, count: imported, skipped: skipped.length }
+      return { success: true, count: imported, skipped: skippedCodes.length, results }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       prepare(db, `INSERT INTO upload_logs (branch_id, user_id, upload_type, filename, records_count, status, notes) VALUES (?, ?, 'daily', ?, 0, 'error', ?)`).run(meta.branchId, user.id, meta.filename, msg)
@@ -129,9 +142,10 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     }
   })
 
-  // ── Roster upload: upsert salesmen by rep_code (admin only) ──────────
+  // ── Roster upload: upsert salesmen by rep_code (admin + HR) ──────────
   ipcMain.handle('upload:roster', async (_e, token: string, rows: RosterRow[]) => {
-    requireAdmin(token)
+    const u = requireAuth(token)
+    if (!['admin', 'hr'].includes(u.role)) throw new Error('Forbidden')
     if (!rows.length) return { success: false, error: 'No rows to import.' }
 
     let created = 0; let updated = 0; const skipped: string[] = []
@@ -288,4 +302,95 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
       ORDER BY sv.full_name NULLS LAST, s.full_name
     `).all(branchId)
   })
+
+  // ── 7-day per-rep upload status grid ────────────────────────────────
+  ipcMain.handle('upload:getRepUploadStatus', async (_e, token: string, branchIds?: number[], days = 7) => {
+    const user = requireAuth(token)
+
+    // Compute last N dates in JS (SQLite recursive CTE not needed)
+    const dates: string[] = []
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i)
+      dates.push(d.toISOString().slice(0, 10))
+    }
+
+    // Scope branches by role
+    let scopedBranchIds = branchIds
+    if (user.role === 'sales_sup') {
+      const sup = prepare(db, `SELECT id, branch_id FROM supervisors WHERE user_id = ?`).get(user.id) as { id: number; branch_id: number } | undefined
+      if (sup) {
+        // sales_sup sees only their team members
+        const teamIds = prepare(db, `SELECT id FROM salesmen WHERE supervisor_id = ? AND active = 1`).all(sup.id) as { id: number }[]
+        if (!teamIds.length) return { dates, branches: [] }
+
+        const placeholders = teamIds.map(() => '?').join(',')
+        const reps = prepare(db, `
+          SELECT s.id, s.rep_code, s.full_name, s.nickname, s.staff_type,
+                 b.id AS branch_id, b.name AS branch_name, b.code AS branch_code,
+                 sv.full_name AS supervisor_name
+          FROM salesmen s
+          JOIN branches b ON b.id = s.branch_id
+          LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
+          WHERE s.id IN (${placeholders}) AND s.active = 1
+          ORDER BY b.id, s.full_name
+        `).all(...teamIds.map(t => t.id)) as Array<{ id: number; rep_code: string; full_name: string; nickname: string; staff_type: string; branch_id: number; branch_name: string; branch_code: string; supervisor_name: string | null }>
+
+        return buildGrid(db, reps, dates)
+      }
+      return { dates, branches: [] }
+    }
+
+    // Build WHERE clause for branches
+    let repSql = `
+      SELECT s.id, s.rep_code, s.full_name, s.nickname, s.staff_type,
+             b.id AS branch_id, b.name AS branch_name, b.code AS branch_code,
+             sv.full_name AS supervisor_name
+      FROM salesmen s
+      JOIN branches b ON b.id = s.branch_id
+      LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
+      WHERE s.active = 1
+    `
+    const repParams: number[] = []
+    if (scopedBranchIds && scopedBranchIds.length > 0) {
+      repSql += ` AND s.branch_id IN (${scopedBranchIds.map(() => '?').join(',')})`
+      repParams.push(...scopedBranchIds)
+    }
+    repSql += ` ORDER BY b.id, s.full_name`
+
+    const reps = prepare(db, repSql).all(...repParams) as Array<{ id: number; rep_code: string; full_name: string; nickname: string; staff_type: string; branch_id: number; branch_name: string; branch_code: string; supervisor_name: string | null }>
+    return buildGrid(db, reps, dates)
+  })
+}
+
+function buildGrid(db: ReturnType<typeof import('../db/connection').getDb>, reps: Array<{ id: number; rep_code: string; full_name: string; nickname: string; staff_type: string; branch_id: number; branch_name: string; branch_code: string; supervisor_name: string | null }>, dates: string[]) {
+  if (!reps.length) return { dates, branches: [] }
+
+  const dateFrom = dates[0]; const dateTo = dates[dates.length - 1]
+  const repIds = reps.map(r => r.id)
+  const entries = prepare(db, `
+    SELECT salesman_id, entry_date FROM daily_entries
+    WHERE salesman_id IN (${repIds.map(() => '?').join(',')})
+      AND entry_date >= ? AND entry_date <= ?
+  `).all(...repIds, dateFrom, dateTo) as Array<{ salesman_id: number; entry_date: string }>
+
+  const entrySet = new Set(entries.map(e => `${e.salesman_id}:${e.entry_date}`))
+
+  // Group by branch
+  const branchMap = new Map<number, { branch_id: number; branch_name: string; branch_code: string; reps: unknown[] }>()
+  for (const rep of reps) {
+    if (!branchMap.has(rep.branch_id)) {
+      branchMap.set(rep.branch_id, { branch_id: rep.branch_id, branch_name: rep.branch_name, branch_code: rep.branch_code, reps: [] })
+    }
+    branchMap.get(rep.branch_id)!.reps.push({
+      id: rep.id,
+      rep_code: rep.rep_code,
+      full_name: rep.full_name,
+      nickname: rep.nickname,
+      staff_type: rep.staff_type,
+      supervisor_name: rep.supervisor_name,
+      days: dates.map(d => entrySet.has(`${rep.id}:${d}`)),
+    })
+  }
+
+  return { dates, branches: Array.from(branchMap.values()) }
 }

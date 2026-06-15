@@ -35,10 +35,18 @@ export default function KpiSettings() {
   const [monthlyTargets, setMonthlyTargets] = useState<Array<{
     id: number; name: string; code: string; kpi_point_target: number
     monthly_target: number | null; effective_target: number
+    target_b2c: number | null; target_b2b: number | null
   }>>([])
-  const [targetEdits, setTargetEdits] = useState<Record<number, string>>({})
+  const [targetEdits, setTargetEdits]     = useState<Record<number, string>>({})
+  const [targetB2cEdits, setTargetB2cEdits] = useState<Record<number, string>>({})
+  const [targetB2bEdits, setTargetB2bEdits] = useState<Record<number, string>>({})
   const [savingTargets, setSavingTargets] = useState(false)
   const [targetSaved, setTargetSaved]     = useState(false)
+  // Dirty tracking per section
+  const [dirtyMult, setDirtyMult]     = useState(false)
+  const [dirtyTargets, setDirtyTargets] = useState(false)
+  const [dirtyComm, setDirtyComm]     = useState(false)
+  const [savingAll, setSavingAll]     = useState(false)
   // Commission rates
   const [commEdits, setCommEdits] = useState<Record<string, { jewelry: string; bar: string; qty: string }>>({
     b2c: { jewelry: '0', bar: '0', qty: '0' },
@@ -99,7 +107,9 @@ export default function KpiSettings() {
     window.api.getMonthlyBranchTargets(token, globalYear, globalMonth).then(data => {
       setMonthlyTargets(data)
       setTargetEdits(Object.fromEntries(data.map(b => [b.id, String(b.effective_target)])))
-      setTargetSaved(false)
+      setTargetB2cEdits(Object.fromEntries(data.map(b => [b.id, String(b.target_b2c ?? '')])))
+      setTargetB2bEdits(Object.fromEntries(data.map(b => [b.id, String(b.target_b2b ?? '')])))
+      setTargetSaved(false); setDirtyTargets(false)
     })
   }, [token, globalYear, globalMonth])
 
@@ -109,14 +119,41 @@ export default function KpiSettings() {
     const targets = monthlyTargets.map(b => ({
       branchId: b.id,
       target: parseFloat(targetEdits[b.id] ?? '') || b.effective_target,
+      targetB2c: targetB2cEdits[b.id] ? parseFloat(targetB2cEdits[b.id]) || null : null,
+      targetB2b: targetB2bEdits[b.id] ? parseFloat(targetB2bEdits[b.id]) || null : null,
     }))
     await window.api.saveMonthlyBranchTargets(token, globalYear, globalMonth, targets)
     const fresh = await window.api.getMonthlyBranchTargets(token, globalYear, globalMonth)
     setMonthlyTargets(fresh)
     setTargetEdits(Object.fromEntries(fresh.map(b => [b.id, String(b.effective_target)])))
-    setSavingTargets(false)
-    setTargetSaved(true)
+    setTargetB2cEdits(Object.fromEntries(fresh.map(b => [b.id, String(b.target_b2c ?? '')])))
+    setTargetB2bEdits(Object.fromEntries(fresh.map(b => [b.id, String(b.target_b2b ?? '')])))
+    setSavingTargets(false); setTargetSaved(true); setDirtyTargets(false)
     showToast(`Targets saved for ${MONTH_NAMES[globalMonth - 1]} ${globalYear}.`)
+  }
+
+  async function saveAllKpiSettings() {
+    if (!token) return
+    setSavingAll(true)
+    try {
+      const jv = parseFloat(jewelryEdit); const bv = parseFloat(barEdit)
+      if (dirtyMult && !isNaN(jv) && jv > 0 && !isNaN(bv) && bv > 0) {
+        await window.api.saveKpiMetricMultiplier(token, 1, jv)
+        await window.api.saveKpiMetricMultiplier(token, 2, bv)
+        const updated = await window.api.getKpiMetrics(token)
+        setMetrics(updated); setDirtyMult(false)
+      }
+      if (dirtyComm) {
+        for (const t of ['b2c','b2b'] as const) {
+          const e = commEdits[t]; if (!e) continue
+          const ym = `${globalYear}${String(globalMonth).padStart(2, '0')}`
+          await window.api.saveCommissionConfig(token, { staffType: t, yearMonth: ym, jewelryRateLak: parseFloat(e.jewelry)||0, barRateLak: parseFloat(e.bar)||0, qtyRateLak: parseFloat(e.qty)||0 })
+        }
+        setDirtyComm(false)
+      }
+      if (dirtyTargets) await saveMonthlyTargets()
+      showToast('All KPI settings saved.')
+    } finally { setSavingAll(false) }
   }
 
   function copyFromDefaults() {
@@ -213,7 +250,7 @@ export default function KpiSettings() {
     const updated = await window.api.getKpiMetrics(token)
     setMetrics(updated)
     showToast('Jewelry & Bar multipliers saved.')
-    setSavingMult(false)
+    setSavingMult(false); setDirtyMult(false)
   }
 
   function assignDefaultQty() {
@@ -279,7 +316,7 @@ export default function KpiSettings() {
       qtyRateLak:     parseFloat(e.qty)     || 0,
     })
     showToast(`${staffType.toUpperCase()} commission rates saved for ${MONTH_NAMES[globalMonth - 1]} ${globalYear}.`)
-    setSavingComm(null)
+    setSavingComm(null); setDirtyComm(false)
   }
 
   async function saveSupShare() {
@@ -366,6 +403,7 @@ export default function KpiSettings() {
             <h4 className="font-headline-md text-on-surface flex items-center gap-2">
               <span className="material-symbols-outlined text-tertiary">payments</span>
               Commission Rates (LAK) — {MONTH_NAMES[globalMonth - 1]} {globalYear}
+              {dirtyComm && <span className="text-secondary font-bold text-sm">*</span>}
             </h4>
             <p className="text-body-sm text-on-surface-variant mt-1">
               Rep commission = (Jewelry Baht × rate) + (Bar Baht × rate) + (Qty × rate). Synced to Google Sheets CommissionConfig tab. Shows 0 if no config saved for this month.
@@ -394,10 +432,7 @@ export default function KpiSettings() {
                     <input
                       type="number" min="0" step="100"
                       value={commEdits[type]?.[key] ?? ''}
-                      onChange={e => setCommEdits(prev => ({
-                        ...prev,
-                        [type]: { ...prev[type], [key]: e.target.value },
-                      }))}
+                      onChange={e => { setCommEdits(prev => ({ ...prev, [type]: { ...prev[type], [key]: e.target.value } })); setDirtyComm(true) }}
                       className={`w-full border-b-2 px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold bg-white
                         ${type === 'b2b' ? 'border-secondary text-secondary' : 'border-primary text-primary'}`}
                     />
@@ -461,7 +496,7 @@ export default function KpiSettings() {
       <GlassCard elevated className="p-5 mb-6">
         <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
           <div>
-            <h4 className="font-headline-md text-headline-md text-on-surface">Monthly KPI Point Targets — {MONTH_NAMES[globalMonth - 1]} {globalYear}</h4>
+            <h4 className="font-headline-md text-headline-md text-on-surface flex items-center gap-2">Monthly KPI Point Targets — {MONTH_NAMES[globalMonth - 1]} {globalYear}{dirtyTargets && <span className="text-secondary font-bold text-sm">*</span>}</h4>
             <p className="text-body-sm text-on-surface-variant mt-0.5">
               KPI % = (Total Score ÷ Branch Target) × 100 &nbsp;·&nbsp; Targets saved per month
             </p>
@@ -501,13 +536,31 @@ export default function KpiSettings() {
                   value={targetEdits[b.id] ?? b.effective_target}
                   onChange={e => {
                     setTargetEdits(prev => ({ ...prev, [b.id]: e.target.value }))
-                    setTargetSaved(false)
+                    setTargetSaved(false); setDirtyTargets(true)
                   }}
                   className="w-full bg-white border-b-2 border-primary px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold text-primary"
                 />
                 <p className="text-[10px] text-on-surface-variant mt-1.5">
                   Default: <strong>{b.kpi_point_target.toLocaleString()} pts</strong>
                 </p>
+                <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-outline-variant/20">
+                  <div>
+                    <label className="text-[9px] text-secondary uppercase font-bold block mb-1">B2C Target</label>
+                    <input type="number" min="0" step="100"
+                      value={targetB2cEdits[b.id] ?? ''}
+                      onChange={e => { setTargetB2cEdits(prev => ({ ...prev, [b.id]: e.target.value })); setDirtyTargets(true); setTargetSaved(false) }}
+                      placeholder="Same as overall"
+                      className="w-full bg-white border-b border-secondary/40 px-1.5 py-1 text-[11px] outline-none font-tabular-nums text-secondary" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-tertiary uppercase font-bold block mb-1">B2B Target</label>
+                    <input type="number" min="0" step="100"
+                      value={targetB2bEdits[b.id] ?? ''}
+                      onChange={e => { setTargetB2bEdits(prev => ({ ...prev, [b.id]: e.target.value })); setDirtyTargets(true); setTargetSaved(false) }}
+                      placeholder="Same as overall"
+                      className="w-full bg-white border-b border-tertiary/40 px-1.5 py-1 text-[11px] outline-none font-tabular-nums text-tertiary" />
+                  </div>
+                </div>
               </div>
             )
           })}
@@ -543,6 +596,7 @@ export default function KpiSettings() {
             <h4 className="font-headline-md text-on-surface flex items-center gap-2">
               <span className="material-symbols-outlined text-primary">tune</span>
               KPI Score Config — {MONTH_NAMES[globalMonth - 1]} {globalYear}
+              {dirtyMult && <span className="text-secondary font-bold text-sm">*</span>}
             </h4>
             <p className="text-body-sm text-on-surface-variant mt-1">
               Jewelry &amp; Bar: global pts/g multiplier. Qty: tier config for selected month.
@@ -560,7 +614,7 @@ export default function KpiSettings() {
               <span className="ml-auto text-[10px] text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">Global</span>
             </div>
             <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">pts / g</label>
-            <input type="number" min="0" step="0.5" value={jewelryEdit} onChange={e => setJewelryEdit(e.target.value)}
+            <input type="number" min="0" step="0.5" value={jewelryEdit} onChange={e => { setJewelryEdit(e.target.value); setDirtyMult(true) }}
               className="w-full border-b-2 border-primary px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold text-primary bg-white" />
             <p className="text-[10px] text-on-surface-variant mt-2">
               Current: <strong className="text-primary">{metrics.find(m => m.id === 1)?.points_per_unit ?? '—'} pts/g</strong>
@@ -575,7 +629,7 @@ export default function KpiSettings() {
               <span className="ml-auto text-[10px] text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">Global</span>
             </div>
             <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">pts / g</label>
-            <input type="number" min="0" step="0.5" value={barEdit} onChange={e => setBarEdit(e.target.value)}
+            <input type="number" min="0" step="0.5" value={barEdit} onChange={e => { setBarEdit(e.target.value); setDirtyMult(true) }}
               className="w-full border-b-2 border-secondary px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold text-secondary bg-white" />
             <p className="text-[10px] text-on-surface-variant mt-2">
               Current: <strong className="text-secondary">{metrics.find(m => m.id === 2)?.points_per_unit ?? '—'} pts/g</strong>
@@ -746,6 +800,22 @@ export default function KpiSettings() {
               )}
             </div>
           </GlassCard>
+        </div>
+      )}
+
+      {/* Save All button — shown when any section is dirty */}
+      {(dirtyMult || dirtyComm || dirtyTargets) && (
+        <div className="sticky bottom-6 z-20 flex justify-end mb-4">
+          <button onClick={saveAllKpiSettings} disabled={savingAll}
+            className="flex items-center gap-3 px-8 py-3 bg-primary text-white rounded-2xl font-label-md text-label-md shadow-2xl shadow-primary/30 hover:opacity-90 disabled:opacity-60 transition-all">
+            <span className={`material-symbols-outlined text-sm ${savingAll ? 'animate-spin-slow' : ''}`}>{savingAll ? 'sync' : 'save'}</span>
+            {savingAll ? 'Saving All…' : 'Save All KPI Settings'}
+            {[dirtyMult && 'Multipliers', dirtyComm && 'Commission', dirtyTargets && 'Targets'].filter(Boolean).length > 0 && (
+              <span className="bg-white/20 px-2 py-0.5 rounded-full text-[11px]">
+                {[dirtyMult && 'Multipliers', dirtyComm && 'Commission', dirtyTargets && 'Targets'].filter(Boolean).join(' + ')}
+              </span>
+            )}
+          </button>
         </div>
       )}
 

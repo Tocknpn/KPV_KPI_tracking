@@ -177,6 +177,8 @@ export default function UploadHistory() {
 
   const [mainTab, setMainTab] = useState<MainTab>('history')
   const isAdmin = user?.role === 'admin'
+  const isHr    = user?.role === 'hr'
+  const canManageRoster = isAdmin || isHr
 
   // ── Upload History state ──────────────────────────────────────────────
   const [coverage, setCoverage] = useState<CoverageRow[]>([])
@@ -195,6 +197,9 @@ export default function UploadHistory() {
   const [repModal, setRepModal]       = useState<'create' | 'edit' | null>(null)
   const [editRep, setEditRep]         = useState<RosterRow | null>(null)
   const [rosterToast, setRosterToast] = useState('')
+  const [dlTemplate, setDlTemplate]       = useState(false)
+  type RosterSort = { col: 'rep_code' | 'full_name' | 'branch_name' | 'supervisor_name' | 'staff_type'; dir: 'asc' | 'desc' }
+  const [rosterSort, setRosterSort]       = useState<RosterSort>({ col: 'full_name', dir: 'asc' })
   const [filterRBranch, setFilterRBranch]   = useState<number | 'all'>('all')
   const [filterRSup, setFilterRSup]         = useState<number | 'all'>('all')
   const [filterRType, setFilterRType]       = useState<'all' | 'b2c' | 'b2b'>('all')
@@ -222,7 +227,7 @@ export default function UploadHistory() {
   }
 
   async function loadRoster(ym?: string) {
-    if (!token || !isAdmin) return
+    if (!token || !canManageRoster) return
     setRosterLoading(true)
     try {
       const targetYm = ym ?? (rosterYearMonth || undefined)
@@ -240,7 +245,7 @@ export default function UploadHistory() {
   }
 
   useEffect(() => { loadHistory() }, [token, selectedYear, selectedMonth, filterType, filterBranch])
-  useEffect(() => { if (mainTab === 'roster') loadRoster() }, [mainTab, token])
+  useEffect(() => { if (mainTab === 'roster') loadRoster() }, [mainTab, token, canManageRoster])
 
   async function handleSaveRep(data: {
     id?: number; repCode: string; fullName: string; nickname: string
@@ -283,6 +288,30 @@ export default function UploadHistory() {
     setRosterSyncing(false)
   }
 
+  async function downloadRosterTemplate() {
+    if (!token) return
+    setDlTemplate(true)
+    try {
+      const rows = await window.api.getRosterTemplate(token) as Array<Record<string, unknown>>
+      const header = ['rep_code','full_name','nickname','branch_code','supervisor_name','staff_type','point_target','year_month']
+      const csvRows = [header.join(',')]
+      for (const r of rows) {
+        csvRows.push(header.map(k => {
+          const v = String(r[k] ?? '')
+          return v.includes(',') ? `"${v}"` : v
+        }).join(','))
+      }
+      const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a'); a.href = url; a.download = 'roster_template.csv'; a.click()
+      URL.revokeObjectURL(url)
+    } finally { setDlTemplate(false) }
+  }
+
+  function toggleSort(col: RosterSort['col']) {
+    setRosterSort(prev => prev.col === col ? { col, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'asc' })
+  }
+
   const filteredRoster = roster.filter(r => {
     if (!showInactive && r.active === 0) return false
     if (filterRBranch !== 'all' && r.branch_id !== filterRBranch) return false
@@ -295,6 +324,11 @@ export default function UploadHistory() {
              (r.nickname ?? '').toLowerCase().includes(q)
     }
     return true
+  }).sort((a, b) => {
+    const { col, dir } = rosterSort
+    const va = String((a as Record<string, unknown>)[col] ?? '')
+    const vb = String((b as Record<string, unknown>)[col] ?? '')
+    return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va)
   })
 
   const branchesWithTarget  = coverage.filter(c => c.target_uploaded).length
@@ -354,12 +388,12 @@ export default function UploadHistory() {
           <span className="material-symbols-outlined text-sm">history</span>
           Upload History
         </button>
-        {isAdmin && (
+        {canManageRoster && (
           <button onClick={() => setMainTab('roster')}
             className={`px-5 py-2.5 rounded-lg font-label-md text-label-md transition-all flex items-center gap-2 ${mainTab === 'roster' ? 'bg-white shadow-sm text-primary font-bold' : 'text-on-surface-variant hover:text-primary'}`}>
             <span className="material-symbols-outlined text-sm">badge</span>
             Roster
-            <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">Admin</span>
+            <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">{isHr ? 'HR' : 'Admin'}</span>
           </button>
         )}
       </div>
@@ -558,6 +592,11 @@ export default function UploadHistory() {
                 className="p-2 rounded-lg bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-colors" title="Refresh roster">
                 <span className={`material-symbols-outlined text-sm ${rosterLoading ? 'animate-spin-slow' : ''}`}>refresh</span>
               </button>
+              <button onClick={downloadRosterTemplate} disabled={dlTemplate}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high disabled:opacity-60 transition-all" title="Download CSV template">
+                <span className={`material-symbols-outlined text-sm ${dlTemplate ? 'animate-spin-slow' : ''}`}>{dlTemplate ? 'sync' : 'download'}</span>
+                Template
+              </button>
               <button onClick={syncRosterToSheets} disabled={rosterSyncing}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tertiary text-white font-label-md text-label-md hover:opacity-90 disabled:opacity-60 transition-all">
                 <span className={`material-symbols-outlined text-sm ${rosterSyncing ? 'animate-spin-slow' : ''}`}>cloud_upload</span>
@@ -597,7 +636,24 @@ export default function UploadHistory() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-container-low/50">
-                    {['Rep Code','Name','Branch','Supervisor','Type','Target','Status','Actions'].map(h => (
+                    {([
+                      { label: 'Rep Code', col: 'rep_code' as const },
+                      { label: 'Name',     col: 'full_name' as const },
+                      { label: 'Branch',   col: 'branch_name' as const },
+                      { label: 'Supervisor', col: 'supervisor_name' as const },
+                      { label: 'Type',     col: 'staff_type' as const },
+                    ]).map(({ label, col }) => (
+                      <th key={col} onClick={() => toggleSort(col)}
+                        className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-primary select-none group">
+                        <span className="flex items-center gap-1">
+                          {label}
+                          <span className="material-symbols-outlined text-xs opacity-40 group-hover:opacity-100">
+                            {rosterSort.col === col ? (rosterSort.dir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
+                          </span>
+                        </span>
+                      </th>
+                    ))}
+                    {['Target','Status','Actions'].map(h => (
                       <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>

@@ -61,7 +61,7 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('kpi:saveBranchKpiTarget', token, branchId, target),
   getMonthlyBranchTargets: (token: string, year: number, month: number) =>
     ipcRenderer.invoke('kpi:getMonthlyBranchTargets', token, year, month),
-  saveMonthlyBranchTargets: (token: string, year: number, month: number, targets: Array<{ branchId: number; target: number }>) =>
+  saveMonthlyBranchTargets: (token: string, year: number, month: number, targets: Array<{ branchId: number; target: number; targetB2c?: number | null; targetB2b?: number | null }>) =>
     ipcRenderer.invoke('kpi:saveMonthlyBranchTargets', token, year, month, targets),
   getKpiFormula: (token: string) =>
     ipcRenderer.invoke('kpi:getFormula', token),
@@ -177,6 +177,8 @@ contextBridge.exposeInMainWorld('api', {
   // ── Audit Log ─────────────────────────────────────────────────────────
   getAuditLogs: (token: string, filters: { dateFrom?: string; dateTo?: string; username?: string; eventType?: string; limit?: number; offset?: number }) =>
     ipcRenderer.invoke('audit:getLogs', token, filters),
+  getRepUploadStatus: (token: string, branchIds?: number[], days?: number) =>
+    ipcRenderer.invoke('upload:getRepUploadStatus', token, branchIds, days),
 
   // ── Startup lifecycle ─────────────────────────────────────────────────
   checkAppReady: () => ipcRenderer.invoke('app:isReady') as Promise<boolean>,

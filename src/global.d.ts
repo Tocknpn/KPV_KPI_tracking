@@ -37,8 +37,8 @@ interface Window {
     deleteKpiConfig(token: string, configId: number): Promise<{ success: boolean }>
     saveKpiMetricMultiplier(token: string, metricId: number, pointsPerUnit: number): Promise<{ success: boolean }>
     saveBranchKpiTarget(token: string, branchId: number, target: number): Promise<{ success: boolean }>
-    getMonthlyBranchTargets(token: string, year: number, month: number): Promise<Array<{ id: number; name: string; code: string; kpi_point_target: number; monthly_target: number | null; effective_target: number }>>
-    saveMonthlyBranchTargets(token: string, year: number, month: number, targets: Array<{ branchId: number; target: number }>): Promise<{ success: boolean }>
+    getMonthlyBranchTargets(token: string, year: number, month: number): Promise<Array<{ id: number; name: string; code: string; kpi_point_target: number; monthly_target: number | null; effective_target: number; target_b2c: number | null; target_b2b: number | null }>>
+    saveMonthlyBranchTargets(token: string, year: number, month: number, targets: Array<{ branchId: number; target: number; targetB2c?: number | null; targetB2b?: number | null }>): Promise<{ success: boolean }>
     getKpiFormula(token: string): Promise<{ base: number; weight: number }>
     saveKpiFormula(token: string, base: number, weight: number): Promise<{ success: boolean }>
     simulateKpiScore(token: string, metricId: number, branchId: number | null, actual: number, target: number): Promise<{ score: number; pct: number; tierId: number | null }>
@@ -57,11 +57,12 @@ interface Window {
     saveSheetsConfig(token: string, config: { sheetsId: string; serviceAccountPath: string }): Promise<{ success: boolean }>
 
     // Upload
-    uploadDaily(token: string, rows: unknown[], meta: unknown): Promise<{ success: boolean; count?: number; error?: string }>
+    uploadDaily(token: string, rows: unknown[], meta: unknown): Promise<{ success: boolean; count?: number; skipped?: number; results?: Array<{ row: number; code: string; date?: string; status: 'ok' | 'error'; reason?: string }>; error?: string }>
     uploadTargets(token: string, rows: unknown[], meta: unknown): Promise<{ success: boolean; count?: number; error?: string }>
     getUploadLogs(token: string, branchId?: number, uploadType?: string, limit?: number): Promise<unknown[]>
     getUploadCoverage(token: string, year: number, month: number): Promise<unknown[]>
     getSalesmenForTemplate(token: string, branchId: number): Promise<unknown[]>
+    getRepUploadStatus(token: string, branchIds?: number[], days?: number): Promise<{ dates: string[]; branches: Array<{ branch_id: number; branch_name: string; branch_code: string; reps: Array<{ id: number; rep_code: string; full_name: string; nickname: string; staff_type: string; supervisor_name: string | null; days: boolean[] }> }> }>
 
     // Permissions
     getMyPermissions(token: string): Promise<string[]>
