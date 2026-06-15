@@ -58,8 +58,11 @@ async function writeTab(
 async function pushSettings(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
   const appRows = (prepare(db, `SELECT key, value FROM app_settings WHERE key IN ('sup_kpi_pct','kpi_total_base','kpi_total_weight') ORDER BY key`).all() as Array<{ key: string; value: string }>)
     .map(r => [r.key, r.value])
-  const metricRows = (prepare(db, `SELECT id, points_per_unit FROM kpi_metrics WHERE id IN (1, 2)`).all() as Array<{ id: number; points_per_unit: number }>)
-    .map(r => [r.id === 1 ? 'jewelry_pts_per_unit' : 'bar_pts_per_unit', String(r.points_per_unit)])
+  const metricRows = (prepare(db, `SELECT id, points_per_unit FROM kpi_metrics WHERE id IN (1, 2, 3)`).all() as Array<{ id: number; points_per_unit: number }>)
+    .map(r => {
+      const key = r.id === 1 ? 'jewelry_pts_per_unit' : r.id === 2 ? 'bar_pts_per_unit' : 'qty_pts_per_unit'
+      return [key, String(r.points_per_unit)]
+    })
   await writeTab(sheets, spreadsheetId, TABS.SETTINGS, ['key', 'value'], [...appRows, ...metricRows])
 }
 

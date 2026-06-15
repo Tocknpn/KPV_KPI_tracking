@@ -63,6 +63,7 @@ export function computeKpi(
 ): BranchKpi[] {
   const jewelryPts = parseFloat(settings['jewelry_pts_per_unit'] ?? '0')
   const barPts = parseFloat(settings['bar_pts_per_unit'] ?? '0')
+  const qtyPtsFlat = parseFloat(settings['qty_pts_per_unit'] ?? '0')
 
   const monthStr = `${year}-${String(month).padStart(2, '0')}`
   let entries = allEntries.filter(e => e.entry_date.startsWith(monthStr))
@@ -101,7 +102,10 @@ export function computeKpi(
       rep.qty          += e.quantity
       rep.jewelry_score += e.jewelry_weight_g * jewelryPts
       rep.bar_score    += e.bar_weight_g * barPts
-      rep.qty_score    += getQtyScore(qtyTiers, branch.code, e.quantity)
+      // Electron priority: flat pts_per_unit from kpi_metrics > tier lookup
+      rep.qty_score    += qtyPtsFlat > 0
+        ? e.quantity * qtyPtsFlat
+        : getQtyScore(qtyTiers, branch.code, e.quantity)
     }
 
     const reps = Array.from(repMap.values())
