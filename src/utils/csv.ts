@@ -2,16 +2,18 @@
 export interface ParseResult {
   headers: string[]
   rows: Record<string, string>[]
+  rawRows: string[][]  // positional column arrays, no header row
   errors: string[]
 }
 
 export function parseCSV(text: string): ParseResult {
   const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n')
-  if (lines.length < 2) return { headers: [], rows: [], errors: ['File is empty or has no data rows.'] }
+  if (lines.length < 2) return { headers: [], rows: [], rawRows: [], errors: ['File is empty or has no data rows.'] }
 
   const headers = splitCSVLine(lines[0]).map(h => h.trim().toLowerCase().replace(/\s+/g, '_'))
   const errors: string[] = []
   const rows: Record<string, string>[] = []
+  const rawRows: string[][] = []
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim()
@@ -21,12 +23,14 @@ export function parseCSV(text: string): ParseResult {
       errors.push(`Row ${i + 1}: expected ${headers.length} columns, got ${values.length}. Skipped.`)
       continue
     }
+    const trimmed = values.map(v => v.trim())
     const row: Record<string, string> = {}
-    headers.forEach((h, idx) => { row[h] = values[idx].trim() })
+    headers.forEach((h, idx) => { row[h] = trimmed[idx] })
     rows.push(row)
+    rawRows.push(trimmed)
   }
 
-  return { headers, rows, errors }
+  return { headers, rows, rawRows, errors }
 }
 
 function splitCSVLine(line: string): string[] {
@@ -84,90 +88,94 @@ export interface DailyRowRaw { date: string; repCode: string; jewelryWeightG: nu
 export interface TargetRowRaw { repCode: string; year: number; month: number; jewelryWeightG: number; barWeightG: number; quantity: number }
 export interface RosterRowRaw { repCode: string; fullName: string; nickname: string; branchCode: string; supervisorName: string; staffType: 'b2c' | 'b2b'; pointTarget: number; yearMonth: string }
 
+// Column positions for daily template: Date, Rep_Code, Full_Name, Branch_Code, Supervisor_Name, KPI_1, KPI_2, KPI_3
 export function validateDailyRows(parsed: ParseResult): { rows: DailyRowRaw[]; errors: string[] } {
   const errors = [...parsed.errors]
   const rows: DailyRowRaw[] = []
 
-  for (let i = 0; i < parsed.rows.length; i++) {
-    const raw = normaliseRow(parsed.rows[i])
+  for (let i = 0; i < parsed.rawRows.length; i++) {
+    const pos = parsed.rawRows[i]
     const lineNum = i + 2
 
-    if (!raw.date || !raw.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      errors.push(`Row ${lineNum}: Invalid date "${raw.date}". Use YYYY-MM-DD format.`); continue
+    const date = pos[0] ?? ''
+    if (!date || !date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      errors.push(`Row ${lineNum}: Invalid date "${date}". Use YYYY-MM-DD format.`); continue
     }
-    const repCode = (raw.rep_code ?? '').trim()
+    const repCode = pos[1] ?? ''
     if (!repCode) {
       errors.push(`Row ${lineNum}: Missing Rep Code.`); continue
     }
 
     rows.push({
-      date: raw.date,
+      date,
       repCode,
-      jewelryWeightG: parseFloat(raw.jewelry_weight_g) || 0,
-      barWeightG:     parseFloat(raw.bar_weight_g)     || 0,
-      quantity:       parseInt(raw.quantity)            || 0,
+      jewelryWeightG: parseFloat(pos[5] ?? '') || 0,
+      barWeightG:     parseFloat(pos[6] ?? '') || 0,
+      quantity:       parseInt(pos[7]   ?? '') || 0,
     })
   }
 
   return { rows, errors }
 }
 
+// Column positions for target template: Rep_Code, Full_Name, Branch_Code, Supervisor_Name, Year, Month, Jewelry_Target, Bar_Target, Quantity_Target
 export function validateTargetRows(parsed: ParseResult): { rows: TargetRowRaw[]; errors: string[] } {
   const errors = [...parsed.errors]
   const rows: TargetRowRaw[] = []
 
-  for (let i = 0; i < parsed.rows.length; i++) {
-    const raw = normaliseRow(parsed.rows[i])
+  for (let i = 0; i < parsed.rawRows.length; i++) {
+    const pos = parsed.rawRows[i]
     const lineNum = i + 2
 
-    const repCode = (raw.rep_code ?? '').trim()
+    const repCode = pos[0] ?? ''
     if (!repCode) {
       errors.push(`Row ${lineNum}: Missing Rep Code.`); continue
     }
-    const year  = parseInt(raw.year)
-    const month = parseInt(raw.month)
+    const year  = parseInt(pos[4] ?? '')
+    const month = parseInt(pos[5] ?? '')
     if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
       errors.push(`Row ${lineNum}: Invalid year/month.`); continue
     }
 
     rows.push({
       repCode, year, month,
-      jewelryWeightG: parseFloat(raw.jewelry_weight_g) || 0,
-      barWeightG:     parseFloat(raw.bar_weight_g)     || 0,
-      quantity:       parseInt(raw.quantity)            || 0,
+      jewelryWeightG: parseFloat(pos[6] ?? '') || 0,
+      barWeightG:     parseFloat(pos[7] ?? '') || 0,
+      quantity:       parseInt(pos[8]   ?? '') || 0,
     })
   }
 
   return { rows, errors }
 }
 
+// Column positions for roster template: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type, Year_Month, Point_Target
 export function validateRosterRows(parsed: ParseResult): { rows: RosterRowRaw[]; errors: string[] } {
   const errors = [...parsed.errors]
   const rows: RosterRowRaw[] = []
 
-  for (let i = 0; i < parsed.rows.length; i++) {
-    const raw = normaliseRow(parsed.rows[i])
+  for (let i = 0; i < parsed.rawRows.length; i++) {
+    const pos = parsed.rawRows[i]
     const lineNum = i + 2
 
-    const repCode = (raw.rep_code ?? '').trim()
+    const repCode = (pos[0] ?? '').trim()
     if (!repCode) { errors.push(`Row ${lineNum}: Missing Rep Code.`); continue }
-    const fullName = (raw.full_name ?? '').trim()
+    const fullName = (pos[1] ?? '').trim()
     if (!fullName) { errors.push(`Row ${lineNum}: Missing Full Name.`); continue }
-    const branchCode = (raw.branch_code ?? '').trim().toUpperCase()
+    const branchCode = (pos[3] ?? '').trim().toUpperCase()
     if (!branchCode) { errors.push(`Row ${lineNum}: Missing Branch Code.`); continue }
 
-    const rawStaffType = (raw.staff_type ?? '').trim().toLowerCase()
+    const rawStaffType = (pos[5] ?? '').trim().toLowerCase()
     const staffType: 'b2c' | 'b2b' = rawStaffType === 'b2b' ? 'b2b' : 'b2c'
 
-    const yearMonth = (raw.year_month ?? '').trim().replace(/\D/g, '').slice(0, 6)
+    const yearMonth = (pos[6] ?? '').trim().replace(/\D/g, '').slice(0, 6)
 
     rows.push({
       repCode, fullName,
-      nickname:       (raw.nickname ?? '').trim(),
+      nickname:       (pos[2] ?? '').trim(),
       branchCode,
-      supervisorName: (raw.supervisor_name ?? '').trim(),
+      supervisorName: (pos[4] ?? '').trim(),
       staffType,
-      pointTarget:    parseFloat(raw.point_target) || 0,
+      pointTarget:    parseFloat(pos[7] ?? '') || 0,
       yearMonth,
     })
   }

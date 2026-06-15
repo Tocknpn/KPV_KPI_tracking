@@ -7,17 +7,18 @@ export function parseXLSX(buffer: ArrayBuffer): ParseResult {
   try {
     const workbook = XLSX.read(buffer, { type: 'array' })
     const sheetName = workbook.SheetNames[0]
-    if (!sheetName) return { headers: [], rows: [], errors: ['File has no sheets.'] }
+    if (!sheetName) return { headers: [], rows: [], rawRows: [], errors: ['File has no sheets.'] }
 
     const sheet = workbook.Sheets[sheetName]
     const raw: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
 
-    if (raw.length < 2) return { headers: [], rows: [], errors: ['File is empty or has no data rows.'] }
+    if (raw.length < 2) return { headers: [], rows: [], rawRows: [], errors: ['File is empty or has no data rows.'] }
 
     const headerRow = raw[0] as string[]
     const headers = headerRow.map(h => String(h).trim().toLowerCase().replace(/\s+/g, '_'))
 
     const rows: Record<string, string>[] = []
+    const rawRows: string[][] = []
     for (let i = 1; i < raw.length; i++) {
       const rowArr = raw[i] as unknown[]
       const isEmpty = rowArr.every(v => v === '' || v == null)
@@ -26,14 +27,16 @@ export function parseXLSX(buffer: ArrayBuffer): ParseResult {
         errors.push(`Row ${i + 1}: expected ${headers.length} columns, got ${rowArr.length}. Skipped.`)
         continue
       }
+      const trimmed = rowArr.map(v => String(v ?? '').trim())
       const row: Record<string, string> = {}
-      headers.forEach((h, idx) => { row[h] = String(rowArr[idx] ?? '').trim() })
+      headers.forEach((h, idx) => { row[h] = trimmed[idx] })
       rows.push(row)
+      rawRows.push(trimmed)
     }
 
-    return { headers, rows, errors }
+    return { headers, rows, rawRows, errors }
   } catch (e) {
-    return { headers: [], rows: [], errors: [e instanceof Error ? e.message : 'Failed to parse XLSX file.'] }
+    return { headers: [], rows: [], rawRows: [], errors: [e instanceof Error ? e.message : 'Failed to parse XLSX file.'] }
   }
 }
 
