@@ -3,7 +3,15 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { logoutAction } from '@/app/actions'
-import { ROLE_LABELS } from '@/lib/session'
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Admin',
+  top_manager: 'Top Manager',
+  branch_manager: 'Branch Manager',
+  accountant: 'Accountant',
+  hr: 'HR',
+  sales_sup: 'Supervisor',
+}
 
 interface Props {
   fullName: string

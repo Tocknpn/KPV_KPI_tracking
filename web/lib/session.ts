@@ -25,12 +25,3 @@ export async function getSession() {
 
 // Allowed roles for the web app (no sales_sup — data-entry only role)
 export const ALLOWED_ROLES = ['admin', 'top_manager', 'branch_manager', 'accountant', 'hr']
-
-export const ROLE_LABELS: Record<string, string> = {
-  admin: 'Admin',
-  top_manager: 'Top Manager',
-  branch_manager: 'Branch Manager',
-  accountant: 'Accountant',
-  hr: 'HR',
-  sales_sup: 'Supervisor',
-}
