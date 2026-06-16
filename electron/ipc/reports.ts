@@ -199,17 +199,28 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     }>
 
     return branches.map(b => {
-      const actuals = prepare(db, `
-        SELECT COALESCE(SUM(jewelry_weight_g),0) AS actual_jewelry,
-               COALESCE(SUM(bar_weight_g),0)     AS actual_bar,
-               COALESCE(SUM(quantity),0)          AS actual_qty
-        FROM daily_entries
-        WHERE branch_id=? AND entry_date >= ? AND entry_date <= ?
-      `).get(b.id, dateFrom, dateTo) as { actual_jewelry: number; actual_bar: number; actual_qty: number }
+      // Split actuals by staff_type so B2B/B2C-specific rates in kpi_metric_type_rates are applied correctly
+      const actualsByType = prepare(db, `
+        SELECT s.staff_type,
+          COALESCE(SUM(de.jewelry_weight_g),0) AS actual_jewelry,
+          COALESCE(SUM(de.bar_weight_g),0)     AS actual_bar,
+          COALESCE(SUM(de.quantity),0)          AS actual_qty
+        FROM daily_entries de
+        JOIN salesmen s ON s.id = de.salesman_id
+        WHERE de.branch_id=? AND de.entry_date >= ? AND de.entry_date <= ?
+        GROUP BY s.staff_type
+      `).all(b.id, dateFrom, dateTo) as Array<{ staff_type: string; actual_jewelry: number; actual_bar: number; actual_qty: number }>
 
-      const js = computeKpiScore(db, 1, b.id, actuals.actual_jewelry, 0, dateTo).score
-      const bs = computeKpiScore(db, 2, b.id, actuals.actual_bar,     0, dateTo).score
-      const qs = computeKpiScore(db, 3, b.id, actuals.actual_qty,     0, dateTo).score
+      let js = 0, bs = 0, qs = 0
+      let totalJewelry = 0, totalBar = 0, totalQty = 0
+      for (const t of actualsByType) {
+        js += computeKpiScore(db, 1, b.id, t.actual_jewelry, 0, dateTo, t.staff_type).score
+        bs += computeKpiScore(db, 2, b.id, t.actual_bar,     0, dateTo, t.staff_type).score
+        qs += computeKpiScore(db, 3, b.id, t.actual_qty,     0, dateTo, t.staff_type).score
+        totalJewelry += t.actual_jewelry
+        totalBar     += t.actual_bar
+        totalQty     += t.actual_qty
+      }
       const kpiTotalScore = js + bs + qs
 
       const personRow      = prepare(db, `SELECT COUNT(*) as cnt FROM salesmen WHERE branch_id=? AND active=1`).get(b.id) as { cnt: number }
@@ -220,9 +231,9 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
 
       return {
         branch_id: b.id, branch_name: b.name, code: b.code,
-        actual_jewelry: actuals.actual_jewelry,
-        actual_bar: actuals.actual_bar,
-        actual_qty: actuals.actual_qty,
+        actual_jewelry: totalJewelry,
+        actual_bar:     totalBar,
+        actual_qty:     totalQty,
         kpi_score_jewelry: js, kpi_score_bar: bs, kpi_score_qty: qs,
         kpi_total_score: kpiTotalScore, kpi_point_target: kpiPointTarget,
         per_person_target: perPersonTarget, kpi_pct: kpiPct, person_count: personCount,
@@ -277,10 +288,11 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
         teamScore += js + bs + qs
       }
 
-      const supScore      = teamScore * supKpiPct / 100
-      const branchTarget  = getBranchPointTarget(db, sup.branch_id, year, month)
-      const teamKpiPct    = branchTarget > 0 ? (teamScore / branchTarget) * 100 : 0
-      const supKpiPctAch  = branchTarget > 0 ? (supScore  / branchTarget) * 100 : 0
+      const supScore           = teamScore * supKpiPct / 100
+      const perPersonTarget    = getBranchPointTarget(db, sup.branch_id, year, month)
+      const teamTarget         = perPersonTarget * reps.length  // correct total: per-person × team size
+      const teamKpiPct         = teamTarget > 0 ? (teamScore / teamTarget) * 100 : 0
+      const supKpiPctAch       = teamTarget > 0 ? (supScore  / teamTarget) * 100 : 0
 
       return {
         id: sup.id,
@@ -295,7 +307,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
         sup_kpi_pct:      supKpiPct,
         sup_score:        supScore,
         sup_kpi_pct_ach:  supKpiPctAch,
-        branch_target:    branchTarget,
+        branch_target:    teamTarget,  // total target for this supervisor's team (per-person × rep count)
       }
     })
   })

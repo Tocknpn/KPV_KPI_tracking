@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef } from 'react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList, Cell, Legend } from 'recharts'
 import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { RadialGauge } from '../../components/ui/RadialGauge'
@@ -457,9 +456,12 @@ export default function Reports() {
       default: return 0
     }
   })
-  const supTotalReps  = filteredSupRows.reduce((s, r) => s + r.rep_count, 0)
-  const supTotalScore = filteredSupRows.reduce((s, r) => s + r.team_total_score, 0)
-  const supAvgKpi     = filteredSupRows.length ? filteredSupRows.reduce((s, r) => s + r.team_kpi_pct, 0) / filteredSupRows.length : 0
+  const supTotalReps   = filteredSupRows.reduce((s, r) => s + r.rep_count, 0)
+  const supTotalScore  = filteredSupRows.reduce((s, r) => s + r.team_total_score, 0)
+  const supAvgKpi      = filteredSupRows.length ? filteredSupRows.reduce((s, r) => s + r.team_kpi_pct, 0) / filteredSupRows.length : 0
+  // branch_target is now per-person × rep_count per supervisor; sum all to get company total
+  const supTotalTarget = filteredSupRows.reduce((s, r) => s + r.branch_target, 0)
+  const supTotalKpiPct = supTotalTarget > 0 ? (supTotalScore / supTotalTarget) * 100 : 0
 
   // ── Commission derived ─────────────────────────────────────────────────
   const filteredCommReps = commReps.filter(r =>
@@ -508,19 +510,6 @@ export default function Reports() {
   const execOverallPct  = execTotalTarget > 0 ? (execTotalScore / execTotalTarget) * 100 : 0
   const execTotalPeople = filteredExecRows.reduce((s, r) => s + r.person_count, 0)
   const execRanked      = [...filteredExecRows].sort((a, b) => b.kpi_pct - a.kpi_pct)
-  const supChartData = supRows
-    .filter(r => {
-      if (effectiveBranchIds.length === 0) return true
-      const b = branches.find(br => br.name === r.branch_name)
-      return b ? effectiveBranchIds.includes(b.id) : true
-    })
-    .map(r => ({
-      name:     r.nickname || r.full_name.split(' ')[0],
-      fullName: r.full_name,
-      branch:   r.branch_name,
-      current:  parseFloat(r.team_kpi_pct.toFixed(1)),
-      eom:      parseFloat(calcEomPct(r.team_kpi_pct).toFixed(1)),
-    }))
 
   async function handlePullConfigs() {
     if (!token) return
@@ -566,7 +555,7 @@ export default function Reports() {
       </div>
 
       {/* ── Shared Filter Bar ──────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3 mb-5 p-4 rounded-2xl bg-surface-container/40 border border-white/20 backdrop-blur-sm">
+      <div className="relative z-[100] flex flex-wrap items-center gap-3 mb-5 p-4 rounded-2xl bg-surface-container/40 border border-white/20 backdrop-blur-sm">
         <MonthDropdown year={year} month={month} onChange={handleMonthChange} />
         <DateRangeBar year={year} month={month} dateFrom={dateFrom} dateTo={dateTo} maxDate={maxDate}
           onDateFromChange={setDateFrom} onDateToChange={setDateTo} />
@@ -614,168 +603,66 @@ export default function Reports() {
           </div>
         ) : (
           <div className="grid grid-cols-12 gap-card-gap">
-            {/* Main KPI card */}
-            <GlassCard elevated className="col-span-12 lg:col-span-8 p-8 relative overflow-hidden group">
+            {/* Merged KPI Overview + Branch Achievement */}
+            <GlassCard elevated className="col-span-12 p-8 relative overflow-hidden group">
               <div className="absolute -right-16 -top-16 w-64 h-64 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/10 transition-colors duration-700" />
               <div className="relative z-10">
+                {/* Overall header */}
                 <div className="flex justify-between items-start mb-6">
                   <div>
                     <span className="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-[10px] uppercase tracking-widest mb-4 inline-block">
                       KPI Score — {MONTHS[month - 1]} {year}
                     </span>
                     <h3 className="font-display-xl text-display-xl text-primary tabular-nums">{fmtPct(execOverallPct)}</h3>
-                    <p className="text-on-surface-variant text-body-md mt-1">
+                    <p className="text-on-surface-variant text-body-md mt-0.5">
                       {fmtPts(execTotalScore)} of {fmtPts(execTotalTarget)} pts across {execTotalPeople} staff
                     </p>
-                    <p className="text-[11px] text-on-surface-variant/60 mt-1 font-mono">{dateFrom} → {dateTo}</p>
+                    <p className="text-[11px] text-on-surface-variant/60 mt-0.5 font-mono">{dateFrom} → {dateTo}</p>
+                    <p className="text-[12px] mt-2">
+                      Est. Month End:{' '}
+                      <span className={`font-bold tabular-nums ${calcEomPct(execOverallPct) >= 100 ? 'text-green-600' : 'text-tertiary'}`}>
+                        {fmtPct(calcEomPct(execOverallPct))}
+                      </span>
+                      <span className="text-on-surface-variant text-[10px] ml-1.5">(day {dayOfMonth} of {daysInMonth})</span>
+                    </p>
                   </div>
                   <RadialGauge pct={Math.min(execOverallPct, 100)} label="Overall KPI" size={120} color="#004f96" />
                 </div>
-                <div className={`grid gap-4 pt-6 border-t border-outline-variant/30 grid-cols-${Math.min(filteredExecRows.length, 4)}`}>
-                  {filteredExecRows.map(r => (
-                    <div key={r.branch_id}>
-                      <p className="text-on-surface-variant font-label-md mb-1 uppercase tracking-wider text-[10px]">{r.branch_name}</p>
-                      <p className="font-headline-md text-[20px] font-bold tabular-nums" style={{ color: kpiHex(r.kpi_pct) }}>
-                        {fmtPct(r.kpi_pct)}
-                      </p>
-                      <p className="text-[10px] text-on-surface-variant">{fmtPts(r.kpi_total_score)} / {fmtPts(r.kpi_point_target)} pts</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </GlassCard>
 
-            {/* Branch KPI Progress */}
-            <GlassCard className="col-span-12 lg:col-span-4 p-6">
-              <h4 className="font-headline-md text-headline-md text-on-surface mb-1">Branch KPI Achievement</h4>
-              <p className="text-[10px] text-on-surface-variant mb-4">Current · Est. Month End (day {dayOfMonth} of {daysInMonth})</p>
-              <div className="space-y-5">
-                {execRanked.map(r => {
-                  const pct    = Math.min(r.kpi_pct, 100)
-                  const eom    = calcEomPct(r.kpi_pct)
-                  const eomCap = Math.min(eom, 100)
-                  const color  = kpiHex(r.kpi_pct)
-                  return (
-                    <div key={r.branch_id}>
-                      <div className="flex justify-between text-body-sm mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold" style={{ background: color }}>
+                {/* Branch grid */}
+                <div className={`grid gap-6 pt-6 border-t border-outline-variant/30 grid-cols-${Math.min(execRanked.length, 4)}`}>
+                  {execRanked.map(r => {
+                    const pct    = Math.min(r.kpi_pct, 100)
+                    const eom    = calcEomPct(r.kpi_pct)
+                    const eomCap = Math.min(eom, 100)
+                    const color  = kpiHex(r.kpi_pct)
+                    return (
+                      <div key={r.branch_id}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0" style={{ background: color }}>
                             {r.code}
                           </div>
-                          <span className="font-medium">{r.branch_name}</span>
+                          <p className="font-medium text-on-surface text-[13px]">{r.branch_name}</p>
                         </div>
-                        <div className="text-right">
-                          <span className="font-bold tabular-nums" style={{ color }}>{fmtPct(r.kpi_pct)}</span>
-                          <span className="text-[10px] text-on-surface-variant ml-1.5">
+                        <div className="flex items-baseline gap-2 mb-1.5">
+                          <span className="font-bold text-[20px] tabular-nums" style={{ color }}>{fmtPct(r.kpi_pct)}</span>
+                          <span className="text-[11px] text-on-surface-variant">
                             → <span className={eom >= 100 ? 'text-green-600 font-bold' : 'text-tertiary font-semibold'}>{fmtPct(eom)}</span> est.
                           </span>
                         </div>
+                        <div className="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden mb-0.5">
+                          <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
+                        </div>
+                        <div className="h-1 w-full bg-surface-container-highest rounded-full overflow-hidden mb-1">
+                          <div className="h-full rounded-full transition-all duration-700 opacity-40" style={{ width: `${eomCap}%`, background: color }} />
+                        </div>
+                        <p className="text-[10px] text-on-surface-variant">
+                          {fmtPts(r.kpi_total_score)} pts · {r.person_count} staff · Target: {fmtPts(r.per_person_target)} pts/person
+                        </p>
                       </div>
-                      <div className="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden mb-0.5">
-                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
-                      </div>
-                      <div className="h-1 w-full bg-surface-container-highest rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-700 opacity-40" style={{ width: `${eomCap}%`, background: color }} />
-                      </div>
-                      <p className="text-[10px] text-on-surface-variant mt-1">
-                        {fmtPts(r.kpi_total_score)} pts · {r.person_count} staff · Target: {fmtPts(r.per_person_target)} pts/person
-                      </p>
-                    </div>
-                  )
-                })}
-              </div>
-            </GlassCard>
-
-            {/* Team Supervisor Chart */}
-            {supChartData.length > 0 && (
-              <GlassCard elevated className="col-span-12 p-8">
-                <div className="mb-6">
-                  <h3 className="font-headline-md text-on-surface">Team Supervisor KPI% Performance</h3>
-                  <p className="text-on-surface-variant text-body-sm">
-                    Team KPI% per supervisor — Current (solid) vs Est. Month End (faded) — day {dayOfMonth} of {daysInMonth}
-                  </p>
+                    )
+                  })}
                 </div>
-                <div style={{ height: Math.max(220, supChartData.length * 40) }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={supChartData} layout="vertical"
-                      margin={{ top: 4, right: 60, bottom: 4, left: 8 }} barCategoryGap="25%" barGap={2}>
-                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e0e0e0" />
-                      <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`}
-                        domain={[0, Math.max(100, Math.ceil(Math.max(...supChartData.map(d => Math.max(d.current, d.eom))) / 10) * 10 + 10)]} />
-                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={72} />
-                      <Tooltip
-                        formatter={(v: number, name: string) => [`${v.toFixed(1)}%`, name]}
-                        labelFormatter={(_l, payload) => {
-                          const d = payload?.[0]?.payload
-                          return d ? `${d.fullName} · ${d.branch}` : _l
-                        }}
-                        contentStyle={{ borderRadius: 10, fontSize: 12 }} />
-                      <Legend iconType="circle" iconSize={8} />
-                      <Bar dataKey="current" name="Team KPI % (Current)" radius={[0,4,4,0]} maxBarSize={14}>
-                        {supChartData.map((d, i) => <Cell key={i} fill={kpiHex(d.current)} />)}
-                        <LabelList dataKey="current" position="right"
-                          formatter={(v: number) => `${v.toFixed(1)}%`}
-                          style={{ fontSize: 10, fontWeight: 700 }} />
-                      </Bar>
-                      <Bar dataKey="eom" name="Est. Month End %" radius={[0,4,4,0]} maxBarSize={14} opacity={0.45}>
-                        {supChartData.map((d, i) => <Cell key={i} fill={kpiHex(d.eom)} />)}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </GlassCard>
-            )}
-
-            {/* Branch Rankings Table */}
-            <GlassCard elevated className="col-span-12 overflow-hidden">
-              <div className="p-6 border-b border-outline-variant/20">
-                <h3 className="font-headline-md text-on-surface">Branch Performance Rankings</h3>
-                <p className="text-body-sm text-on-surface-variant">Ranked by KPI % achievement</p>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead className="bg-surface-container/30">
-                    <tr>
-                      {['Rank','Branch','Staff','Jewelry (Baht)','Bar (Baht)','Qty','KPI Score','Point Target','KPI %'].map(h => (
-                        <th key={h} className="text-left px-6 py-4 font-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-outline-variant/10">
-                    {execRanked.map((r, i) => (
-                      <tr key={r.branch_id} className="hover:bg-surface-container/20 transition-colors">
-                        <td className="px-6 py-3">
-                          <span className={`w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-xs inline-flex ${i === 0 ? 'bg-yellow-500' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-amber-700' : 'bg-surface-container-highest text-on-surface-variant'}`}>
-                            {i + 1}
-                          </span>
-                        </td>
-                        <td className="px-6 py-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs" style={{ background: kpiHex(r.kpi_pct) }}>
-                              {r.code}
-                            </div>
-                            <p className="font-bold">{r.branch_name}</p>
-                          </div>
-                        </td>
-                        <td className="px-6 py-3 font-tabular-nums text-on-surface-variant">{r.person_count}</td>
-                        <td className="px-6 py-3 font-tabular-nums">{fmt(r.actual_jewelry, 0)} Baht</td>
-                        <td className="px-6 py-3 font-tabular-nums">{fmt(r.actual_bar, 0)} Baht</td>
-                        <td className="px-6 py-3 font-tabular-nums">{fmt(r.actual_qty, 0)}</td>
-                        <td className="px-6 py-3 font-tabular-nums font-bold">{fmtPts(r.kpi_total_score)} pts</td>
-                        <td className="px-6 py-3 font-tabular-nums text-on-surface-variant">
-                          {fmtPts(r.kpi_point_target)} pts
-                          <span className="text-[10px] block text-on-surface-variant/60">{fmtPts(r.per_person_target)}/person</span>
-                        </td>
-                        <td className="px-6 py-3">
-                          <span className="font-bold text-body-sm tabular-nums px-3 py-1 rounded-lg"
-                            style={{ background: kpiHex(r.kpi_pct) + '20', color: kpiHex(r.kpi_pct) }}>
-                            {fmtPct(r.kpi_pct)}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
             </GlassCard>
           </div>
@@ -792,43 +679,61 @@ export default function Reports() {
           </p>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-card-gap mb-6">
-          {[
-            { label: 'Total Supervisors', value: filteredSupRows.length,    unit: '',     color: 'border-primary' },
-            { label: 'Total Reps',        value: supTotalReps,              unit: 'reps', color: 'border-secondary' },
-            { label: 'Avg Team KPI %',    value: fmtPct(supAvgKpi),         unit: '',     color: 'border-tertiary' },
-            { label: 'Total Team Score',  value: fmtPts(supTotalScore),     unit: 'pts',  color: 'border-outline-variant' },
-          ].map(k => (
-            <GlassCard key={k.label} className={`p-5 border-l-4 ${k.color}`}>
-              <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{k.label}</p>
-              <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{k.value}</h3>
-              {k.unit && <p className="text-[10px] text-on-surface-variant mt-0.5">{k.unit}</p>}
-            </GlassCard>
-          ))}
+          <GlassCard className="p-5 border-l-4 border-primary">
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Total Supervisors</p>
+            <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{filteredSupRows.length}</h3>
+          </GlassCard>
+          <GlassCard className="p-5 border-l-4 border-secondary">
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Total Reps</p>
+            <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{supTotalReps}</h3>
+            <p className="text-[10px] text-on-surface-variant mt-0.5">reps</p>
+          </GlassCard>
+          <GlassCard className="p-5 border-l-4 border-tertiary">
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Avg Team KPI %</p>
+            <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{fmtPct(supAvgKpi)}</h3>
+          </GlassCard>
+          <GlassCard className="p-5 border-l-4 border-outline-variant">
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Total Team Score</p>
+            <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{fmtPts(supTotalScore)}</h3>
+            <p className="text-[10px] text-on-surface-variant mt-0.5">
+              of {fmtPts(supTotalTarget)} pts &nbsp;·&nbsp;
+              <span className="font-semibold" style={{ color: kpiHex(supTotalKpiPct) }}>{fmtPct(supTotalKpiPct)}</span> achieved
+            </p>
+            <p className="text-[11px] mt-1.5">
+              Est. month end:{' '}
+              <span className={`font-bold tabular-nums ${calcEomPct(supTotalKpiPct) >= 100 ? 'text-green-600' : 'text-tertiary'}`}>
+                {fmtPct(calcEomPct(supTotalKpiPct))}
+              </span>
+            </p>
+          </GlassCard>
         </div>
         <GlassCard elevated className="overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-surface-variant/20 border-b border-white/40">
-                  <SortTh label="Supervisor"   col="full_name"        sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
-                  <SortTh label="Branch"       col="branch_name"      sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
+                  <SortTh label="Supervisor"     col="full_name"        sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
+                  <SortTh label="Branch"         col="branch_name"      sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
                   <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Type</th>
-                  <SortTh label="Reps"         col="rep_count"        sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
-                  <SortTh label="Team Score"   col="team_total_score" sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
-                  <SortTh label="Team KPI %"   col="team_kpi_pct"     sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
+                  <SortTh label="Reps"           col="rep_count"        sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
+                  <SortTh label="Team Score"     col="team_total_score" sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
+                  <SortTh label="Team KPI %"     col="team_kpi_pct"     sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
+                  <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Est. Month End</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/20">
                 {supLoading ? (
-                  <tr><td colSpan={6} className="py-12 text-center text-on-surface-variant">
+                  <tr><td colSpan={7} className="py-12 text-center text-on-surface-variant">
                     <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>
                     Loading...
                   </td></tr>
                 ) : sortedSupRows.length === 0 ? (
-                  <tr><td colSpan={6} className="py-10 text-center text-on-surface-variant text-body-sm">
+                  <tr><td colSpan={7} className="py-10 text-center text-on-surface-variant text-body-sm">
                     No supervisors found.
                   </td></tr>
-                ) : sortedSupRows.map(r => (
+                ) : sortedSupRows.map(r => {
+                  const eom = calcEomPct(r.team_kpi_pct)
+                  return (
                   <tr key={r.id} onClick={() => setProfileSupId(r.id)} className="hover:bg-secondary/[0.06] transition-colors cursor-pointer">
                     <td className="px-5 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-3">
@@ -847,8 +752,17 @@ export default function Reports() {
                         <span className={`font-tabular-nums font-bold text-body-sm ${kpiColorSup(r.team_kpi_pct)}`}>{fmtPct(r.team_kpi_pct)}</span>
                       </div>
                     </td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-1 font-tabular-nums text-body-sm">
+                        <span className={`material-symbols-outlined text-sm ${eom >= r.team_kpi_pct ? 'text-tertiary' : 'text-on-surface-variant'}`}>
+                          {eom >= 50 ? 'trending_up' : 'trending_down'}
+                        </span>
+                        <span className={`font-bold ${kpiColorSup(eom)}`}>{fmtPct(eom)}</span>
+                      </div>
+                    </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
