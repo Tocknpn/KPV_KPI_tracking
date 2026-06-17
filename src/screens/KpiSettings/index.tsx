@@ -67,14 +67,15 @@ export default function KpiSettings() {
     if (selectedBranch === null && branches.length > 0) setSelectedBranch(branches[0].id)
   }, [branches, selectedBranch])
 
-  // Load this branch's jewelry/bar rates + qty tiers whenever the branch changes
+  // Load this branch's jewelry/bar rates + qty tiers AS OF the selected month — editing and
+  // saving here only ever affects that month, never rewrites earlier months' scoring.
   useEffect(() => {
     if (!token || selectedBranch === null) return
-    window.api.getBranchMetricRates(token, selectedBranch).then((r: BranchRates) => { setBranchRates(r); setDirtyMult(false) })
-    window.api.getBranchQtyTiers(token, selectedBranch).then((r: { configId: number | null; tiers: Array<{ id: number; threshold_pct: number; score: number }> }) => {
+    window.api.getBranchMetricRates(token, selectedBranch, globalYear, globalMonth).then((r: BranchRates) => { setBranchRates(r); setDirtyMult(false) })
+    window.api.getBranchQtyTiers(token, selectedBranch, globalYear, globalMonth).then((r: { configId: number | null; tiers: Array<{ id: number; threshold_pct: number; score: number }> }) => {
       setTiers(r.tiers.length ? r.tiers.map(t => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS)
     })
-  }, [token, selectedBranch])
+  }, [token, selectedBranch, globalYear, globalMonth])
 
   // Load commission configs when global month/year changes
   useEffect(() => {
@@ -139,10 +140,10 @@ export default function KpiSettings() {
     try {
       const ym = `${globalYear}${String(globalMonth).padStart(2, '0')}`
 
-      // Jewelry/Bar rates + Qty tiers for the selected branch
+      // Jewelry/Bar rates + Qty tiers for the selected branch — scoped to this exact month
       if (selectedBranch !== null) {
-        await window.api.saveBranchMetricRates(token, selectedBranch, branchRates)
-        await window.api.saveBranchQtyTiers(token, selectedBranch, tiers.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })))
+        await window.api.saveBranchMetricRates(token, selectedBranch, globalYear, globalMonth, branchRates)
+        await window.api.saveBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, tiers.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })))
       }
 
       // Commission rates — B2C, B2B, and supervisor share

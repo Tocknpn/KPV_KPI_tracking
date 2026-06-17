@@ -81,27 +81,30 @@ async function pushBranches(db: Database, sheets: ReturnType<typeof google.sheet
 const METRIC_NAMES: Record<number, string> = { 1: 'Jewelry', 2: 'Bar', 3: 'Qty' }
 
 async function pushKpiRates(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  // year_month NULL = "standing rate" (applies to any month with no specific override below it)
   const rows = (prepare(db, `
-    SELECT t.metric_id, t.staff_type, t.points_per_unit, COALESCE(b.code, 'Global') AS branch_code
+    SELECT t.metric_id, t.staff_type, t.points_per_unit, t.year_month, COALESCE(b.code, 'Global') AS branch_code
     FROM kpi_metric_type_rates t
     LEFT JOIN branches b ON b.id = t.branch_id
-    ORDER BY t.metric_id, branch_code, t.staff_type
-  `).all() as Array<{ metric_id: number; staff_type: string; points_per_unit: number; branch_code: string }>)
-    .map(r => [METRIC_NAMES[r.metric_id] ?? r.metric_id, r.branch_code, r.staff_type.toUpperCase(), r.points_per_unit])
-  await writeTab(sheets, spreadsheetId, TABS.KPI_RATES, ['Metric', 'Branch', 'Staff Type', 'Points per Unit'], rows)
+    ORDER BY t.metric_id, branch_code, t.staff_type, t.year_month
+  `).all() as Array<{ metric_id: number; staff_type: string; points_per_unit: number; year_month: string | null; branch_code: string }>)
+    .map(r => [METRIC_NAMES[r.metric_id] ?? r.metric_id, r.branch_code, r.staff_type.toUpperCase(), r.year_month ? readableYearMonth(r.year_month) : 'Standing (all months)', r.points_per_unit])
+  await writeTab(sheets, spreadsheetId, TABS.KPI_RATES, ['Metric', 'Branch', 'Staff Type', 'Applies To', 'Points per Unit'], rows)
 }
 
 async function pushQtyTiers(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  // A config bounded to one month (effective_to set) only governs that month; effective_to
+  // NULL = "standing config" used as the fallback for any month with no specific override.
   const rows = (prepare(db, `
-    SELECT COALESCE(b.code, 'Global') AS branch_code, t.threshold_pct, t.score, t.tier_order
+    SELECT COALESCE(b.code, 'Global') AS branch_code, c.effective_from, c.effective_to, t.threshold_pct, t.score, t.tier_order
     FROM kpi_tiers t
     JOIN kpi_tier_configs c ON c.id = t.config_id
     LEFT JOIN branches b ON b.id = c.branch_id
     WHERE c.metric_id = 3 AND c.is_active = 1
-    ORDER BY COALESCE(b.code, 'Global'), t.tier_order
-  `).all() as Array<{ branch_code: string; threshold_pct: number; score: number; tier_order: number }>)
-    .map(r => [r.branch_code, `≥ ${r.threshold_pct} pcs`, `× ${r.score}`, r.tier_order])
-  await writeTab(sheets, spreadsheetId, TABS.QTY_TIERS, ['Branch', 'If Qty Is', 'Score Multiplier', 'Tier Order'], rows)
+    ORDER BY COALESCE(b.code, 'Global'), c.effective_from, t.tier_order
+  `).all() as Array<{ branch_code: string; effective_from: string; effective_to: string | null; threshold_pct: number; score: number; tier_order: number }>)
+    .map(r => [r.branch_code, r.effective_to ? `${r.effective_from} → ${r.effective_to}` : 'Standing (all months)', `≥ ${r.threshold_pct} pcs`, `× ${r.score}`, r.tier_order])
+  await writeTab(sheets, spreadsheetId, TABS.QTY_TIERS, ['Branch', 'Applies To', 'If Qty Is', 'Score Multiplier', 'Tier Order'], rows)
 }
 
 async function pushRoster(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {

@@ -15,16 +15,23 @@ export function computeKpiScore(
   staffType?: string
 ): { score: number; pct: number; tierId: number | null } {
   const pct = target > 0 ? (actual / target) * 100 : 0
+  const ym = date.slice(0, 4) + date.slice(5, 7) // YYYY-MM-DD -> YYYYMM
 
-  // Staff-type-specific rate takes priority over metric default (jewelry/bar) —
-  // a branch-specific row wins over the global (branch_id IS NULL) row for that type.
+  // Staff-type-specific rate takes priority over metric default (jewelry/bar). Most specific
+  // wins: branch+month > branch+standing(no month) > global+standing. A rate set for a
+  // specific month never changes how earlier months scored — that's the whole point of
+  // year_month existing here instead of one eternal value.
   if (staffType) {
     const typeRate = prepare(db, `
       SELECT points_per_unit FROM kpi_metric_type_rates
-      WHERE metric_id = ? AND staff_type = ? AND (branch_id = ? OR branch_id IS NULL)
-      ORDER BY CASE WHEN branch_id IS NULL THEN 1 ELSE 0 END
+      WHERE metric_id = ? AND staff_type = ?
+        AND (branch_id = ? OR branch_id IS NULL)
+        AND (year_month = ? OR year_month IS NULL)
+      ORDER BY
+        CASE WHEN branch_id   IS NULL THEN 1 ELSE 0 END,
+        CASE WHEN year_month  IS NULL THEN 1 ELSE 0 END
       LIMIT 1
-    `).get(metricId, staffType, branchId) as { points_per_unit: number } | undefined
+    `).get(metricId, staffType, branchId, ym) as { points_per_unit: number } | undefined
     if (typeRate && typeRate.points_per_unit > 0) {
       return { score: actual * typeRate.points_per_unit, pct, tierId: null }
     }
@@ -40,7 +47,9 @@ export function computeKpiScore(
     return { score: actual * metric.points_per_unit, pct, tierId: null }
   }
 
-  // Quantity: tier lookup — staff_type-specific config wins over NULL, branch-specific wins over global
+  // Quantity: tier lookup — staff_type-specific config wins over NULL, branch-specific wins
+  // over global, and a config bounded to a specific month wins over an open-ended "standing"
+  // config covering everything — same reasoning as the rate lookup above.
   const config = prepare(db, `
     SELECT id FROM kpi_tier_configs
     WHERE metric_id = ?
@@ -50,8 +59,10 @@ export function computeKpiScore(
       AND effective_from <= ?
       AND (effective_to IS NULL OR effective_to >= ?)
     ORDER BY
-      CASE WHEN branch_id  IS NULL THEN 1 ELSE 0 END,
-      CASE WHEN staff_type IS NULL THEN 1 ELSE 0 END
+      CASE WHEN branch_id    IS NULL THEN 1 ELSE 0 END,
+      CASE WHEN staff_type   IS NULL THEN 1 ELSE 0 END,
+      CASE WHEN effective_to IS NULL THEN 1 ELSE 0 END,
+      effective_from DESC
     LIMIT 1
   `).get(metricId, branchId, staffType ?? null, date, date) as { id: number } | undefined
 
@@ -149,77 +160,104 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     return { success: true }
   })
 
-  // Jewelry/Bar B2C+B2B rates resolved for one branch — branch override merged over global fallback
-  ipcMain.handle('kpi:getBranchMetricRates', async (_e, token: string, branchId: number) => {
+  // Jewelry/Bar B2C+B2B rates resolved for one branch AS OF a specific month — same priority
+  // as computeKpiScore (branch+month > branch+standing > global+standing), so what HR sees
+  // here always matches what actually scored that month.
+  ipcMain.handle('kpi:getBranchMetricRates', async (_e, token: string, branchId: number, year: number, month: number) => {
     requireAuth(token)
     const db = getDb()
+    const ym = `${year}${String(month).padStart(2, '0')}`
     const rows = prepare(db, `
-      SELECT metric_id, staff_type, branch_id, points_per_unit FROM kpi_metric_type_rates
-      WHERE metric_id IN (1,2) AND (branch_id = ? OR branch_id IS NULL)
-    `).all(branchId) as Array<{ metric_id: number; staff_type: string; branch_id: number | null; points_per_unit: number }>
+      SELECT metric_id, staff_type, branch_id, year_month, points_per_unit FROM kpi_metric_type_rates
+      WHERE metric_id IN (1,2)
+        AND (branch_id = ? OR branch_id IS NULL)
+        AND (year_month = ? OR year_month IS NULL)
+    `).all(branchId, ym) as Array<{ metric_id: number; staff_type: string; branch_id: number | null; year_month: string | null; points_per_unit: number }>
 
     const result: Record<'jewelry' | 'bar', Record<'b2c' | 'b2b', number>> = {
       jewelry: { b2c: 0, b2b: 0 }, bar: { b2c: 0, b2b: 0 },
     }
+    // specificity score: branch+month=3, branch+standing=2, global+month=1, global+standing=0
+    const bestScore: Record<string, number> = {}
     for (const r of rows) {
       const metric = r.metric_id === 1 ? 'jewelry' : 'bar'
       const type = r.staff_type as 'b2c' | 'b2b'
-      // Prefer branch-specific row; only use global if no branch-specific row seen yet
-      if (r.branch_id !== null || result[metric][type] === 0) result[metric][type] = r.points_per_unit
+      const key = `${metric}-${type}`
+      const score = (r.branch_id !== null ? 2 : 0) + (r.year_month !== null ? 1 : 0)
+      if ((bestScore[key] ?? -1) < score) { bestScore[key] = score; result[metric][type] = r.points_per_unit }
     }
     return result
   })
 
-  ipcMain.handle('kpi:saveBranchMetricRates', async (_e, token: string, branchId: number, rates: {
+  ipcMain.handle('kpi:saveBranchMetricRates', async (_e, token: string, branchId: number, year: number, month: number, rates: {
     jewelry: { b2c: number; b2b: number }; bar: { b2c: number; b2b: number }
   }) => {
     const u = requireAuth(token)
     if (!['admin','hr'].includes(u.role)) throw new Error('Forbidden')
     const db = getDb()
+    const ym = `${year}${String(month).padStart(2, '0')}`
     transaction(db, () => {
       const writes: Array<[number, 'b2c' | 'b2b', number]> = [
         [1, 'b2c', rates.jewelry.b2c], [1, 'b2b', rates.jewelry.b2b],
         [2, 'b2c', rates.bar.b2c],     [2, 'b2b', rates.bar.b2b],
       ]
       for (const [metricId, staffType, pointsPerUnit] of writes) {
-        prepare(db, `DELETE FROM kpi_metric_type_rates WHERE metric_id=? AND branch_id=? AND staff_type=?`).run(metricId, branchId, staffType)
-        prepare(db, `INSERT INTO kpi_metric_type_rates (metric_id, branch_id, staff_type, points_per_unit) VALUES (?,?,?,?)`).run(metricId, branchId, staffType, pointsPerUnit)
+        // Only replaces THIS month's row — past/future months' rates are untouched
+        prepare(db, `DELETE FROM kpi_metric_type_rates WHERE metric_id=? AND branch_id=? AND staff_type=? AND year_month=?`).run(metricId, branchId, staffType, ym)
+        prepare(db, `INSERT INTO kpi_metric_type_rates (metric_id, branch_id, staff_type, year_month, points_per_unit) VALUES (?,?,?,?,?)`).run(metricId, branchId, staffType, ym, pointsPerUnit)
       }
     })
     pushAllConfigIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
-  // Find-or-create the single qty tier config for a branch — no profile picker, one config per branch
-  ipcMain.handle('kpi:getBranchQtyTiers', async (_e, token: string, branchId: number) => {
+  // Qty tier config active for a branch AS OF a specific month — mirrors the same date-range
+  // priority computeKpiScore uses, so this always shows what actually scored that month.
+  ipcMain.handle('kpi:getBranchQtyTiers', async (_e, token: string, branchId: number, year: number, month: number) => {
     requireAuth(token)
     const db = getDb()
+    const probeDate = `${year}-${String(month).padStart(2, '0')}-15`
     const config = prepare(db, `
-      SELECT id, label FROM kpi_tier_configs WHERE metric_id = 3 AND branch_id = ? AND is_active = 1 LIMIT 1
-    `).get(branchId) as { id: number; label: string } | undefined
-    if (!config) return { configId: null, tiers: [] }
+      SELECT id, label, effective_from, effective_to FROM kpi_tier_configs
+      WHERE metric_id = 3 AND (branch_id = ? OR branch_id IS NULL) AND is_active = 1
+        AND effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?)
+      ORDER BY
+        CASE WHEN branch_id    IS NULL THEN 1 ELSE 0 END,
+        CASE WHEN effective_to IS NULL THEN 1 ELSE 0 END,
+        effective_from DESC
+      LIMIT 1
+    `).get(branchId, probeDate, probeDate) as { id: number; label: string; effective_from: string; effective_to: string | null } | undefined
+    if (!config) return { configId: null, tiers: [], label: null }
     const tiers = prepare(db, `SELECT id, threshold_pct, score FROM kpi_tiers WHERE config_id = ? ORDER BY threshold_pct DESC`).all(config.id)
-    return { configId: config.id, tiers }
+    return { configId: config.id, tiers, label: config.label }
   })
 
-  ipcMain.handle('kpi:saveBranchQtyTiers', async (_e, token: string, branchId: number,
+  ipcMain.handle('kpi:saveBranchQtyTiers', async (_e, token: string, branchId: number, year: number, month: number,
     tiers: Array<{ thresholdPct: number; score: number }>
   ) => {
     const u = requireAuth(token)
     if (!['admin','hr'].includes(u.role)) throw new Error('Forbidden')
     const db = getDb()
     const branch = prepare(db, `SELECT code FROM branches WHERE id = ?`).get(branchId) as { code: string } | undefined
+    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
+    const monthEnd   = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
+    const monthLabel = `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][month - 1]} ${year}`
     let configId: number
     transaction(db, () => {
-      const existing = prepare(db, `SELECT id FROM kpi_tier_configs WHERE metric_id = 3 AND branch_id = ? AND is_active = 1 LIMIT 1`).get(branchId) as { id: number } | undefined
+      // Exact match on this month's bounds — editing the same month again updates in place;
+      // a different month always gets its own config, so past months are never rewritten.
+      const existing = prepare(db, `
+        SELECT id FROM kpi_tier_configs
+        WHERE metric_id = 3 AND branch_id = ? AND effective_from = ? AND effective_to = ?
+      `).get(branchId, monthStart, monthEnd) as { id: number } | undefined
       if (existing) {
         configId = existing.id
         prepare(db, `DELETE FROM kpi_tiers WHERE config_id = ?`).run(configId)
       } else {
         const result = prepare(db, `
           INSERT INTO kpi_tier_configs (metric_id, branch_id, label, effective_from, effective_to, is_active)
-          VALUES (3, ?, ?, '2000-01-01', NULL, 1)
-        `).run(branchId, `${branch?.code ?? 'Branch'} Qty Tiers`)
+          VALUES (3, ?, ?, ?, ?, 1)
+        `).run(branchId, `${branch?.code ?? 'Branch'} Qty Tiers — ${monthLabel}`, monthStart, monthEnd)
         configId = result.lastInsertRowid as number
       }
       tiers.sort((a, b) => b.thresholdPct - a.thresholdPct).forEach((t, i) => {

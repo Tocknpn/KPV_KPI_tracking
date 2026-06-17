@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 15
+const SCHEMA_VERSION = 17
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -422,6 +422,38 @@ export function applySchema(db: Database): boolean {
     const currentYm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
     db.prepare(`INSERT OR IGNORE INTO roster_months (year_month) VALUES (?)`).run(currentYm)
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '15')`).run()
+  }
+
+  if (currentVersion < 16) {
+    // Jewelry/Bar rates become month-scoped, same pattern as commission_configs and
+    // branch_kpi_monthly_targets. Without this, editing a rate today silently rewrote
+    // every past month's score too — there was no date stamp at all, just one eternal
+    // value per branch+type. Existing rows keep year_month NULL, meaning "standing rate"
+    // — they remain the fallback for any month that never got its own specific override.
+    try { db.run(`ALTER TABLE kpi_metric_type_rates ADD COLUMN year_month TEXT`) } catch { /* already exists */ }
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '16')`).run()
+  }
+
+  if (currentVersion < 17) {
+    // Reset the Global (branch_id IS NULL) qty tier fallback to its original sane values.
+    // It had gotten corrupted via the old Qty Tier Editor (since-removed) — tiers ended up
+    // with score == threshold_pct (e.g. "≥80 pcs scores ×80") instead of real multipliers.
+    const globalConfigs = db.exec(`SELECT id FROM kpi_tier_configs WHERE metric_id = 3 AND branch_id IS NULL`)
+    const configIds: number[] = globalConfigs[0]?.values.map(v => v[0] as number) ?? []
+    const tierA = [
+      { pct: 900, score: 5   }, { pct: 700, score: 4.5 },
+      { pct: 500, score: 4   }, { pct: 350, score: 3.5 },
+      { pct: 200, score: 3   }, { pct: 100, score: 2.5 },
+      { pct: 50,  score: 2   }, { pct: 1,   score: 1.5 },
+    ]
+    for (const configId of configIds) {
+      db.prepare(`DELETE FROM kpi_tiers WHERE config_id = ?`).run(configId)
+      tierA.forEach((t, i) => {
+        db.prepare(`INSERT INTO kpi_tiers (config_id, threshold_pct, score, tier_order) VALUES (?,?,?,?)`)
+          .run(configId, t.pct, t.score, i + 1)
+      })
+    }
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '17')`).run()
   }
 
   return false // Existing DB — no seeding needed
