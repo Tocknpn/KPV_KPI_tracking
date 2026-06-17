@@ -45,7 +45,8 @@ export function Sidebar() {
     role === 'admin'          ? 'Admin Portal'
     : role === 'top_manager'  ? 'Executive Portal'
     : role === 'branch_manager' ? 'Manager Portal'
-    : role === 'accountant'   ? 'Accountant Portal'
+    : role === 'accountant_officer' ? 'Accountant Officer Portal'
+    : role === 'accountant_manager' ? 'Accountant Manager Portal'
     : role === 'hr'           ? 'HR Portal'
     : 'Supervisor Portal'
 

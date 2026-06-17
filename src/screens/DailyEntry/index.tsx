@@ -30,7 +30,7 @@ export default function DailyEntry() {
   const [errorRows, setErrorRows] = useState<ErrorRow[]>([])
   const [showErrorModal, setShowErrorModal] = useState(false)
 
-  const effectiveBranchId = (user?.role === 'sales_sup' || user?.role === 'branch_manager' || user?.role === 'accountant' || user?.role === 'accountant_officer')
+  const effectiveBranchId = (user?.role === 'sales_sup' || user?.role === 'branch_manager' || user?.role === 'accountant_officer')
     ? (user.branchId ?? 1)
     : (selectedBranchId ?? branches[0]?.id ?? 1)
 

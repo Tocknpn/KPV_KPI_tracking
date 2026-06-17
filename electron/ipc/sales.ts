@@ -81,7 +81,7 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
   ) => {
     const user = requireAuth(token)
     // Server-side enforcement — never trust client-passed branchIds for scoped roles
-    const scopedRoles = ['sales_sup', 'branch_manager', 'accountant']
+    const scopedRoles = ['sales_sup', 'branch_manager', 'accountant_officer']
     if (scopedRoles.includes(user.role) && user.branch_id) {
       branchIds = [user.branch_id]
     }

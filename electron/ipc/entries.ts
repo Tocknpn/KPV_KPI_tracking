@@ -20,7 +20,7 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
       `).all(user.supervisor_id)
     }
 
-    const effectiveBranchId = (user.role === 'sales_sup' || user.role === 'branch_manager' || user.role === 'accountant')
+    const effectiveBranchId = (user.role === 'sales_sup' || user.role === 'branch_manager' || user.role === 'accountant_officer')
       ? user.branch_id
       : (branchId ?? null)
 

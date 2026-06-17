@@ -60,7 +60,8 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
   // ── Process daily upload (rep_code based matching) ────────────────────
   ipcMain.handle('upload:daily', async (_e, token: string, rows: DailyRow[], meta: UploadLogEntry) => {
     const user = requireAuth(token)
-    if (!['accountant_officer', 'accountant', 'admin'].includes(user.role)) throw new Error('Forbidden')
+    // Admin is intentionally excluded — Sales Upload is Accountant Officer's job per the role spec.
+    if (user.role !== 'accountant_officer') throw new Error('Forbidden')
     if (!rows.length) return { success: false, error: 'No rows to import.' }
 
     const results: UploadRowResult[] = []

@@ -1,5 +1,5 @@
 // ── Auth ──────────────────────────────────────────────────────────────────
-export type UserRole = 'admin' | 'sales_sup' | 'accountant' | 'accountant_officer' | 'accountant_manager' | 'branch_manager' | 'top_manager' | 'hr' | 'hr_support'
+export type UserRole = 'admin' | 'sales_sup' | 'accountant_officer' | 'accountant_manager' | 'branch_manager' | 'top_manager' | 'hr' | 'hr_support'
 
 export const MENU_KEYS = [
   'dashboard', 'daily_entry', 'kpi_report', 'sale_report', 'analytics',
@@ -25,7 +25,6 @@ export const MENU_LABELS: Record<MenuKey, string> = {
 export const ROLE_DEFAULTS: Record<UserRole, MenuKey[]> = {
   admin:              ['dashboard','sale_report','analytics','upload_history','upload_status','audit_log','user_management','settings'],
   sales_sup:          ['dashboard','kpi_report','sale_report','upload_status'],
-  accountant:         ['dashboard','daily_entry','sale_report','upload_history','upload_status'],
   accountant_officer: ['daily_entry','sale_report','upload_history','upload_status'],
   accountant_manager: ['sale_report','upload_history','upload_status','audit_log'],
   branch_manager:     ['dashboard','kpi_report','sale_report','upload_status'],
@@ -37,7 +36,6 @@ export const ROLE_DEFAULTS: Record<UserRole, MenuKey[]> = {
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin:              'Admin',
   sales_sup:          'Sales Supervisor',
-  accountant:         'Accountant (Legacy)',
   accountant_officer: 'Accountant Officer',
   accountant_manager: 'Accountant Manager',
   branch_manager:     'Branch Manager',

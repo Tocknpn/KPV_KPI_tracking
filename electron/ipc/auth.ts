@@ -9,7 +9,6 @@ import { pushUsersIfConfigured } from './sheets'
 const ROLE_DEFAULTS: Record<string, string[]> = {
   admin:              ['dashboard','sale_report','analytics','upload_history','upload_status','audit_log','user_management','settings'],
   sales_sup:          ['dashboard','kpi_report','sale_report','upload_status'],
-  accountant:         ['dashboard','daily_entry','sale_report','upload_history','upload_status'],
   accountant_officer: ['daily_entry','sale_report','upload_history','upload_status'],
   accountant_manager: ['sale_report','upload_history','upload_status','audit_log'],
   branch_manager:     ['dashboard','kpi_report','sale_report','upload_status'],

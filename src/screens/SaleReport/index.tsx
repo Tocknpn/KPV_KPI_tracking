@@ -278,7 +278,7 @@ export default function SaleReport() {
   const [data, setData]   = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const isBranchScoped = user?.role === 'sales_sup' || user?.role === 'branch_manager' || user?.role === 'accountant'
+  const isBranchScoped = user?.role === 'sales_sup' || user?.role === 'branch_manager' || user?.role === 'accountant_officer'
   const effectiveBranchIds: number[] = isBranchScoped ? [user.branchId ?? 1] : selectedBranchIds
 
   const scopeLabel = isBranchScoped
