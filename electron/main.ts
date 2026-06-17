@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
+import { writeFileSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase } from './db/connection'
 import { registerAllHandlers, startEmailScheduler } from './ipc/index'
@@ -60,17 +61,29 @@ app.whenReady().then(async () => {
   // by AV scanning the new binary before WASM can load (20-30s on fresh install).
   createWindow()
 
-  // Initialize SQLite (loads WASM + runs schema migrations — slow on first run)
-  await initDatabase()
+  try {
+    // Initialize SQLite (loads WASM + runs schema migrations — slow on first run)
+    await initDatabase()
 
-  // Register IPC handlers now that DB is ready
-  registerAllHandlers(ipcMain)
+    // Register IPC handlers now that DB is ready
+    registerAllHandlers(ipcMain)
 
-  isDbReady = true
+    isDbReady = true
 
-  // Signal renderer: DB is ready, hide loading spinner
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('app:ready')
+    // Signal renderer: DB is ready, hide loading spinner
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('app:ready')
+    }
+  } catch (e) {
+    // Without this, a thrown error here leaves the renderer spinning on "Starting up…"
+    // forever with no way to tell what broke — surface it instead of failing silently.
+    const message = e instanceof Error ? (e.stack ?? e.message) : String(e)
+    console.error('[startup] Database init failed:', message)
+    try { writeFileSync(join(app.getPath('userData'), 'startup-error.log'), `${new Date().toISOString()}\n${message}\n`) } catch { /* best effort */ }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('app:init-error', message)
+    }
+    return
   }
 
   // Auto-pull config + data from Google Sheets on startup (if credentials configured)

@@ -18,6 +18,7 @@ export default function App() {
   // DB initialises after window opens (WASM load can take 20-30s on fresh install
   // due to AV scanning the new binary). Block routes until main process signals ready.
   const [dbReady, setDbReady] = useState(false)
+  const [initError, setInitError] = useState<string | null>(null)
 
   useEffect(() => {
     // Poll once: if DB already ready (fast startup), resolve immediately.
@@ -26,7 +27,22 @@ export default function App() {
       if (ready) setDbReady(true)
       else window.api.onAppReady(() => setDbReady(true))
     })
+    window.api.onAppInitError((message: string) => setInitError(message))
   }, [])
+
+  if (initError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-error/10 to-error/5 gap-4 p-8">
+        <span className="material-symbols-outlined text-5xl text-error">error</span>
+        <p className="text-on-surface font-bold text-lg">SalesTrack Pro failed to start</p>
+        <p className="text-on-surface-variant text-sm text-center max-w-xl">
+          Something broke while loading the local database. The exact error is below — and saved to
+          <code className="mx-1 px-1.5 py-0.5 bg-surface-container rounded">startup-error.log</code> in the app's data folder.
+        </p>
+        <pre className="max-w-2xl max-h-64 overflow-auto bg-surface-container text-on-surface text-xs p-4 rounded-lg whitespace-pre-wrap">{initError}</pre>
+      </div>
+    )
+  }
 
   if (!dbReady) {
     return (

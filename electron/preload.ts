@@ -193,6 +193,7 @@ contextBridge.exposeInMainWorld('api', {
   // ── Startup lifecycle ─────────────────────────────────────────────────
   checkAppReady: () => ipcRenderer.invoke('app:isReady') as Promise<boolean>,
   onAppReady: (cb: () => void) => ipcRenderer.once('app:ready', cb),
+  onAppInitError: (cb: (message: string) => void) => ipcRenderer.once('app:init-error', (_e, message: string) => cb(message)),
 
   // ── Admin / Test Data ─────────────────────────────────────────────────
   seedTestData: (token: string) =>
