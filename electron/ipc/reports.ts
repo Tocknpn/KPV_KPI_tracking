@@ -67,51 +67,71 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       WHERE 1=1 ${bSql} AND entry_date >= ? AND entry_date <= ?
     `).get(...bParams, dateFrom, dateTo) as { total_jewelry: number; total_bar: number; total_qty: number }
 
-    // Per-rep scores with staff_type so qty tiers and B2B/B2C rates apply correctly
+    // Actuals driven by daily_entries.branch_id/staff_type (entry's own stamped values at
+    // time of sale) — not the rep's current roster assignment, so transfers don't lose/
+    // mis-price historical data. effectiveBranchIds scoping applies to de.branch_id directly.
     const repRows = prepare(db, `
-      SELECT s.branch_id, s.staff_type,
+      SELECT de.salesman_id, de.branch_id, de.staff_type,
         COALESCE(SUM(de.jewelry_weight_g),0) AS j,
         COALESCE(SUM(de.bar_weight_g),0)     AS b,
         COALESCE(SUM(de.quantity),0)          AS q
-      FROM salesmen s
-      LEFT JOIN daily_entries de ON de.salesman_id = s.id
-        AND de.entry_date >= ? AND de.entry_date <= ?
-      WHERE s.active = 1 ${sBranchSql}
-      GROUP BY s.id
-    `).all(dateFrom, dateTo, ...sBranchParams) as Array<{ branch_id: number; staff_type: string; j: number; b: number; q: number }>
+      FROM daily_entries de
+      WHERE 1=1 ${bSql} AND de.entry_date >= ? AND de.entry_date <= ?
+      GROUP BY de.salesman_id, de.branch_id, de.staff_type
+    `).all(...bParams, dateFrom, dateTo) as Array<{ salesman_id: number; branch_id: number; staff_type: string; j: number; b: number; q: number }>
 
-    let kpiScoreJewelry = 0, kpiScoreBar = 0, kpiScoreQty = 0, kpiPointTarget = 0
+    let kpiScoreJewelry = 0, kpiScoreBar = 0, kpiScoreQty = 0
     for (const r of repRows) {
       kpiScoreJewelry += computeKpiScore(db, 1, r.branch_id, r.j, 0, dateTo, r.staff_type).score
       kpiScoreBar     += computeKpiScore(db, 2, r.branch_id, r.b, 0, dateTo, r.staff_type).score
       kpiScoreQty     += computeKpiScore(db, 3, r.branch_id, r.q, 0, dateTo, r.staff_type).score
-      kpiPointTarget  += getBranchPointTarget(db, r.branch_id, year, month)
     }
     const kpiTotalScore = kpiScoreJewelry + kpiScoreBar + kpiScoreQty
+
+    // Target uses CURRENT active roster headcount per branch (who you're targeting going forward)
+    const headcountRows = prepare(db, `
+      SELECT branch_id, COUNT(*) AS cnt FROM salesmen WHERE active = 1 ${sBranchSql} GROUP BY branch_id
+    `).all(...sBranchParams) as Array<{ branch_id: number; cnt: number }>
+    const kpiPointTarget = headcountRows.reduce((sum, r) => sum + r.cnt * getBranchPointTarget(db, r.branch_id, year, month), 0)
     const kpiPct = kpiPointTarget > 0 ? (kpiTotalScore / kpiPointTarget) * 100 : 0
 
-    const rawPerformers = prepare(db, `
-      SELECT s.id, s.full_name, s.nickname, s.position, s.branch_id, s.staff_type,
-        COALESCE(SUM(de.jewelry_weight_g),0) AS total_jewelry,
-        COALESCE(SUM(de.bar_weight_g),0)     AS total_bar,
-        COALESCE(SUM(de.quantity),0)         AS total_qty
-      FROM salesmen s
-      LEFT JOIN daily_entries de ON de.salesman_id=s.id
-        AND de.entry_date >= ? AND de.entry_date <= ?
-      WHERE s.active=1 ${sBranchSql}
-      GROUP BY s.id
-      ORDER BY (COALESCE(SUM(de.jewelry_weight_g),0)+COALESCE(SUM(de.bar_weight_g),0)) DESC
-      LIMIT 10
-    `).all(dateFrom, dateTo, ...sBranchParams) as Array<{
-      id: number; full_name: string; nickname: string; position: string; branch_id: number; staff_type: string
-      total_jewelry: number; total_bar: number; total_qty: number
-    }>
+    // Top performers: combine a rep's entries across branches/types (in case of mid-period transfer)
+    const perRepRaw = prepare(db, `
+      SELECT de.salesman_id, de.branch_id, de.staff_type,
+        COALESCE(SUM(de.jewelry_weight_g),0) AS j,
+        COALESCE(SUM(de.bar_weight_g),0)     AS b,
+        COALESCE(SUM(de.quantity),0)          AS q
+      FROM daily_entries de
+      WHERE 1=1 ${bSql} AND de.entry_date >= ? AND de.entry_date <= ?
+      GROUP BY de.salesman_id, de.branch_id, de.staff_type
+    `).all(...bParams, dateFrom, dateTo) as Array<{ salesman_id: number; branch_id: number; staff_type: string; j: number; b: number; q: number }>
 
-    const topPerformers = rawPerformers.map(p => {
-      const js = computeKpiScore(db, 1, p.branch_id, p.total_jewelry, 0, dateTo, p.staff_type).score
-      const bs = computeKpiScore(db, 2, p.branch_id, p.total_bar,     0, dateTo, p.staff_type).score
-      const qs = computeKpiScore(db, 3, p.branch_id, p.total_qty,     0, dateTo, p.staff_type).score
-      const totalScore   = js + bs + qs
+    const perRepMap = new Map<number, { totalJewelry: number; totalBar: number; totalQty: number; score: number; branchId: number }>()
+    for (const r of perRepRaw) {
+      const js = computeKpiScore(db, 1, r.branch_id, r.j, 0, dateTo, r.staff_type).score
+      const bs = computeKpiScore(db, 2, r.branch_id, r.b, 0, dateTo, r.staff_type).score
+      const qs = computeKpiScore(db, 3, r.branch_id, r.q, 0, dateTo, r.staff_type).score
+      const prev = perRepMap.get(r.salesman_id) ?? { totalJewelry: 0, totalBar: 0, totalQty: 0, score: 0, branchId: r.branch_id }
+      perRepMap.set(r.salesman_id, {
+        totalJewelry: prev.totalJewelry + r.j, totalBar: prev.totalBar + r.b, totalQty: prev.totalQty + r.q,
+        score: prev.score + js + bs + qs, branchId: r.branch_id, // most-recent branch wins for target lookup
+      })
+    }
+
+    const repIds = [...perRepMap.keys()]
+    const repInfo = repIds.length
+      ? prepare(db, `SELECT id, full_name, nickname, position, branch_id FROM salesmen WHERE id IN (${repIds.map(() => '?').join(',')})`)
+          .all(...repIds) as Array<{ id: number; full_name: string; nickname: string; position: string; branch_id: number }>
+      : []
+    const repInfoMap = new Map(repInfo.map(r => [r.id, r]))
+
+    const topPerformers = [...perRepMap.entries()]
+      .sort((a, b) => (b[1].totalJewelry + b[1].totalBar) - (a[1].totalJewelry + a[1].totalBar))
+      .slice(0, 10)
+      .map(([salesmanId, agg]) => {
+      const info = repInfoMap.get(salesmanId)
+      const p = { id: salesmanId, full_name: info?.full_name ?? '—', nickname: info?.nickname ?? '', position: info?.position ?? '', branch_id: agg.branchId, total_jewelry: agg.totalJewelry, total_bar: agg.totalBar, total_qty: agg.totalQty }
+      const totalScore   = agg.score
       const branchTarget = getBranchPointTarget(db, p.branch_id, year, month)
       const pct          = branchTarget > 0 ? (totalScore / branchTarget) * 100 : 0
       return { ...p, kpi_total_score: totalScore, kpi_pct: pct }
@@ -209,18 +229,18 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     }>
 
     return branches.map(b => {
-      // Per-rep scoring so qty tiers and B2B/B2C rates apply at individual level (not inflated by aggregation)
+      // Actuals are driven by daily_entries.branch_id / staff_type — the entry's own stamped
+      // values at time of sale — NOT the rep's current roster assignment. A rep transferred
+      // branch or B2C/B2B mid-period must not lose/duplicate/misprice their past entries.
       const repRows = prepare(db, `
-        SELECT s.staff_type,
+        SELECT de.salesman_id, de.staff_type,
           COALESCE(SUM(de.jewelry_weight_g),0) AS actual_jewelry,
           COALESCE(SUM(de.bar_weight_g),0)     AS actual_bar,
           COALESCE(SUM(de.quantity),0)          AS actual_qty
-        FROM salesmen s
-        LEFT JOIN daily_entries de ON de.salesman_id = s.id
-          AND de.entry_date >= ? AND de.entry_date <= ?
-        WHERE s.branch_id = ? AND s.active = 1
-        GROUP BY s.id
-      `).all(dateFrom, dateTo, b.id) as Array<{ staff_type: string; actual_jewelry: number; actual_bar: number; actual_qty: number }>
+        FROM daily_entries de
+        WHERE de.branch_id = ? AND de.entry_date >= ? AND de.entry_date <= ?
+        GROUP BY de.salesman_id, de.staff_type
+      `).all(b.id, dateFrom, dateTo) as Array<{ salesman_id: number; staff_type: string; actual_jewelry: number; actual_bar: number; actual_qty: number }>
 
       let js = 0, bs = 0, qs = 0
       let totalJewelry = 0, totalBar = 0, totalQty = 0
@@ -234,7 +254,10 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       }
       const kpiTotalScore = js + bs + qs
 
-      const personCount     = repRows.length
+      // Headcount target uses the CURRENT roster (who you're targeting going forward),
+      // independent of who historically sold here
+      const personRow = prepare(db, `SELECT COUNT(*) AS cnt FROM salesmen WHERE branch_id = ? AND active = 1`).get(b.id) as { cnt: number }
+      const personCount     = personRow.cnt
       const perPersonTarget = getBranchPointTarget(db, b.id, year, month)
       const kpiPointTarget  = personCount * perPersonTarget
       const kpiPct          = kpiPointTarget > 0 ? (kpiTotalScore / kpiPointTarget) * 100 : 0

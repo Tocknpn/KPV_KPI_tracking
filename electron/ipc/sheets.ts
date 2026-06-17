@@ -407,10 +407,10 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     for (const row of entryRows) {
       const [entryDate, , repCode, , jewelryStr, barStr, qtyStr] = row as string[]
       if (!entryDate || !repCode) continue
-      const sm = prepare(db, `SELECT id, branch_id FROM salesmen WHERE rep_code = ? AND active = 1`).get(repCode) as { id: number; branch_id: number } | undefined
+      const sm = prepare(db, `SELECT id, branch_id, staff_type FROM salesmen WHERE rep_code = ? AND active = 1`).get(repCode) as { id: number; branch_id: number; staff_type: string } | undefined
       if (!sm) continue
       prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(sm.id, entryDate)
-      prepare(db, `INSERT INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at) VALUES (?,?,?,?,?,?,1,?)`).run(sm.id, sm.branch_id, entryDate, parseFloat(jewelryStr) || 0, parseFloat(barStr) || 0, parseInt(qtyStr) || 0, now)
+      prepare(db, `INSERT INTO daily_entries (salesman_id, branch_id, staff_type, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at) VALUES (?,?,?,?,?,?,?,1,?)`).run(sm.id, sm.branch_id, sm.staff_type, entryDate, parseFloat(jewelryStr) || 0, parseFloat(barStr) || 0, parseInt(qtyStr) || 0, now)
       counts.entries++
     }
 

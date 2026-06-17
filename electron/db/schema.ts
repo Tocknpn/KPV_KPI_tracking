@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 11
+const SCHEMA_VERSION = 12
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -57,6 +57,7 @@ const BASE_TABLES = `
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     salesman_id      INTEGER NOT NULL REFERENCES salesmen(id),
     branch_id        INTEGER NOT NULL REFERENCES branches(id),
+    staff_type       TEXT,
     entry_date       TEXT    NOT NULL,
     jewelry_weight_g REAL    NOT NULL DEFAULT 0,
     bar_weight_g     REAL    NOT NULL DEFAULT 0,
@@ -347,6 +348,23 @@ export function applySchema(db: Database): boolean {
     db.prepare(`UPDATE users SET role = 'sales_sup'  WHERE role = 'supervisor'`).run()
     db.prepare(`UPDATE users SET role = 'top_manager' WHERE role = 'executive'`).run()
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '11')`).run()
+  }
+
+  if (currentVersion < 12) {
+    // Stamp staff_type onto each entry at write time — a rep's type/branch can change
+    // month to month (transfer), and historical KPI scoring/target lookup must use
+    // what was true THEN, not the rep's current roster assignment.
+    try { db.run(`ALTER TABLE daily_entries ADD COLUMN staff_type TEXT`) } catch { /* already exists */ }
+    // Backfill: best-effort from current roster (can't recover true history for past transfers,
+    // but this is correct for anyone who hasn't moved branch/type since)
+    try {
+      db.run(`
+        UPDATE daily_entries
+        SET staff_type = (SELECT s.staff_type FROM salesmen s WHERE s.id = daily_entries.salesman_id)
+        WHERE staff_type IS NULL
+      `)
+    } catch { /* ignore */ }
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '12')`).run()
   }
 
   return false // Existing DB — no seeding needed

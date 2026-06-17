@@ -118,10 +118,12 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     requireAuth(token)
     const db = getDb()
     const now = new Date().toISOString()
-    // Use INSERT OR REPLACE (sql.js supports this)
+    // Stamp staff_type as it is RIGHT NOW — this entry's score must always use this,
+    // even if the rep's type/branch changes later (transfers must not rewrite history)
+    const sm = prepare(db, `SELECT staff_type FROM salesmen WHERE id = ?`).get(entry.salesmanId) as { staff_type: string } | undefined
     prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(entry.salesmanId, entry.date)
-    prepare(db, `INSERT INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at) VALUES (?,?,?,?,?,?,0,?)`)
-      .run(entry.salesmanId, entry.branchId, entry.date, entry.jewelryWeightG, entry.barWeightG, entry.quantity, now)
+    prepare(db, `INSERT INTO daily_entries (salesman_id, branch_id, staff_type, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at) VALUES (?,?,?,?,?,?,?,0,?)`)
+      .run(entry.salesmanId, entry.branchId, sm?.staff_type ?? 'b2c', entry.date, entry.jewelryWeightG, entry.barWeightG, entry.quantity, now)
     syncEntriesToCloudIfConfigured(db).catch(() => {})
     return { success: true }
   })
@@ -135,9 +137,10 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     const now = new Date().toISOString()
     transaction(db, () => {
       for (const e of entries) {
+        const sm = prepare(db, `SELECT staff_type FROM salesmen WHERE id = ?`).get(e.salesmanId) as { staff_type: string } | undefined
         prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(e.salesmanId, e.date)
-        prepare(db, `INSERT INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at) VALUES (?,?,?,?,?,?,0,?)`)
-          .run(e.salesmanId, e.branchId, e.date, e.jewelryWeightG, e.barWeightG, e.quantity, now)
+        prepare(db, `INSERT INTO daily_entries (salesman_id, branch_id, staff_type, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at) VALUES (?,?,?,?,?,?,?,0,?)`)
+          .run(e.salesmanId, e.branchId, sm?.staff_type ?? 'b2c', e.date, e.jewelryWeightG, e.barWeightG, e.quantity, now)
       }
     })
     syncEntriesToCloudIfConfigured(db).catch(() => {})

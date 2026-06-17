@@ -6,6 +6,7 @@ import { MonthDropdown, DateRangeBar } from '../../components/ui/PeriodFilter'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import { getDefaultDateRange } from '../../utils/dates'
+import { downloadCSV } from '../../utils/csv'
 import type { MonthlyReportRow, TeamPerformanceRow, ExecutiveBranchRow } from '../../types'
 import { RepProfileModal, SupProfileModal } from './IndividualProfileModal'
 
@@ -33,6 +34,16 @@ function fmt(n: number, d = 1) { return n.toLocaleString('en-US', { minimumFract
 function fmtPct(n: number) { return `${fmt(n, 1)}%` }
 function fmtPts(n: number) { return n.toLocaleString('en-US', { maximumFractionDigits: 0 }) }
 function fmtLak(n: number) { return n.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' ₭' }
+
+function toCSV(rows: Array<Record<string, string | number>>): string {
+  if (!rows.length) return ''
+  const headers = Object.keys(rows[0])
+  const esc = (v: string | number) => {
+    const s = String(v ?? '')
+    return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  return [headers.join(','), ...rows.map(r => headers.map(h => esc(r[h])).join(','))].join('\n')
+}
 
 function kpiColor(pct: number) {
   if (pct >= 80)  return 'text-green-600'
@@ -514,6 +525,64 @@ export default function Reports() {
   const execTotalPeople = filteredExecRows.reduce((s, r) => s + r.person_count, 0)
   const execRanked      = [...filteredExecRows].sort((a, b) => b.kpi_pct - a.kpi_pct)
 
+  // ── Export current tab's report results (not raw data) ─────────────────
+  function exportCurrentTab() {
+    let rows: Array<Record<string, string | number>> = []
+    let filename = 'report'
+
+    if (activeTab === 'company_overview') {
+      filename = `company_overview_${MONTHS[month - 1]}_${year}`
+      rows = execRanked.map(r => ({
+        Branch: r.branch_name, Code: r.code,
+        'KPI %': r.kpi_pct.toFixed(1), 'Est. Month End %': calcEomPct(r.kpi_pct).toFixed(1),
+        'Score (pts)': r.kpi_total_score, 'Target (pts)': r.kpi_point_target,
+        Staff: r.person_count, 'Target/Person': r.per_person_target,
+      }))
+    } else if (activeTab === 'supervisor') {
+      filename = `supervisor_performance_${MONTHS[month - 1]}_${year}`
+      rows = sortedSupRows.map(r => ({
+        Supervisor: r.full_name, Branch: r.branch_name, Type: r.staff_type,
+        Reps: r.rep_count, 'Team Score (pts)': r.team_total_score,
+        'Team KPI %': r.team_kpi_pct.toFixed(1), 'Est. Month End %': calcEomPct(r.team_kpi_pct).toFixed(1),
+        'Branch Target (pts)': r.branch_target,
+      }))
+    } else if (activeTab === 'performance') {
+      filename = `reps_performance_${MONTHS[month - 1]}_${year}`
+      rows = sorted.map(r => ({
+        Representative: r.full_name, Branch: r.branch_name, 'Team Sup': r.supervisor_name ?? '',
+        'Jewelry (Baht)': r.actual_jewelry, 'Bar (Baht)': r.actual_bar, 'Qty': r.actual_qty,
+        'KPI %': r.kpiScore.pct.toFixed(1), 'Est. Month End %': r.eomKpiPct.toFixed(1),
+      }))
+    } else if (activeTab === 'commission') {
+      if (commSubTab === 'reps') {
+        filename = `commission_reps_${MONTHS[month - 1]}_${year}`
+        rows = sortedCommReps.map(r => ({
+          Representative: r.full_name, Branch: r.branch_name, Type: r.staff_type,
+          'Team Sup': r.supervisor_name ?? '',
+          'Jewelry (Baht)': r.actual_jewelry, 'Bar (Baht)': r.actual_bar, 'Qty': r.actual_qty,
+          'Commission (LAK)': r.commission_lak,
+        }))
+      } else {
+        filename = `commission_supervisors_${MONTHS[month - 1]}_${year}`
+        rows = sortedCommSups.map(s => ({
+          Supervisor: s.full_name, Branch: s.branch_name, Type: s.staff_type,
+          'Team Commission (LAK)': s.team_commission_lak, 'Sup %': s.sup_pct,
+          'Supervisor Commission (LAK)': s.supervisor_commission_lak,
+        }))
+      }
+    } else if (activeTab === 'customer_type') {
+      filename = `customer_type_report_${MONTHS[month - 1]}_${year}`
+      rows = [...shownB2c, ...shownB2b].map(r => ({
+        Representative: r.full_name, Branch: r.branch_name, Type: r.staff_type,
+        'Jewelry (Baht)': r.actual_jewelry, 'Bar (Baht)': r.actual_bar, 'Qty': r.actual_qty,
+        'KPI %': r.kpiScore.pct.toFixed(1),
+      }))
+    }
+
+    if (!rows.length) return
+    downloadCSV(`${filename}.csv`, toCSV(rows))
+  }
+
   async function handlePullConfigs() {
     if (!token) return
     setCommPulling(true)
@@ -570,6 +639,11 @@ export default function Reports() {
         )}
         <div className="ml-auto flex items-center gap-3">
           <TypeMultiChips value={typeFilter} onChange={setTypeFilter} />
+          <button onClick={exportCurrentTab}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-container text-on-surface text-body-sm hover:bg-surface-container-high transition-colors border border-white/20">
+            <span className="material-symbols-outlined text-sm text-primary">download</span>
+            Export
+          </button>
         </div>
       </div>
 
@@ -603,27 +677,31 @@ export default function Reports() {
               <div className="relative z-10">
                 {/* Overall header */}
                 <div className="grid grid-cols-12 gap-8">
-                  {/* Left: KPI summary with gauge inline beside Est. month end */}
-                  <div className="col-span-12 lg:col-span-6">
-                    <span className="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-[10px] uppercase tracking-widest mb-3 inline-block">
-                      KPI Score — {MONTHS[month - 1]} {year}
-                    </span>
-                    {/* Current % → Est. month end + gauge, all inline */}
-                    <div className="flex items-center gap-3 mt-1">
-                      <h3 className="font-display-xl text-display-xl text-primary tabular-nums leading-none">{fmtPct(execOverallPct)}</h3>
-                      <span className="material-symbols-outlined text-on-surface-variant/40 text-3xl select-none">arrow_forward</span>
-                      <div>
-                        <p className={`font-bold text-[32px] tabular-nums leading-none ${calcEomPct(execOverallPct) >= 100 ? 'text-green-600' : 'text-tertiary'}`}>
-                          {fmtPct(calcEomPct(execOverallPct))}
-                        </p>
-                        <p className="text-[10px] text-on-surface-variant/60 mt-0.5 uppercase tracking-wide">est. month end</p>
+                  {/* Left: KPI summary text + gauge, vertically centered together */}
+                  <div className="col-span-12 lg:col-span-6 flex items-center gap-8">
+                    <div className="flex-1 min-w-0">
+                      <span className="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-[10px] uppercase tracking-widest mb-3 inline-block">
+                        KPI Score — {MONTHS[month - 1]} {year}
+                      </span>
+                      {/* Current % → Est. month end */}
+                      <div className="flex items-center gap-3 mt-1">
+                        <h3 className="font-display-xl text-display-xl text-primary tabular-nums leading-none">{fmtPct(execOverallPct)}</h3>
+                        <span className="material-symbols-outlined text-on-surface-variant/40 text-3xl select-none">arrow_forward</span>
+                        <div>
+                          <p className={`font-bold text-[32px] tabular-nums leading-none ${calcEomPct(execOverallPct) >= 100 ? 'text-green-600' : 'text-tertiary'}`}>
+                            {fmtPct(calcEomPct(execOverallPct))}
+                          </p>
+                          <p className="text-[10px] text-on-surface-variant/60 mt-0.5 uppercase tracking-wide">est. month end</p>
+                        </div>
                       </div>
-                      <RadialGauge pct={Math.min(execOverallPct, 100)} label="Overall KPI" size={120} color="#004f96" />
+                      <p className="text-on-surface-variant text-body-md mt-2">
+                        {fmtPts(execTotalScore)} of {fmtPts(execTotalTarget)} pts across {execTotalPeople} staff
+                      </p>
+                      <p className="text-[11px] text-on-surface-variant/50 mt-0.5 font-mono">{dateFrom} → {dateTo} · day {dayOfMonth} of {daysInMonth}</p>
                     </div>
-                    <p className="text-on-surface-variant text-body-md mt-2">
-                      {fmtPts(execTotalScore)} of {fmtPts(execTotalTarget)} pts across {execTotalPeople} staff
-                    </p>
-                    <p className="text-[11px] text-on-surface-variant/50 mt-0.5 font-mono">{dateFrom} → {dateTo} · day {dayOfMonth} of {daysInMonth}</p>
+                    <div className="shrink-0 flex items-center justify-center">
+                      <RadialGauge pct={Math.min(execOverallPct, 100)} label="Overall KPI" size={140} color="#004f96" />
+                    </div>
                   </div>
 
                   {/* Right: Branch breakdown, stacked rows */}

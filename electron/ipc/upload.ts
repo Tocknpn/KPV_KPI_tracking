@@ -70,8 +70,8 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
         const now = new Date().toISOString()
         for (let i = 0; i < rows.length; i++) {
           const r = rows[i]
-          const salesman = prepare(db, `SELECT id, branch_id FROM salesmen WHERE rep_code = ? AND active = 1`).get(r.repCode) as
-            { id: number; branch_id: number } | undefined
+          const salesman = prepare(db, `SELECT id, branch_id, staff_type FROM salesmen WHERE rep_code = ? AND active = 1`).get(r.repCode) as
+            { id: number; branch_id: number; staff_type: string } | undefined
           if (!salesman) {
             results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason: 'Rep code not found in roster' })
             errorRows.push({ row: i + 1, data: r, reason: 'Rep code not found in roster' })
@@ -80,9 +80,9 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
 
           prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(salesman.id, r.date)
           prepare(db, `
-            INSERT INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-          `).run(salesman.id, salesman.branch_id, r.date, r.jewelryWeightG, r.barWeightG, r.quantity, now)
+            INSERT INTO daily_entries (salesman_id, branch_id, staff_type, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+          `).run(salesman.id, salesman.branch_id, salesman.staff_type, r.date, r.jewelryWeightG, r.barWeightG, r.quantity, now)
           results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'ok' })
           sumJewelry += r.jewelryWeightG; sumBar += r.barWeightG; sumQty += r.quantity
           imported++

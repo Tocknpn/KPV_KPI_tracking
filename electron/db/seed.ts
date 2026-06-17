@@ -302,9 +302,9 @@ export function seedTestData(db: Database): void {
             const q = scaleVal(vals.qty,     ni, dateStr, true)
             if (j === 0 && b === 0 && q === 0) continue  // Sunday: closed, skip
             prepare(db,
-              `INSERT OR IGNORE INTO daily_entries (salesman_id, branch_id, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced)
-               VALUES (?,?,?,?,?,?,0)`
-            ).run(sid, branchId, dateStr, j, b, q)
+              `INSERT OR IGNORE INTO daily_entries (salesman_id, branch_id, staff_type, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced)
+               VALUES (?,?,?,?,?,?,?,0)`
+            ).run(sid, branchId, staffType, dateStr, j, b, q)
           }
         }
       }
