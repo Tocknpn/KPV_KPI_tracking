@@ -62,8 +62,16 @@ app.whenReady().then(async () => {
   createWindow()
 
   try {
-    // Initialize SQLite (loads WASM + runs schema migrations — slow on first run)
-    await initDatabase()
+    // Initialize SQLite (loads WASM + runs schema migrations — slow on first run).
+    // Bounded with a timeout — an unresolved promise (WASM load deadlock, a migration
+    // query stuck) throws nothing on its own, so without this the spinner hangs forever
+    // with zero signal of what's wrong, same as a thrown error but worse: invisible.
+    await Promise.race([
+      initDatabase(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error(
+        'Database initialization timed out after 45s. This usually means the SQLite WASM file failed to load (antivirus blocking it, or a corrupted DB file), or a schema migration query is stuck.'
+      )), 45000)),
+    ])
 
     // Register IPC handlers now that DB is ready
     registerAllHandlers(ipcMain)
