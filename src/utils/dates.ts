@@ -4,7 +4,7 @@ export function getDefaultDateRange(year: number, month: number): { dateFrom: st
   const pad = (n: number) => String(n).padStart(2, '0')
   const dateFrom = `${year}-${pad(month)}-01`
   const dateTo = isCurrentMonth
-    ? now.toISOString().split('T')[0]
+    ? `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
     : `${year}-${pad(month)}-${new Date(year, month, 0).getDate()}`
   return { dateFrom, dateTo }
 }

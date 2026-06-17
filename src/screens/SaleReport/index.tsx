@@ -32,7 +32,7 @@ interface TypeRow {
 }
 interface WeekRow { label: string; week_key: string; week_start: string; jewelry: number; bar: number; total: number; qty: number; entries: number }
 interface DayRow  { date: string; jewelry: number; bar: number; total: number; qty: number; entries: number }
-interface CalWeekRow { week_start: string; week_end: string; label: string; isCurrent: boolean; jewelry: number; bar: number; total: number; qty: number }
+interface CalWeekRow { week_start: string; week_end: string; label: string; week_num: number; isCurrent: boolean; jewelry: number; bar: number; total: number; qty: number }
 interface WowMetric { cur: number; prev: number; diff: number; pct: number | null }
 interface BranchWeekRow { label: string; week_start: string; isCurrent: boolean; [branchCode: string]: number | string | boolean }
 interface BranchWowRow { branch_id: number; branch_name: string; branch_code: string; cur: number; prev: number; diff: number; pct: number | null }
@@ -200,6 +200,53 @@ function MetricCard({
       {/* Sparkline */}
       {sparkData.length > 1 && (
         <Sparkline data={sparkData} dataKey={sparkKey} color={color} />
+      )}
+    </GlassCard>
+  )
+}
+
+// ── Compact week-over-week card (MTD-card style, single number + var chip) ─
+function WowMiniCard({
+  icon, label, color, weekNum, prevWeekNum,
+  cur, prev, pct, diff, chartData, dataKey,
+}: {
+  icon: string; label: string; color: string
+  weekNum: number; prevWeekNum: number
+  cur: number; prev: number; pct: number | null; diff: number
+  chartData: Array<Record<string, unknown>>; dataKey: string
+}) {
+  return (
+    <GlassCard elevated className="p-5 flex flex-col gap-0">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${color}20` }}>
+          <span className="material-symbols-outlined text-lg" style={{ color }}>{icon}</span>
+        </div>
+        <span className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wide font-bold truncate">{label}</span>
+      </div>
+
+      <p className="text-[10px] text-on-surface-variant uppercase mb-1 font-semibold tracking-wider" style={{ color }}>Week {weekNum}</p>
+      <div className="flex items-baseline gap-2">
+        <span className="font-display-xl text-[26px] font-bold text-on-surface tabular-nums">{fmt(cur, 1)}</span>
+        <span className="text-[11px] text-on-surface-variant">Baht</span>
+      </div>
+      <div className="flex items-center gap-2 mt-1 mb-3">
+        <VarChip pct={pct} />
+        <span className="text-[10px] text-on-surface-variant">vs Week {prevWeekNum} ({fmt(prev, 1)})</span>
+      </div>
+
+      {chartData.length > 1 && (
+        <div className="h-24">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+              <XAxis dataKey="label" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 8 }} axisLine={false} tickLine={false} />
+              <Tooltip formatter={(v: number) => [fmt(v, 1) + ' Baht', label]} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+              <Bar dataKey={dataKey} radius={[2,2,0,0]} maxBarSize={20}>
+                {chartData.map((wk, i) => <Cell key={i} fill={wk.isCurrent ? color : `${color}66`} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       )}
     </GlassCard>
   )
@@ -403,88 +450,43 @@ export default function SaleReport() {
                   This week ({d.weeklyTrendCal[d.weeklyTrendCal.length - 1].label}) vs last week ({d.weeklyTrendCal[d.weeklyTrendCal.length - 2].label}) · Sun–Sat calendar weeks
                 </p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-card-gap mb-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-card-gap mb-8">
                 {([
                   { key: 'jewelry' as const, label: 'Jewelry Weight', color: '#004f96', icon: 'diamond' },
                   { key: 'bar'     as const, label: 'Bar Weight',     color: '#9c6e1b', icon: 'payments' },
                   { key: 'total'   as const, label: 'Total Weight',   color: '#17575c', icon: 'scale' },
                 ]).map(({ key, label, color, icon }) => {
                   const w = d.companyWow[key]
+                  const curWk  = d.weeklyTrendCal[d.weeklyTrendCal.length - 1]
+                  const prevWk = d.weeklyTrendCal[d.weeklyTrendCal.length - 2]
                   return (
-                    <GlassCard key={key} elevated className="p-6">
-                      <div className="flex items-center gap-2 mb-4">
-                        <span className="material-symbols-outlined" style={{ color }}>{icon}</span>
-                        <h4 className="font-headline-md text-headline-md text-on-surface">{label}</h4>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                        <div className="bg-surface-container/40 rounded-xl p-3">
-                          <p className="text-[9px] text-on-surface-variant uppercase font-bold mb-1">This Week</p>
-                          <p className="font-bold text-[18px] tabular-nums" style={{ color }}>{fmt(w.cur, 1)}</p>
-                        </div>
-                        <div className="bg-surface-container/40 rounded-xl p-3">
-                          <p className="text-[9px] text-on-surface-variant uppercase font-bold mb-1">Last Week</p>
-                          <p className="font-bold text-[18px] tabular-nums text-on-surface-variant">{fmt(w.prev, 1)}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 mb-4">
-                        <VarChip pct={w.pct} />
-                        <span className="text-[10px] text-on-surface-variant">({w.diff >= 0 ? '+' : ''}{fmt(w.diff, 1)} Baht WoW)</span>
-                      </div>
-                      <div className="h-24">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={d.weeklyTrendCal} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-                            <XAxis dataKey="label" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
-                            <YAxis tick={{ fontSize: 8 }} axisLine={false} tickLine={false} />
-                            <Tooltip formatter={(v: number) => [fmt(v, 1) + ' Baht', label]} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-                            <Bar dataKey={key} radius={[2,2,0,0]} maxBarSize={20}>
-                              {d.weeklyTrendCal.map((wk, i) => <Cell key={i} fill={wk.isCurrent ? color : `${color}66`} />)}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </GlassCard>
+                    <WowMiniCard key={key} icon={icon} label={label} color={color}
+                      weekNum={curWk.week_num} prevWeekNum={prevWk.week_num}
+                      cur={w.cur} prev={w.prev} pct={w.pct} diff={w.diff}
+                      chartData={d.weeklyTrendCal} dataKey={key} />
                   )
                 })}
               </div>
 
-              {/* Branch WoW — clustered trend */}
-              {d.branchWow.length > 0 && (
-                <GlassCard elevated className="p-6 mb-8">
-                  <h4 className="font-headline-md text-headline-md text-on-surface mb-1">Branch Total Weight — Weekly Trend</h4>
-                  <p className="text-body-sm text-on-surface-variant mb-4">Sun–Sat weeks · current + previous 5 weeks</p>
-                  <div className="h-64 mb-4">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={d.weeklyByBranch} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e0e0" />
-                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                        <YAxis tick={{ fontSize: 10 }} tickFormatter={fmtInt} />
-                        <Tooltip formatter={(v: number, name: string) => [fmt(v, 1) + ' Baht', name]} contentStyle={{ borderRadius: 10, fontSize: 12 }} />
-                        <Legend iconType="circle" iconSize={8} />
-                        {d.branchWow.map((b, i) => (
-                          <Bar key={b.branch_code} dataKey={b.branch_code} name={b.branch_name}
-                            fill={BRANCH_COLORS[i % BRANCH_COLORS.length]} radius={[3,3,0,0]} maxBarSize={24} />
-                        ))}
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {d.branchWow.map((b, i) => (
-                      <div key={b.branch_id} className="rounded-xl p-3 bg-surface-container/40">
-                        <div className="flex items-center gap-2 mb-1">
-                          <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0"
-                            style={{ background: BRANCH_COLORS[i % BRANCH_COLORS.length] }}>{b.branch_code}</div>
-                          <p className="text-[11px] font-semibold text-on-surface truncate">{b.branch_name}</p>
-                        </div>
-                        <p className="font-bold text-[15px] tabular-nums">{fmt(b.cur, 1)} Baht</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <VarChip pct={b.pct} compact />
-                          <span className="text-[10px] text-on-surface-variant">vs {fmt(b.prev, 1)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </GlassCard>
-              )}
+              {/* Branch WoW — one card per branch, same compact style */}
+              {d.branchWow.length > 0 && (<>
+                <div className="mb-3">
+                  <h4 className="font-headline-md text-headline-md text-on-surface">Branch Total Weight — Week-over-Week</h4>
+                  <p className="text-body-sm text-on-surface-variant">Sun–Sat weeks · current + previous 5 weeks</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-card-gap mb-8">
+                  {d.branchWow.map((b, i) => {
+                    const curWk  = d.weeklyTrendCal[d.weeklyTrendCal.length - 1]
+                    const prevWk = d.weeklyTrendCal[d.weeklyTrendCal.length - 2]
+                    return (
+                      <WowMiniCard key={b.branch_id} icon="storefront" label={b.branch_name} color={BRANCH_COLORS[i % BRANCH_COLORS.length]}
+                        weekNum={curWk.week_num} prevWeekNum={prevWk.week_num}
+                        cur={b.cur} prev={b.prev} pct={b.pct} diff={b.diff}
+                        chartData={d.weeklyByBranch} dataKey={b.branch_code} />
+                    )
+                  })}
+                </div>
+              </>)}
             </>)}
           </>)}
 

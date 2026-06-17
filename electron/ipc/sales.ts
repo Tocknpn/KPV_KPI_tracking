@@ -3,10 +3,16 @@ import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
 import { requireAuth } from './auth'
 
+// Local calendar date (not UTC) — toISOString() shifts the date across timezone offsets
+function toLocalISODate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + 'T00:00:00')
   d.setDate(d.getDate() + days)
-  return d.toISOString().split('T')[0]
+  return toLocalISODate(d)
 }
 
 function daysInMonthOf(year: number, month: number): number {
@@ -17,12 +23,20 @@ function daysInMonthOf(year: number, month: number): number {
 function startOfWeekSun(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
   d.setDate(d.getDate() - d.getDay())
-  return d.toISOString().split('T')[0]
+  return toLocalISODate(d)
 }
 
 function weekLabel(start: string): string {
   const d = new Date(start + 'T00:00:00')
   return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getDate()}`
+}
+
+// Sun-start week number of the year (1-based)
+function weekNumberSun(dateStr: string): number {
+  const d    = new Date(dateStr + 'T00:00:00')
+  const jan1 = new Date(d.getFullYear(), 0, 1)
+  const dayOfYear = Math.floor((d.getTime() - jan1.getTime()) / 86400000)
+  return Math.floor((dayOfYear + jan1.getDay()) / 7) + 1
 }
 
 function buildFilters(branchIds: number[], staffType?: string): { branchSql: string; typeSql: string; params: unknown[] } {
@@ -270,6 +284,7 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
       return {
         week_start: w.start, week_end: w.end,
         label: weekLabel(w.start),
+        week_num: weekNumberSun(w.start),
         isCurrent: i === calWeeks.length - 1,
         jewelry: sum.jewelry, bar: sum.bar, total: sum.total, qty: sum.qty,
       }
