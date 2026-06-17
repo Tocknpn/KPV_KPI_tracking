@@ -133,9 +133,8 @@ function RepModal({ mode, initial, branches, supervisors, onSave, onClose }: Rep
 }
 
 // ── Roster upload modal — file drops here, auto-syncs to Sheets on success ──
-function RosterUploadModal({ token, defaultEffectiveDate, onDone, onClose }: {
+function RosterUploadModal({ token, onDone, onClose }: {
   token: string
-  defaultEffectiveDate: string
   onDone: (msg: string) => void
   onClose: () => void
 }) {
@@ -144,7 +143,6 @@ function RosterUploadModal({ token, defaultEffectiveDate, onDone, onClose }: {
   const [result, setResult]   = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
-  const [effectiveDate, setEffectiveDate] = useState(defaultEffectiveDate)
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function pickFile(f: File) {
@@ -160,9 +158,7 @@ function RosterUploadModal({ token, defaultEffectiveDate, onDone, onClose }: {
       const { rows, errors: parseErrors } = validateRosterRows(parsed)
       if (parseErrors.length) setErrors(parseErrors)
       if (!rows.length) { setUploading(false); return }
-      // Apply the chosen Effective_Month to rows that didn't specify their own date
-      const rowsWithDate = rows.map(r => ({ ...r, effectiveDate: r.effectiveDate ?? effectiveDate }))
-      const res = await window.api.uploadRoster(token, rowsWithDate)
+      const res = await window.api.uploadRoster(token, rows)
       if (res.success) {
         setResult(`Created: ${res.created} · Updated: ${res.updated}${res.skipped ? ` · Skipped: ${res.skipped}` : ''}`)
         onDone(`Roster uploaded — created ${res.created}, updated ${res.updated}.`)
@@ -182,14 +178,10 @@ function RosterUploadModal({ token, defaultEffectiveDate, onDone, onClose }: {
           </button>
         </div>
         <p className="text-body-sm text-on-surface-variant mb-3">
-          Matches by Rep Code — existing reps update, new codes create new reps. Columns: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type, Effective_Date (optional, YYYY-MM-DD — overrides the month picked below per row).
+          Matches by Rep Code — existing reps update, new codes create new reps. Columns: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type, Effective_Date.
+          <strong> Effective_Date is required (YYYY-MM-DD)</strong> — it's the only thing that decides which month a row counts for, there is no month picker in the app.
           KPI point target is not part of the roster — it is configured in KPI Settings.
         </p>
-        <div className="mb-4">
-          <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">Effective Month (applies to rows without their own Effective_Date)</label>
-          <input type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value)}
-            className="bg-surface-container-low border-b-2 border-secondary px-3 py-2 text-body-sm outline-none" />
-        </div>
 
         {!file ? (
           <div
@@ -421,7 +413,6 @@ export default function Roster() {
       {showUpload && token && (
         <RosterUploadModal
           token={token}
-          defaultEffectiveDate={`${year}-${String(month).padStart(2, '0')}-01`}
           onDone={msg => { showToast(msg); loadRoster() }}
           onClose={() => setShowUpload(false)}
         />

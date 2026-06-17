@@ -16,6 +16,7 @@ const TABS = {
   QTY_TIERS:       'QtyTiers',
   ROSTER:          'Roster',
   ROSTER_HISTORY:  'RosterHistory',
+  ROSTER_MONTHS:   'RosterMonths',
   COMMISSION:      'CommissionConfig',
   USERS:           'Users',
   SUPERVISORS:     'Supervisors',
@@ -57,22 +58,18 @@ async function writeTab(
 
 // ── Individual push functions ─────────────────────────────────────────────────
 
-// Friendly labels for app_settings keys — readable in Sheets without needing to know the schema
+// Only genuinely-used app_settings keys go here. kpi_total_base/kpi_total_weight and the
+// global kpi_metrics.points_per_unit defaults were dropped — they're permanently frozen
+// leftovers from before rates became branch+type scoped (see KPIRates tab) and no UI
+// writes them anymore, so showing them here was actively misleading.
 const SETTINGS_LABELS: Record<string, string> = {
-  sup_kpi_pct:       'Default Supervisor Commission Share (%)',
-  kpi_total_base:    'KPI Total Formula — Base',
-  kpi_total_weight:  'KPI Total Formula — Weight',
+  sup_kpi_pct: 'Default Supervisor Commission Share (%)',
 }
 
 async function pushSettings(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
-  const appRows = (prepare(db, `SELECT key, value FROM app_settings WHERE key IN ('sup_kpi_pct','kpi_total_base','kpi_total_weight') ORDER BY key`).all() as Array<{ key: string; value: string }>)
+  const rows = (prepare(db, `SELECT key, value FROM app_settings WHERE key IN ('sup_kpi_pct')`).all() as Array<{ key: string; value: string }>)
     .map(r => [SETTINGS_LABELS[r.key] ?? r.key, r.value])
-  const metricRows = (prepare(db, `SELECT id, points_per_unit FROM kpi_metrics WHERE id IN (1, 2, 3)`).all() as Array<{ id: number; points_per_unit: number }>)
-    .map(r => {
-      const label = r.id === 1 ? 'Jewelry — Default Points per Gram' : r.id === 2 ? 'Bar — Default Points per Gram' : 'Qty — Default Points per Unit'
-      return [label, String(r.points_per_unit)]
-    })
-  await writeTab(sheets, spreadsheetId, TABS.SETTINGS, ['Setting', 'Value'], [...appRows, ...metricRows])
+  await writeTab(sheets, spreadsheetId, TABS.SETTINGS, ['Setting', 'Value'], rows)
 }
 
 async function pushBranches(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
@@ -133,6 +130,12 @@ async function pushRoster(db: Database, sheets: ReturnType<typeof google.sheets>
   `).all() as Array<{ rep_code: string; branch_code: string; staff_type: string; supervisor_name: string | null; active: number; changed_at: string }>)
     .map(r => [r.rep_code, r.branch_code, r.staff_type, r.supervisor_name ?? '', r.active, r.changed_at])
   await writeTab(sheets, spreadsheetId, TABS.ROSTER_HISTORY, ['rep_code', 'branch_code', 'staff_type', 'supervisor_name', 'active', 'changed_at'], historyRows)
+
+  // Which months have an explicit roster (upload/edit/confirm) — the gate behind "no
+  // roster = no people = no KPI for that month". Months not listed here are empty in-app.
+  const monthRows = (prepare(db, `SELECT year_month, published_at FROM roster_months ORDER BY year_month`).all() as Array<{ year_month: string; published_at: string }>)
+    .map(r => [readableYearMonth(r.year_month), r.published_at])
+  await writeTab(sheets, spreadsheetId, TABS.ROSTER_MONTHS, ['Month', 'Published At'], monthRows)
 }
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']

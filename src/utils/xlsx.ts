@@ -130,16 +130,17 @@ interface RosterStub {
 }
 
 // KPI point target is not part of the roster — it is always looked up from HR KPI Setting.
-// Effective_Date is optional (YYYY-MM-DD): when a transfer/type change should take effect.
-// Leave blank to apply immediately at upload time.
+// Effective_Date (REQUIRED, YYYY-MM-DD) is the month this row counts for — there is no
+// month picker in the app; the file is the only source of truth for which month a row belongs to.
 export function generateRosterTemplateXLSX(salesmen: RosterStub[]): Uint8Array {
-  const headers = ['Rep_Code', 'Full_Name', 'Nickname', 'Branch_Code', 'Team_Sup_Name', 'Staff_Type', 'Effective_Date']
+  const today = new Date().toISOString().split('T')[0]
+  const headers = ['Rep_Code', 'Full_Name', 'Nickname', 'Branch_Code', 'Team_Sup_Name', 'Staff_Type', 'Effective_Date (required)']
   const dataRows = salesmen.length > 0
     ? salesmen.map(s => [
         s.rep_code ?? '', s.full_name, s.nickname ?? '', s.branch_code,
-        s.supervisor_name ?? '', s.staff_type ?? 'b2c', '',
+        s.supervisor_name ?? '', s.staff_type ?? 'b2c', today,
       ])
-    : [['', '', '', '', '', 'b2c', '']]
+    : [['', '', '', '', '', 'b2c', today]]
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows])
   ws['!cols'] = [
