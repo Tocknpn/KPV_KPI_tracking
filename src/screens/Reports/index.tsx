@@ -602,12 +602,13 @@ export default function Reports() {
               <div className="absolute -right-16 -top-16 w-64 h-64 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/10 transition-colors duration-700" />
               <div className="relative z-10">
                 {/* Overall header */}
-                <div className="flex justify-between items-center mb-6">
-                  <div>
+                <div className="grid grid-cols-12 gap-8">
+                  {/* Left: KPI summary with gauge inline beside Est. month end */}
+                  <div className="col-span-12 lg:col-span-6">
                     <span className="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-[10px] uppercase tracking-widest mb-3 inline-block">
                       KPI Score — {MONTHS[month - 1]} {year}
                     </span>
-                    {/* Current % → Est. month end inline */}
+                    {/* Current % → Est. month end + gauge, all inline */}
                     <div className="flex items-center gap-3 mt-1">
                       <h3 className="font-display-xl text-display-xl text-primary tabular-nums leading-none">{fmtPct(execOverallPct)}</h3>
                       <span className="material-symbols-outlined text-on-surface-variant/40 text-3xl select-none">arrow_forward</span>
@@ -617,48 +618,48 @@ export default function Reports() {
                         </p>
                         <p className="text-[10px] text-on-surface-variant/60 mt-0.5 uppercase tracking-wide">est. month end</p>
                       </div>
+                      <RadialGauge pct={Math.min(execOverallPct, 100)} label="Overall KPI" size={120} color="#004f96" />
                     </div>
                     <p className="text-on-surface-variant text-body-md mt-2">
                       {fmtPts(execTotalScore)} of {fmtPts(execTotalTarget)} pts across {execTotalPeople} staff
                     </p>
                     <p className="text-[11px] text-on-surface-variant/50 mt-0.5 font-mono">{dateFrom} → {dateTo} · day {dayOfMonth} of {daysInMonth}</p>
                   </div>
-                  <RadialGauge pct={Math.min(execOverallPct, 100)} label="Overall KPI" size={180} color="#004f96" />
-                </div>
 
-                {/* Branch grid */}
-                <div className={`grid gap-6 pt-6 border-t border-outline-variant/30 grid-cols-${Math.min(execRanked.length, 4)}`}>
-                  {execRanked.map(r => {
-                    const pct    = Math.min(r.kpi_pct, 100)
-                    const eom    = calcEomPct(r.kpi_pct)
-                    const eomCap = Math.min(eom, 100)
-                    const color  = kpiHex(r.kpi_pct)
-                    return (
-                      <div key={r.branch_id}>
-                        <div className="flex items-center gap-2 mb-2">
+                  {/* Right: Branch breakdown, stacked rows */}
+                  <div className="col-span-12 lg:col-span-6 lg:border-l lg:border-outline-variant/30 lg:pl-8 flex flex-col gap-3 justify-center">
+                    {execRanked.map(r => {
+                      const pct    = Math.min(r.kpi_pct, 100)
+                      const eom    = calcEomPct(r.kpi_pct)
+                      const eomCap = Math.min(eom, 100)
+                      const color  = kpiHex(r.kpi_pct)
+                      return (
+                        <div key={r.branch_id} className="flex items-center gap-4 py-1.5 border-b border-outline-variant/15 last:border-b-0">
                           <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0" style={{ background: color }}>
                             {r.code}
                           </div>
-                          <p className="font-medium text-on-surface text-[13px]">{r.branch_name}</p>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline justify-between gap-2 mb-1">
+                              <p className="font-medium text-on-surface text-[13px] truncate">{r.branch_name}</p>
+                              <span className="text-[11px] whitespace-nowrap">
+                                <span className="font-bold tabular-nums" style={{ color }}>{fmtPct(r.kpi_pct)}</span>
+                                <span className="text-on-surface-variant"> → <span className={eom >= 100 ? 'text-green-600 font-bold' : 'text-tertiary font-semibold'}>{fmtPct(eom)}</span> est.</span>
+                              </span>
+                            </div>
+                            <div className="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden mb-0.5">
+                              <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
+                            </div>
+                            <div className="h-1 w-full bg-surface-container-highest rounded-full overflow-hidden mb-1">
+                              <div className="h-full rounded-full transition-all duration-700 opacity-40" style={{ width: `${eomCap}%`, background: color }} />
+                            </div>
+                            <p className="text-[10px] text-on-surface-variant">
+                              {fmtPts(r.kpi_total_score)} pts · {r.person_count} staff · Target: {fmtPts(r.per_person_target)} pts/person
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex items-baseline gap-2 mb-1.5">
-                          <span className="font-bold text-[20px] tabular-nums" style={{ color }}>{fmtPct(r.kpi_pct)}</span>
-                          <span className="text-[11px] text-on-surface-variant">
-                            → <span className={eom >= 100 ? 'text-green-600 font-bold' : 'text-tertiary font-semibold'}>{fmtPct(eom)}</span> est.
-                          </span>
-                        </div>
-                        <div className="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden mb-0.5">
-                          <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
-                        </div>
-                        <div className="h-1 w-full bg-surface-container-highest rounded-full overflow-hidden mb-1">
-                          <div className="h-full rounded-full transition-all duration-700 opacity-40" style={{ width: `${eomCap}%`, background: color }} />
-                        </div>
-                        <p className="text-[10px] text-on-surface-variant">
-                          {fmtPts(r.kpi_total_score)} pts · {r.person_count} staff · Target: {fmtPts(r.per_person_target)} pts/person
-                        </p>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
             </GlassCard>

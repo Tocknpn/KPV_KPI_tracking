@@ -32,13 +32,23 @@ interface TypeRow {
 }
 interface WeekRow { label: string; week_key: string; week_start: string; jewelry: number; bar: number; total: number; qty: number; entries: number }
 interface DayRow  { date: string; jewelry: number; bar: number; total: number; qty: number; entries: number }
+interface CalWeekRow { week_start: string; week_end: string; label: string; isCurrent: boolean; jewelry: number; bar: number; total: number; qty: number }
+interface WowMetric { cur: number; prev: number; diff: number; pct: number | null }
+interface BranchWeekRow { label: string; week_start: string; isCurrent: boolean; [branchCode: string]: number | string | boolean }
+interface BranchWowRow { branch_id: number; branch_name: string; branch_code: string; cur: number; prev: number; diff: number; pct: number | null }
 interface ReportData {
   current: SalesPeriod; prevPeriod: SalesPeriod
   sameLastMonth: SalesPeriod; fullLastMonth: SalesPeriod; estMonthEnd: SalesPeriod
   byBranch: BranchRow[]; byType: TypeRow[]
   weeklyTrend: WeekRow[]; dailyTrend: DayRow[]
+  weeklyTrendCal: CalWeekRow[]
+  companyWow: { jewelry: WowMetric; bar: WowMetric; total: WowMetric }
+  weeklyByBranch: BranchWeekRow[]
+  branchWow: BranchWowRow[]
   meta: { daysInMonth: number; dayOfMonth: number; daysRemaining: number }
 }
+
+const BRANCH_COLORS = ['#004f96', '#9c6e1b', '#6750a4', '#17575c']
 
 type SaleTab = 'overview' | 'branch' | 'type' | 'trends'
 
@@ -385,58 +395,97 @@ export default function SaleReport() {
               ))}
             </div>
 
-            {/* Jewelry vs Bar breakdown */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-card-gap">
-              {[
-                { label: 'Jewelry Activity', key: 'jewelry' as const, color: '#004f96', icon: 'diamond' },
-                { label: 'Bar Activity',     key: 'bar'     as const, color: '#9c6e1b', icon: 'payments' },
-              ].map(({ label, key, color, icon }) => {
-                const cur  = d.current[key]
-                const prev = d.sameLastMonth[key]
-                const eom  = d.estMonthEnd[key]
-                const flm  = d.fullLastMonth[key]
-                const mtdV = prev > 0 ? ((cur - prev) / prev) * 100 : null
-                const eomV = flm  > 0 ? ((eom - flm)  / flm)  * 100 : null
-                return (
-                  <GlassCard key={key} elevated className="p-6">
-                    <div className="flex items-center gap-2 mb-4">
-                      <span className="material-symbols-outlined" style={{ color }}>{icon}</span>
-                      <h4 className="font-headline-md text-headline-md text-on-surface">{label}</h4>
-                    </div>
-                    <div className="grid grid-cols-3 gap-4 mb-4">
-                      {[
-                        { l: 'MTD',          v: fmt(cur, 1) + ' Baht',    sub: <VarChip pct={mtdV} compact /> },
-                        { l: 'Est. Month End', v: fmt(eom, 1) + ' Baht',  sub: <VarChip pct={eomV} compact /> },
-                        { l: `vs ${lmLabel} Full`, v: fmt(flm, 1) + ' Baht', sub: null },
-                      ].map(item => (
-                        <div key={item.l} className="bg-surface-container/40 rounded-xl p-3">
-                          <p className="text-[9px] text-on-surface-variant uppercase font-bold mb-1">{item.l}</p>
-                          <p className="font-bold text-body-sm tabular-nums" style={{ color }}>{item.v}</p>
-                          {item.sub && <div className="mt-0.5">{item.sub}</div>}
+            {/* Week-over-Week (Sun–Sat calendar weeks) */}
+            {d.weeklyTrendCal.length >= 2 && (<>
+              <div className="mb-3">
+                <h4 className="font-headline-md text-headline-md text-on-surface">Week-over-Week</h4>
+                <p className="text-body-sm text-on-surface-variant">
+                  This week ({d.weeklyTrendCal[d.weeklyTrendCal.length - 1].label}) vs last week ({d.weeklyTrendCal[d.weeklyTrendCal.length - 2].label}) · Sun–Sat calendar weeks
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-card-gap mb-8">
+                {([
+                  { key: 'jewelry' as const, label: 'Jewelry Weight', color: '#004f96', icon: 'diamond' },
+                  { key: 'bar'     as const, label: 'Bar Weight',     color: '#9c6e1b', icon: 'payments' },
+                  { key: 'total'   as const, label: 'Total Weight',   color: '#17575c', icon: 'scale' },
+                ]).map(({ key, label, color, icon }) => {
+                  const w = d.companyWow[key]
+                  return (
+                    <GlassCard key={key} elevated className="p-6">
+                      <div className="flex items-center gap-2 mb-4">
+                        <span className="material-symbols-outlined" style={{ color }}>{icon}</span>
+                        <h4 className="font-headline-md text-headline-md text-on-surface">{label}</h4>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div className="bg-surface-container/40 rounded-xl p-3">
+                          <p className="text-[9px] text-on-surface-variant uppercase font-bold mb-1">This Week</p>
+                          <p className="font-bold text-[18px] tabular-nums" style={{ color }}>{fmt(w.cur, 1)}</p>
                         </div>
-                      ))}
-                    </div>
-                    {/* Mini weekly bar chart */}
-                    {d.weeklyTrend.length > 1 && (
+                        <div className="bg-surface-container/40 rounded-xl p-3">
+                          <p className="text-[9px] text-on-surface-variant uppercase font-bold mb-1">Last Week</p>
+                          <p className="font-bold text-[18px] tabular-nums text-on-surface-variant">{fmt(w.prev, 1)}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <VarChip pct={w.pct} />
+                        <span className="text-[10px] text-on-surface-variant">({w.diff >= 0 ? '+' : ''}{fmt(w.diff, 1)} Baht WoW)</span>
+                      </div>
                       <div className="h-24">
                         <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={d.weeklyTrend} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                          <BarChart data={d.weeklyTrendCal} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
                             <XAxis dataKey="label" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
                             <YAxis tick={{ fontSize: 8 }} axisLine={false} tickLine={false} />
                             <Tooltip formatter={(v: number) => [fmt(v, 1) + ' Baht', label]} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
                             <Bar dataKey={key} radius={[2,2,0,0]} maxBarSize={20}>
-                              {d.weeklyTrend.map((_, i) => (
-                                <Cell key={i} fill={i === d.weeklyTrend.length - 1 ? color : `${color}66`} />
-                              ))}
+                              {d.weeklyTrendCal.map((wk, i) => <Cell key={i} fill={wk.isCurrent ? color : `${color}66`} />)}
                             </Bar>
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
-                    )}
-                  </GlassCard>
-                )
-              })}
-            </div>
+                    </GlassCard>
+                  )
+                })}
+              </div>
+
+              {/* Branch WoW — clustered trend */}
+              {d.branchWow.length > 0 && (
+                <GlassCard elevated className="p-6 mb-8">
+                  <h4 className="font-headline-md text-headline-md text-on-surface mb-1">Branch Total Weight — Weekly Trend</h4>
+                  <p className="text-body-sm text-on-surface-variant mb-4">Sun–Sat weeks · current + previous 5 weeks</p>
+                  <div className="h-64 mb-4">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={d.weeklyByBranch} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e0e0" />
+                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 10 }} tickFormatter={fmtInt} />
+                        <Tooltip formatter={(v: number, name: string) => [fmt(v, 1) + ' Baht', name]} contentStyle={{ borderRadius: 10, fontSize: 12 }} />
+                        <Legend iconType="circle" iconSize={8} />
+                        {d.branchWow.map((b, i) => (
+                          <Bar key={b.branch_code} dataKey={b.branch_code} name={b.branch_name}
+                            fill={BRANCH_COLORS[i % BRANCH_COLORS.length]} radius={[3,3,0,0]} maxBarSize={24} />
+                        ))}
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {d.branchWow.map((b, i) => (
+                      <div key={b.branch_id} className="rounded-xl p-3 bg-surface-container/40">
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0"
+                            style={{ background: BRANCH_COLORS[i % BRANCH_COLORS.length] }}>{b.branch_code}</div>
+                          <p className="text-[11px] font-semibold text-on-surface truncate">{b.branch_name}</p>
+                        </div>
+                        <p className="font-bold text-[15px] tabular-nums">{fmt(b.cur, 1)} Baht</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <VarChip pct={b.pct} compact />
+                          <span className="text-[10px] text-on-surface-variant">vs {fmt(b.prev, 1)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </GlassCard>
+              )}
+            </>)}
           </>)}
 
           {/* ═════════════════════════════════════════════════════════════

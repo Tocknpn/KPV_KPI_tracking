@@ -13,6 +13,18 @@ function daysInMonthOf(year: number, month: number): number {
   return new Date(year, month, 0).getDate()
 }
 
+// Sunday-start of the calendar week (Sun–Sat) containing dateStr
+function startOfWeekSun(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() - d.getDay())
+  return d.toISOString().split('T')[0]
+}
+
+function weekLabel(start: string): string {
+  const d = new Date(start + 'T00:00:00')
+  return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getDate()}`
+}
+
 function buildFilters(branchIds: number[], staffType?: string): { branchSql: string; typeSql: string; params: unknown[] } {
   const branchSql = branchIds.length > 0 ? `AND de.branch_id IN (${branchIds.map(() => '?').join(',')})` : ''
   const typeSql   = staffType ? `AND s.staff_type = ?` : ''
@@ -245,6 +257,53 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
     `).all(dateFrom, dateTo, ...fParamsD) as Array<{ date: string; jewelry: number; bar: number; qty: number; entries: number }>)
       .map(r => ({ ...r, total: r.jewelry + r.bar }))
 
+    // ── Calendar-week (Sun–Sat) WoW: current week + previous 5 weeks ──────
+    const curWeekStart = startOfWeekSun(dateTo)
+    const calWeeks: Array<{ start: string; end: string }> = []
+    for (let i = 5; i >= 0; i--) {
+      const start = addDays(curWeekStart, -7 * i)
+      calWeeks.push({ start, end: addDays(start, 6) })
+    }
+
+    const weeklyTrendCal = calWeeks.map((w, i) => {
+      const sum = sumPeriod(db, w.start, w.end, branchIds, staffType)
+      return {
+        week_start: w.start, week_end: w.end,
+        label: weekLabel(w.start),
+        isCurrent: i === calWeeks.length - 1,
+        jewelry: sum.jewelry, bar: sum.bar, total: sum.total, qty: sum.qty,
+      }
+    })
+
+    function wow(cur: number, prev: number) {
+      return { cur, prev, diff: cur - prev, pct: prev > 0 ? ((cur - prev) / prev) * 100 : null }
+    }
+    const curWk  = weeklyTrendCal[weeklyTrendCal.length - 1]
+    const prevWk = weeklyTrendCal[weeklyTrendCal.length - 2]
+    const companyWow = {
+      jewelry: wow(curWk.jewelry, prevWk.jewelry),
+      bar:     wow(curWk.bar,     prevWk.bar),
+      total:   wow(curWk.total,   prevWk.total),
+    }
+
+    // Per-branch weekly totals for the same 6 weeks, pivoted for clustered chart
+    const allBranches = prepare(db, `SELECT id, name, code FROM branches ORDER BY id`).all() as Array<{ id: number; name: string; code: string }>
+    const weeklyByBranch = calWeeks.map((w, i) => {
+      const row: Record<string, string | number | boolean> = { label: weekLabel(w.start), week_start: w.start, isCurrent: i === calWeeks.length - 1 }
+      for (const b of allBranches) {
+        const sum = sumPeriod(db, w.start, w.end, [b.id], staffType)
+        row[b.code] = sum.total
+      }
+      return row
+    })
+
+    const branchWow = allBranches.map(b => {
+      const curSum  = sumPeriod(db, curWk.week_start,  calWeeks[calWeeks.length - 1].end, [b.id], staffType)
+      const prevSum = sumPeriod(db, prevWk.week_start, addDays(prevWk.week_start, 6),      [b.id], staffType)
+      const w = wow(curSum.total, prevSum.total)
+      return { branch_id: b.id, branch_name: b.name, branch_code: b.code, ...w }
+    })
+
     return {
       current,
       prevPeriod,
@@ -254,6 +313,10 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
       byBranch,
       byType,
       weeklyTrend,
+      weeklyTrendCal,
+      companyWow,
+      weeklyByBranch,
+      branchWow,
       dailyTrend,
       meta: { daysInMonth: daysInM, dayOfMonth: dayOfM, daysRemaining: daysRem },
     }
