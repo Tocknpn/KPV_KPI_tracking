@@ -447,10 +447,10 @@ export function applySchema(db: Database): boolean {
       { pct: 50,  score: 2   }, { pct: 1,   score: 1.5 },
     ]
     for (const configId of configIds) {
-      db.prepare(`DELETE FROM kpi_tiers WHERE config_id = ?`).run(configId)
+      db.prepare(`DELETE FROM kpi_tiers WHERE config_id = ?`).run([configId])
       tierA.forEach((t, i) => {
         db.prepare(`INSERT INTO kpi_tiers (config_id, threshold_pct, score, tier_order) VALUES (?,?,?,?)`)
-          .run(configId, t.pct, t.score, i + 1)
+          .run([configId, t.pct, t.score, i + 1])
       })
     }
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '17')`).run()
