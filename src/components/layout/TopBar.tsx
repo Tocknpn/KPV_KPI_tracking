@@ -1,8 +1,14 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 
+const ZOOM_LEVELS = [
+  { label: '100%', value: 1.0 },
+  { label: '80%',  value: 0.8 },
+  { label: '75%',  value: 0.75 },
+]
+const ZOOM_KEY = 'app_ui_zoom'
 
 interface Props {
   title: string
@@ -13,6 +19,20 @@ export function TopBar({ title }: Props) {
   const { token, user, clearSession, branches } = useAuthStore()
   const { unsyncedCount, isSyncing, setIsSyncing, setUnsyncedCount, sidebarCollapsed } = useAppStore()
   const [syncResult, setSyncResult] = useState<string | null>(null)
+  const [zoom, setZoomState] = useState<number>(() => {
+    const saved = localStorage.getItem(ZOOM_KEY)
+    return saved ? parseFloat(saved) : 1.0
+  })
+
+  useEffect(() => {
+    document.documentElement.style.zoom = String(zoom)
+  }, [zoom])
+
+  function handleZoom(value: number) {
+    setZoomState(value)
+    localStorage.setItem(ZOOM_KEY, String(value))
+    document.documentElement.style.zoom = String(value)
+  }
 
   async function handleSync() {
     if (!token || isSyncing) return
@@ -69,6 +89,24 @@ export function TopBar({ title }: Props) {
             {unsyncedCount} unsynced
           </span>
         )}
+
+        {/* Zoom control */}
+        <div className="flex items-center rounded-lg overflow-hidden border border-white/20 bg-surface-container text-[11px] font-medium">
+          {ZOOM_LEVELS.map(z => (
+            <button
+              key={z.value}
+              onClick={() => handleZoom(z.value)}
+              title={`UI zoom ${z.label}`}
+              className={`px-2.5 py-1.5 transition-colors whitespace-nowrap ${
+                zoom === z.value
+                  ? 'bg-primary text-white'
+                  : 'text-on-surface-variant hover:bg-surface-container-high'
+              }`}
+            >
+              {z.label}
+            </button>
+          ))}
+        </div>
 
         {/* Sync to Cloud CTA */}
         <button
