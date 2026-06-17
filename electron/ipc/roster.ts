@@ -3,6 +3,7 @@ import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
 import { requireAdmin } from './auth'
 import { pushRosterIfConfigured } from './sheets'
+import { snapshotSalesman } from '../db/history'
 
 export function registerRosterHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('roster:getAll', async (_e, token: string) => {
@@ -46,6 +47,7 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
     }
 
     // KPI point target is always resolved from HR KPI Setting — roster no longer stores per-rep targets
+    snapshotSalesman(db, salesmanId)
     pushRosterIfConfigured(db).catch(() => {})
     return { success: true, id: salesmanId }
   })
@@ -54,6 +56,7 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
     requireAdmin(token)
     const db = getDb()
     prepare(db, `UPDATE salesmen SET active=0 WHERE id=?`).run(id)
+    snapshotSalesman(db, id)
     pushRosterIfConfigured(db).catch(() => {})
     return { success: true }
   })
@@ -62,6 +65,7 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
     requireAdmin(token)
     const db = getDb()
     prepare(db, `UPDATE salesmen SET active=1 WHERE id=?`).run(id)
+    snapshotSalesman(db, id)
     pushRosterIfConfigured(db).catch(() => {})
     return { success: true }
   })

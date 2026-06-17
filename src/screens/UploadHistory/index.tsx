@@ -169,7 +169,8 @@ function RosterUploadModal({ token, onDone, onClose }: {
           </button>
         </div>
         <p className="text-body-sm text-on-surface-variant mb-4">
-          Matches by Rep Code — existing reps update, new codes create new reps. Columns: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type.
+          Matches by Rep Code — existing reps update, new codes create new reps. Columns: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type, Effective_Date (optional, YYYY-MM-DD).
+          Leave Effective_Date blank to apply a transfer/type change immediately — or set it to backdate/future-date when the change should count from (e.g. uploading on Jun 25 a move that should only count from Jul 1).
           KPI point target is not part of the roster — it is configured in KPI Settings.
         </p>
 

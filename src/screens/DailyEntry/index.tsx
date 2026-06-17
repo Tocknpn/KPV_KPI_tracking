@@ -431,7 +431,7 @@ export default function DailyEntry() {
         <CSVUploadPanel
           title="Monthly Rep Roster Upload"
           description="Upload or update your rep list monthly. Matches by Rep Code — existing reps update, new codes create new reps. Branch Code must match: MM, VC, IT, VT."
-          templateNote="Columns: Rep_Code | Full_Name | Nickname | Branch_Code | Team_Sup_Name"
+          templateNote="Columns: Rep_Code | Full_Name | Nickname | Branch_Code | Team_Sup_Name | Staff_Type | Effective_Date (optional, YYYY-MM-DD)"
           onDownloadTemplate={downloadRosterTemplate}
           templateFilename="roster_template.xlsx"
           onFilePick={handleRosterFilePick}

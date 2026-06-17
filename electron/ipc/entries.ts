@@ -3,6 +3,7 @@ import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth } from './auth'
 import { syncEntriesToCloudIfConfigured, pushSupervisorsIfConfigured, pushRosterIfConfigured } from './sheets'
+import { snapshotSalesman } from '../db/history'
 
 export function registerEntryHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('entry:getSalesmen', async (_e, token: string, branchId?: number) => {
@@ -43,8 +44,10 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     fullName: string; nickname: string; branchId: number; position: string; department: string
   }) => {
     requireAuth(token)
-    const result = prepare(getDb(), `INSERT INTO salesmen (full_name, nickname, branch_id, position, department) VALUES (?,?,?,?,?)`)
+    const db = getDb()
+    const result = prepare(db, `INSERT INTO salesmen (full_name, nickname, branch_id, position, department) VALUES (?,?,?,?,?)`)
       .run(data.fullName, data.nickname, data.branchId, data.position, data.department)
+    snapshotSalesman(db, Number(result.lastInsertRowid))
     return { success: true, id: result.lastInsertRowid }
   })
 
@@ -56,6 +59,7 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     const fields = Object.entries({ full_name: data.fullName, nickname: data.nickname, branch_id: data.branchId, position: data.position, department: data.department, active: data.active }).filter(([, v]) => v !== undefined)
     if (!fields.length) return { success: true }
     fields.forEach(([col, val]) => prepare(db, `UPDATE salesmen SET ${col} = ? WHERE id = ?`).run(val as string | number, id))
+    snapshotSalesman(db, id)
     return { success: true }
   })
 
@@ -197,7 +201,9 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     requireAuth(token)
     const db = getDb()
     // Unlink reps before deactivating
+    const affected = prepare(db, `SELECT id FROM salesmen WHERE supervisor_id = ?`).all(id) as Array<{ id: number }>
     prepare(db, `UPDATE salesmen SET supervisor_id = NULL WHERE supervisor_id = ?`).run(id)
+    affected.forEach(r => snapshotSalesman(db, r.id))
     prepare(db, `UPDATE supervisors SET active = 0 WHERE id = ?`).run(id)
     pushSupervisorsIfConfigured(db).catch(() => {})
     return { success: true }
@@ -208,10 +214,13 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     const db = getDb()
     transaction(db, () => {
       // Clear existing assignments for this supervisor
+      const previouslyAssigned = prepare(db, `SELECT id FROM salesmen WHERE supervisor_id = ?`).all(supervisorId) as Array<{ id: number }>
       prepare(db, `UPDATE salesmen SET supervisor_id = NULL WHERE supervisor_id = ?`).run(supervisorId)
+      previouslyAssigned.forEach(r => snapshotSalesman(db, r.id))
       // Assign new list
       for (const sid of salesmanIds) {
         prepare(db, `UPDATE salesmen SET supervisor_id = ? WHERE id = ?`).run(supervisorId, sid)
+        snapshotSalesman(db, sid)
       }
     })
     pushRosterIfConfigured(db).catch(() => {})

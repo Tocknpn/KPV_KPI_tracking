@@ -86,7 +86,7 @@ export function normaliseRow(row: Record<string, string>): Record<string, string
 // ── Validate & convert daily rows (rep_code based) ────────────────────────
 export interface DailyRowRaw { date: string; repCode: string; jewelryWeightG: number; barWeightG: number; quantity: number }
 export interface TargetRowRaw { repCode: string; year: number; month: number; jewelryWeightG: number; barWeightG: number; quantity: number }
-export interface RosterRowRaw { repCode: string; fullName: string; nickname: string; branchCode: string; supervisorName: string; staffType: 'b2c' | 'b2b' }
+export interface RosterRowRaw { repCode: string; fullName: string; nickname: string; branchCode: string; supervisorName: string; staffType: 'b2c' | 'b2b'; effectiveDate?: string }
 
 // Column positions for daily template: Date, Rep_Code, Full_Name, Branch_Code, Supervisor_Name, KPI_1, KPI_2, KPI_3
 export function validateDailyRows(parsed: ParseResult): { rows: DailyRowRaw[]; errors: string[] } {
@@ -148,8 +148,11 @@ export function validateTargetRows(parsed: ParseResult): { rows: TargetRowRaw[];
   return { rows, errors }
 }
 
-// Column positions for roster template: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type
+// Column positions for roster template: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name,
+// Staff_Type, Effective_Date (optional, YYYY-MM-DD).
 // KPI point target is not part of the roster — it is always looked up from HR KPI Setting.
+// Effective_Date controls WHEN this branch/type/supervisor change is recorded as taking effect
+// (for backdating/future-dating transfers) — leave blank to apply immediately at upload time.
 export function validateRosterRows(parsed: ParseResult): { rows: RosterRowRaw[]; errors: string[] } {
   const errors = [...parsed.errors]
   const rows: RosterRowRaw[] = []
@@ -168,12 +171,19 @@ export function validateRosterRows(parsed: ParseResult): { rows: RosterRowRaw[];
     const rawStaffType = (pos[5] ?? '').trim().toLowerCase()
     const staffType: 'b2c' | 'b2b' = rawStaffType === 'b2b' ? 'b2b' : 'b2c'
 
+    const rawEffectiveDate = (pos[6] ?? '').trim()
+    const effectiveDate = /^\d{4}-\d{2}-\d{2}$/.test(rawEffectiveDate) ? rawEffectiveDate : undefined
+    if (rawEffectiveDate && !effectiveDate) {
+      errors.push(`Row ${lineNum}: Invalid Effective_Date "${rawEffectiveDate}" — use YYYY-MM-DD or leave blank.`)
+    }
+
     rows.push({
       repCode, fullName,
       nickname:       (pos[2] ?? '').trim(),
       branchCode,
       supervisorName: (pos[4] ?? '').trim(),
       staffType,
+      effectiveDate,
     })
   }
 

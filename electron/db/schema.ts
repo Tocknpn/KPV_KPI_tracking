@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 12
+const SCHEMA_VERSION = 13
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -365,6 +365,30 @@ export function applySchema(db: Database): boolean {
       `)
     } catch { /* ignore */ }
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '12')`).run()
+  }
+
+  if (currentVersion < 13) {
+    // Snapshot every roster mutation (branch/type/supervisor/active) so headcount-as-of-any-month
+    // is reconstructable forever — a rep who left/transferred must not change past months' target.
+    db.run(`
+      CREATE TABLE IF NOT EXISTS salesman_history (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        salesman_id  INTEGER NOT NULL REFERENCES salesmen(id),
+        branch_id    INTEGER NOT NULL,
+        staff_type   TEXT    NOT NULL,
+        supervisor_id INTEGER,
+        active       INTEGER NOT NULL,
+        changed_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_salesman_history_lookup ON salesman_history(salesman_id, changed_at)`)
+    // Baseline: snapshot current state of every rep as "now" — history is accurate from this
+    // point forward; months before this migration ran fall back to current state (documented limit).
+    db.run(`
+      INSERT INTO salesman_history (salesman_id, branch_id, staff_type, supervisor_id, active, changed_at)
+      SELECT id, branch_id, staff_type, supervisor_id, active, datetime('now') FROM salesmen
+    `)
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '13')`).run()
   }
 
   return false // Existing DB — no seeding needed

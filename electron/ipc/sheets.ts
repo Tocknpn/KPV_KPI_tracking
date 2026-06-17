@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from 'fs'
 import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
 import { requireAuth } from './auth'
+import { snapshotSalesman } from '../db/history'
 import type { Database } from 'sql.js'
 
 // ── Tab name registry ─────────────────────────────────────────────────────────
@@ -14,6 +15,7 @@ const TABS = {
   KPI_RATES:       'KPIRates',
   QTY_TIERS:       'QtyTiers',
   ROSTER:          'Roster',
+  ROSTER_HISTORY:  'RosterHistory',
   COMMISSION:      'CommissionConfig',
   USERS:           'Users',
   SUPERVISORS:     'Supervisors',
@@ -55,15 +57,22 @@ async function writeTab(
 
 // ── Individual push functions ─────────────────────────────────────────────────
 
+// Friendly labels for app_settings keys — readable in Sheets without needing to know the schema
+const SETTINGS_LABELS: Record<string, string> = {
+  sup_kpi_pct:       'Default Supervisor Commission Share (%)',
+  kpi_total_base:    'KPI Total Formula — Base',
+  kpi_total_weight:  'KPI Total Formula — Weight',
+}
+
 async function pushSettings(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
   const appRows = (prepare(db, `SELECT key, value FROM app_settings WHERE key IN ('sup_kpi_pct','kpi_total_base','kpi_total_weight') ORDER BY key`).all() as Array<{ key: string; value: string }>)
-    .map(r => [r.key, r.value])
+    .map(r => [SETTINGS_LABELS[r.key] ?? r.key, r.value])
   const metricRows = (prepare(db, `SELECT id, points_per_unit FROM kpi_metrics WHERE id IN (1, 2, 3)`).all() as Array<{ id: number; points_per_unit: number }>)
     .map(r => {
-      const key = r.id === 1 ? 'jewelry_pts_per_unit' : r.id === 2 ? 'bar_pts_per_unit' : 'qty_pts_per_unit'
-      return [key, String(r.points_per_unit)]
+      const label = r.id === 1 ? 'Jewelry — Default Points per Gram' : r.id === 2 ? 'Bar — Default Points per Gram' : 'Qty — Default Points per Unit'
+      return [label, String(r.points_per_unit)]
     })
-  await writeTab(sheets, spreadsheetId, TABS.SETTINGS, ['key', 'value'], [...appRows, ...metricRows])
+  await writeTab(sheets, spreadsheetId, TABS.SETTINGS, ['Setting', 'Value'], [...appRows, ...metricRows])
 }
 
 async function pushBranches(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
@@ -72,10 +81,12 @@ async function pushBranches(db: Database, sheets: ReturnType<typeof google.sheet
   await writeTab(sheets, spreadsheetId, TABS.BRANCHES, ['code', 'name', 'kpi_point_target'], rows)
 }
 
+const METRIC_NAMES: Record<number, string> = { 1: 'Jewelry', 2: 'Bar', 3: 'Qty' }
+
 async function pushKpiRates(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
   const rows = (prepare(db, `SELECT metric_id, staff_type, points_per_unit FROM kpi_metric_type_rates ORDER BY metric_id, staff_type`).all() as Array<{ metric_id: number; staff_type: string; points_per_unit: number }>)
-    .map(r => [r.metric_id, r.staff_type, r.points_per_unit])
-  await writeTab(sheets, spreadsheetId, TABS.KPI_RATES, ['metric_id', 'staff_type', 'points_per_unit'], rows)
+    .map(r => [METRIC_NAMES[r.metric_id] ?? r.metric_id, r.staff_type.toUpperCase(), r.points_per_unit])
+  await writeTab(sheets, spreadsheetId, TABS.KPI_RATES, ['Metric', 'Staff Type', 'Points per Unit'], rows)
 }
 
 async function pushQtyTiers(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
@@ -87,33 +98,50 @@ async function pushQtyTiers(db: Database, sheets: ReturnType<typeof google.sheet
     WHERE c.metric_id = 3 AND c.is_active = 1
     ORDER BY COALESCE(b.code, 'Global'), t.tier_order
   `).all() as Array<{ branch_code: string; threshold_pct: number; score: number; tier_order: number }>)
-    .map(r => [r.branch_code, r.threshold_pct, r.score, r.tier_order])
-  await writeTab(sheets, spreadsheetId, TABS.QTY_TIERS, ['branch_code', 'threshold', 'multiplier', 'tier_order'], rows)
+    .map(r => [r.branch_code, `≥ ${r.threshold_pct} pcs`, `× ${r.score}`, r.tier_order])
+  await writeTab(sheets, spreadsheetId, TABS.QTY_TIERS, ['Branch', 'If Qty Is', 'Score Multiplier', 'Tier Order'], rows)
 }
 
 async function pushRoster(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  // KPI point target is not part of the roster — always resolved from HR KPI Setting
   const rows = (prepare(db, `
     SELECT s.rep_code, s.full_name, s.nickname, b.code AS branch_code,
-           sup.full_name AS supervisor_name, s.staff_type,
-           smt.year_month, smt.point_target
+           sup.full_name AS supervisor_name, s.staff_type, s.active
     FROM salesmen s
     JOIN branches b ON b.id = s.branch_id
     LEFT JOIN supervisors sup ON sup.id = s.supervisor_id
-    LEFT JOIN staff_monthly_targets smt ON smt.salesman_id = s.id
-      AND smt.year_month = (
-        SELECT MAX(year_month) FROM staff_monthly_targets WHERE salesman_id = s.id
-      )
-    WHERE s.active = 1
-    ORDER BY b.code, s.rep_code
-  `).all() as Array<{ rep_code: string; full_name: string; nickname: string | null; branch_code: string; supervisor_name: string | null; staff_type: string; year_month: string | null; point_target: number | null }>)
-    .map(r => [r.rep_code, r.full_name, r.nickname ?? '', r.branch_code, r.supervisor_name ?? '', r.staff_type, r.year_month ?? '', r.point_target ?? ''])
-  await writeTab(sheets, spreadsheetId, TABS.ROSTER, ['rep_code', 'full_name', 'nickname', 'branch_code', 'supervisor_name', 'staff_type', 'year_month', 'point_target'], rows)
+    ORDER BY s.active DESC, b.code, s.rep_code
+  `).all() as Array<{ rep_code: string; full_name: string; nickname: string | null; branch_code: string; supervisor_name: string | null; staff_type: string; active: number }>)
+    .map(r => [r.rep_code, r.full_name, r.nickname ?? '', r.branch_code, r.supervisor_name ?? '', r.staff_type, r.active])
+  await writeTab(sheets, spreadsheetId, TABS.ROSTER, ['rep_code', 'full_name', 'nickname', 'branch_code', 'supervisor_name', 'staff_type', 'active'], rows)
+
+  // Append-only audit trail of every branch/type/supervisor/active change — this is the
+  // "master datetime record" for who-was-where-when, used to reconstruct historical headcount.
+  const historyRows = (prepare(db, `
+    SELECT s.rep_code, h.branch_id, b.code AS branch_code, h.staff_type, h.supervisor_id,
+           sup.full_name AS supervisor_name, h.active, h.changed_at
+    FROM salesman_history h
+    JOIN salesmen s ON s.id = h.salesman_id
+    JOIN branches b ON b.id = h.branch_id
+    LEFT JOIN supervisors sup ON sup.id = h.supervisor_id
+    ORDER BY h.changed_at, s.rep_code
+  `).all() as Array<{ rep_code: string; branch_code: string; staff_type: string; supervisor_name: string | null; active: number; changed_at: string }>)
+    .map(r => [r.rep_code, r.branch_code, r.staff_type, r.supervisor_name ?? '', r.active, r.changed_at])
+  await writeTab(sheets, spreadsheetId, TABS.ROSTER_HISTORY, ['rep_code', 'branch_code', 'staff_type', 'supervisor_name', 'active', 'changed_at'], historyRows)
+}
+
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+function readableYearMonth(yearMonth: string): string {
+  const y = yearMonth.slice(0, 4); const m = parseInt(yearMonth.slice(4), 10)
+  return m >= 1 && m <= 12 ? `${MONTH_NAMES[m - 1]} ${y}` : yearMonth
 }
 
 async function pushCommission(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
   const rows = (prepare(db, `SELECT staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak FROM commission_configs ORDER BY year_month, staff_type`).all() as Array<{ staff_type: string; year_month: string; jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number }>)
-    .map(r => [r.staff_type, r.year_month, r.jewelry_rate_lak, r.bar_rate_lak, r.qty_rate_lak])
-  await writeTab(sheets, spreadsheetId, TABS.COMMISSION, ['Staff_Type', 'Year_Month', 'Jewelry_Rate_LAK', 'Bar_Rate_LAK', 'Qty_Rate_LAK'], rows)
+    .map(r => r.staff_type === 'supervisor'
+      ? [readableYearMonth(r.year_month), 'Supervisor', `${r.jewelry_rate_lak}% of team commission`, '', '']
+      : [readableYearMonth(r.year_month), r.staff_type.toUpperCase(), r.jewelry_rate_lak, r.bar_rate_lak, r.qty_rate_lak])
+  await writeTab(sheets, spreadsheetId, TABS.COMMISSION, ['Month', 'Staff Type', 'Jewelry Rate (₭/Baht)', 'Bar Rate (₭/Baht)', 'Qty Rate (₭/pc)'], rows)
 }
 
 async function pushUsers(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
@@ -144,13 +172,13 @@ async function pushSupervisors(db: Database, sheets: ReturnType<typeof google.sh
 
 async function pushMonthlyBranchTargets(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
   const rows = (prepare(db, `
-    SELECT b.code AS branch_code, t.year, t.month, t.kpi_point_target
+    SELECT b.code AS branch_code, t.year, t.month, t.kpi_point_target, t.target_b2c, t.target_b2b
     FROM branch_kpi_monthly_targets t
     JOIN branches b ON b.id = t.branch_id
     ORDER BY t.year, t.month, b.code
-  `).all() as Array<{ branch_code: string; year: number; month: number; kpi_point_target: number }>)
-    .map(r => [r.branch_code, r.year, r.month, r.kpi_point_target])
-  await writeTab(sheets, spreadsheetId, TABS.MONTHLY_TARGETS, ['branch_code', 'year', 'month', 'kpi_point_target'], rows)
+  `).all() as Array<{ branch_code: string; year: number; month: number; kpi_point_target: number; target_b2c: number | null; target_b2b: number | null }>)
+    .map(r => [r.branch_code, `${MONTH_NAMES[r.month - 1]} ${r.year}`, r.kpi_point_target, r.target_b2c || '', r.target_b2b || ''])
+  await writeTab(sheets, spreadsheetId, TABS.MONTHLY_TARGETS, ['Branch', 'Month', 'Target (pts/person)', 'B2C Target Override', 'B2B Target Override'], rows)
 }
 
 // ── Push all unsynced daily entries — exported for use in entries.ts, upload.ts ─
@@ -391,6 +419,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
           const ins = prepare(db, `INSERT INTO salesmen (rep_code, full_name, nickname, branch_id, staff_type, position, department, active, supervisor_id) VALUES (?,?,?,?,?,'Sales Representative','Sales',1,?)`).run(repCode, fullName, nickname ?? '', branch.id, staffType, supId)
           salesmanId = Number(ins.lastInsertRowid)
         }
+        snapshotSalesman(db, salesmanId)
         const pointTarget = parseFloat(ptStr)
         if (!isNaN(pointTarget) && yearMonth && /^\d{6}$/.test(yearMonth)) {
           prepare(db, `INSERT INTO staff_monthly_targets (salesman_id, year_month, point_target) VALUES (?,?,?) ON CONFLICT(salesman_id, year_month) DO UPDATE SET point_target = excluded.point_target`).run(salesmanId, yearMonth, pointTarget)

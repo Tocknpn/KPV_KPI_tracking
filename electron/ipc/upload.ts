@@ -3,6 +3,7 @@ import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin } from './auth'
 import { pushAllConfigIfConfigured, syncEntriesToCloudIfConfigured } from './sheets'
+import { snapshotSalesman } from '../db/history'
 
 export interface UploadRowResult {
   row: number
@@ -38,6 +39,7 @@ export interface RosterRow {
   staffType?: 'b2c' | 'b2b'
   pointTarget?: number
   yearMonth?: string
+  effectiveDate?: string
 }
 
 export interface UploadLogEntry {
@@ -179,16 +181,20 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           const staffType = r.staffType === 'b2b' ? 'b2b' : 'b2c'
 
           const existing = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(r.repCode) as { id: number } | undefined
+          let salesmanId: number
           if (existing) {
             prepare(db, `UPDATE salesmen SET full_name=?, nickname=?, branch_id=?, supervisor_id=?, staff_type=?, active=1 WHERE rep_code=?`)
               .run(r.fullName, r.nickname || '', branch.id, supId, staffType, r.repCode)
+            salesmanId = existing.id
             updated++
           } else {
-            prepare(db, `INSERT INTO salesmen (rep_code, full_name, nickname, branch_id, staff_type, position, department, active, supervisor_id) VALUES (?,?,?,?,?,'Sales Representative','Sales',1,?)`)
+            const ins = prepare(db, `INSERT INTO salesmen (rep_code, full_name, nickname, branch_id, staff_type, position, department, active, supervisor_id) VALUES (?,?,?,?,?,'Sales Representative','Sales',1,?)`)
               .run(r.repCode, r.fullName, r.nickname || '', branch.id, staffType, supId)
+            salesmanId = Number(ins.lastInsertRowid)
             created++
           }
           // KPI point target is always resolved from HR KPI Setting — roster upload no longer carries per-rep targets
+          snapshotSalesman(db, salesmanId, r.effectiveDate)
         }
       })
       pushAllConfigIfConfigured(db).catch(() => {})
