@@ -1,6 +1,6 @@
 import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
-import { prepare } from '../db/query'
+import { prepare, transaction } from '../db/query'
 import { requireAuth } from './auth'
 import { pushRosterIfConfigured } from './sheets'
 import { snapshotSalesman, getRosterSnapshotAsOf } from '../db/history'
@@ -52,26 +52,32 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
   }, year?: number, month?: number) => {
     requireRosterManager(token)
     const db = getDb()
-    let salesmanId: number
+    let salesmanId!: number
 
-    if (data.id) {
-      prepare(db, `
-        UPDATE salesmen
-        SET rep_code=?, full_name=?, nickname=?, branch_id=?, supervisor_id=?, staff_type=?, active=?
-        WHERE id=?
-      `).run(data.repCode, data.fullName, data.nickname ?? '', data.branchId, data.supervisorId, data.staffType, data.active ?? 1, data.id)
-      salesmanId = data.id
-    } else {
-      const ins = prepare(db, `
-        INSERT INTO salesmen (rep_code, full_name, nickname, branch_id, supervisor_id, staff_type, position, department, active)
-        VALUES (?,?,?,?,?,?,'Sales Representative','Sales',1)
-      `).run(data.repCode, data.fullName, data.nickname ?? '', data.branchId, data.supervisorId, data.staffType)
-      salesmanId = Number(ins.lastInsertRowid)
-    }
+    // First edit of a new month triggers ensureMonthMaterialized's copy-forward of every
+    // rep into that month — without a transaction, each of those inserts does a full
+    // database export+disk-write (see db/query.ts's persistDb()), which can lock up the
+    // whole app for a company-sized roster. transaction() defers all of that to one write.
+    transaction(db, () => {
+      if (data.id) {
+        prepare(db, `
+          UPDATE salesmen
+          SET rep_code=?, full_name=?, nickname=?, branch_id=?, supervisor_id=?, staff_type=?, active=?
+          WHERE id=?
+        `).run(data.repCode, data.fullName, data.nickname ?? '', data.branchId, data.supervisorId, data.staffType, data.active ?? 1, data.id)
+        salesmanId = data.id
+      } else {
+        const ins = prepare(db, `
+          INSERT INTO salesmen (rep_code, full_name, nickname, branch_id, supervisor_id, staff_type, position, department, active)
+          VALUES (?,?,?,?,?,?,'Sales Representative','Sales',1)
+        `).run(data.repCode, data.fullName, data.nickname ?? '', data.branchId, data.supervisorId, data.staffType)
+        salesmanId = Number(ins.lastInsertRowid)
+      }
 
-    // KPI point target is always resolved from HR KPI Setting — roster no longer stores per-rep targets
-    const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
-    snapshotSalesman(db, salesmanId, effectiveDateFor(y, m))
+      // KPI point target is always resolved from HR KPI Setting — roster no longer stores per-rep targets
+      const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
+      snapshotSalesman(db, salesmanId, effectiveDateFor(y, m))
+    })
     pushRosterIfConfigured(db).catch(() => {})
     return { success: true, id: salesmanId }
   })
@@ -79,9 +85,11 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('roster:deactivate', async (_e, token: string, id: number, year?: number, month?: number) => {
     requireRosterManager(token)
     const db = getDb()
-    prepare(db, `UPDATE salesmen SET active=0 WHERE id=?`).run(id)
-    const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
-    snapshotSalesman(db, id, effectiveDateFor(y, m))
+    transaction(db, () => {
+      prepare(db, `UPDATE salesmen SET active=0 WHERE id=?`).run(id)
+      const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
+      snapshotSalesman(db, id, effectiveDateFor(y, m))
+    })
     pushRosterIfConfigured(db).catch(() => {})
     return { success: true }
   })
@@ -89,9 +97,11 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('roster:reactivate', async (_e, token: string, id: number, year?: number, month?: number) => {
     requireRosterManager(token)
     const db = getDb()
-    prepare(db, `UPDATE salesmen SET active=1 WHERE id=?`).run(id)
-    const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
-    snapshotSalesman(db, id, effectiveDateFor(y, m))
+    transaction(db, () => {
+      prepare(db, `UPDATE salesmen SET active=1 WHERE id=?`).run(id)
+      const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
+      snapshotSalesman(db, id, effectiveDateFor(y, m))
+    })
     pushRosterIfConfigured(db).catch(() => {})
     return { success: true }
   })

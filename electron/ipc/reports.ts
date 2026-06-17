@@ -411,18 +411,40 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       months.push({ year: d.getFullYear(), month: d.getMonth() + 1, ym: String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0') })
     }
 
+    // One query spanning the whole window instead of one per month — same data, ~12x
+    // fewer round-trips for a 6-month window (was: 1 groups query + 1 days query per month).
+    const rangeFrom = `${months[0].year}-${String(months[0].month).padStart(2,'0')}-01`
+    const lastM = months[months.length - 1]
+    const rangeTo = `${lastM.year}-${String(lastM.month).padStart(2,'0')}-${new Date(lastM.year, lastM.month, 0).getDate()}`
+
+    const allGroups = prepare(db, `
+      SELECT strftime('%Y%m', entry_date) AS ym, branch_id, staff_type,
+        COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q
+      FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ?
+      GROUP BY ym, branch_id, staff_type
+    `).all(salesmanId, rangeFrom, rangeTo) as Array<{ ym: string; branch_id: number; staff_type: string; j: number; b: number; q: number }>
+    const groupsByYm = new Map<string, typeof allGroups>()
+    for (const g of allGroups) groupsByYm.set(g.ym, [...(groupsByYm.get(g.ym) ?? []), g])
+
+    const allDays = prepare(db, `
+      SELECT strftime('%Y%m', entry_date) AS ym, COUNT(DISTINCT entry_date) AS days
+      FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ? GROUP BY ym
+    `).all(salesmanId, rangeFrom, rangeTo) as Array<{ ym: string; days: number }>
+    const daysByYm = new Map(allDays.map(r => [r.ym, r.days]))
+
+    const allTargets = prepare(db, `SELECT year_month, point_target FROM staff_monthly_targets WHERE salesman_id=? AND year_month IN (${months.map(() => '?').join(',')})`)
+      .all(salesmanId, ...months.map(m => m.ym)) as Array<{ year_month: string; point_target: number }>
+    const targetByYm = new Map(allTargets.map(r => [r.year_month, r.point_target]))
+
+    const allCommCfg = prepare(db, `SELECT staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak FROM commission_configs WHERE year_month IN (${months.map(() => '?').join(',')})`)
+      .all(...months.map(m => m.ym)) as Array<{ staff_type: string; year_month: string; jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number }>
+    const commCfgByKey = new Map(allCommCfg.map(r => [`${r.staff_type}-${r.year_month}`, r]))
+
     const history = months.map(m => {
-      const dateFrom = `${m.year}-${String(m.month).padStart(2,'0')}-01`
-      const dateTo   = `${m.year}-${String(m.month).padStart(2,'0')}-${new Date(m.year, m.month, 0).getDate()}`
+      const dateTo = `${m.year}-${String(m.month).padStart(2,'0')}-${new Date(m.year, m.month, 0).getDate()}`
       // Group by the entry's OWN stamped branch_id/staff_type — not the rep's current
       // values — so a mid-trend transfer or B2C/B2B change never re-rates past months.
-      const groups = prepare(db, `
-        SELECT branch_id, staff_type,
-          COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q
-        FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ?
-        GROUP BY branch_id, staff_type
-      `).all(salesmanId, dateFrom, dateTo) as Array<{ branch_id: number; staff_type: string; j: number; b: number; q: number }>
-      const daysRow = prepare(db, `SELECT COUNT(DISTINCT entry_date) AS days FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ?`).get(salesmanId, dateFrom, dateTo) as { days: number }
+      const groups = groupsByYm.get(m.ym) ?? []
 
       let j = 0, bar = 0, qty = 0, js = 0, bs = 0, qs = 0, commission_lak = 0
       for (const g of groups) {
@@ -430,13 +452,12 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
         js += computeKpiScore(db, 1, g.branch_id, g.j, 0, dateTo, g.staff_type).score
         bs += computeKpiScore(db, 2, g.branch_id, g.b, 0, dateTo, g.staff_type).score
         qs += computeKpiScore(db, 3, g.branch_id, g.q, 0, dateTo, g.staff_type).score
-        const commCfg = prepare(db, `SELECT jewelry_rate_lak, bar_rate_lak, qty_rate_lak FROM commission_configs WHERE staff_type=? AND year_month=?`).get(g.staff_type, m.ym) as { jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number } | undefined
+        const commCfg = commCfgByKey.get(`${g.staff_type}-${m.ym}`)
         if (commCfg) commission_lak += g.j * commCfg.jewelry_rate_lak + g.b * commCfg.bar_rate_lak + g.q * commCfg.qty_rate_lak
       }
-      const targetRow = prepare(db, `SELECT point_target FROM staff_monthly_targets WHERE salesman_id=? AND year_month=?`).get(salesmanId, m.ym) as { point_target: number } | undefined
-      const pt = targetRow?.point_target ?? 0
+      const pt = targetByYm.get(m.ym) ?? 0
       const total = js + bs + qs
-      return { year: m.year, month: m.month, year_month: m.ym, actual_jewelry: j, actual_bar: bar, actual_qty: qty, kpi_score_jewelry: js, kpi_score_bar: bs, kpi_score_qty: qs, kpi_total_score: total, kpi_pct: pt > 0 ? (total / pt) * 100 : 0, point_target: pt, days_with_entries: daysRow?.days ?? 0, commission_lak }
+      return { year: m.year, month: m.month, year_month: m.ym, actual_jewelry: j, actual_bar: bar, actual_qty: qty, kpi_score_jewelry: js, kpi_score_bar: bs, kpi_score_qty: qs, kpi_total_score: total, kpi_pct: pt > 0 ? (total / pt) * 100 : 0, point_target: pt, days_with_entries: daysByYm.get(m.ym) ?? 0, commission_lak }
     })
     return { ...rep, history }
   })
@@ -467,25 +488,53 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       months.push({ year: d.getFullYear(), month: d.getMonth() + 1, ym: String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0') })
     }
 
-    const history = months.map(m => {
-      const dateFrom = `${m.year}-${String(m.month).padStart(2,'0')}-01`
-      const dateTo   = `${m.year}-${String(m.month).padStart(2,'0')}-${new Date(m.year, m.month, 0).getDate()}`
-
-      // Team membership AS OF this month — not today's roster — so a rep who later
-      // transfers off this team or deactivates doesn't change a past month's headcount.
+    // Team membership AS OF each month — not today's roster — so a rep who later transfers
+    // off this team or deactivates doesn't change a past month's headcount. Membership
+    // genuinely varies per month, so this part stays a per-month lookup (6 small queries) —
+    // but everything keyed off the resulting rep IDs below is batched into 2 queries total
+    // instead of 2-per-rep-per-month.
+    const repIdsByYm = new Map<string, number[]>()
+    const unionRepIds = new Set<number>()
+    for (const m of months) {
       const rosterMap = getRosterMapAsOf(db, m.year, m.month)
-      const repIds = [...rosterMap.entries()].filter(([, v]) => v.supervisor_id === supId && v.active === 1).map(([id]) => id)
+      const ids = [...rosterMap.entries()].filter(([, v]) => v.supervisor_id === supId && v.active === 1).map(([id]) => id)
+      repIdsByYm.set(m.ym, ids)
+      for (const id of ids) unionRepIds.add(id)
+    }
+    const allRepIds = [...unionRepIds]
+
+    const rangeFrom = `${months[0].year}-${String(months[0].month).padStart(2,'0')}-01`
+    const lastM = months[months.length - 1]
+    const rangeTo = `${lastM.year}-${String(lastM.month).padStart(2,'0')}-${new Date(lastM.year, lastM.month, 0).getDate()}`
+
+    const groupsByYmThenRep = new Map<string, Array<{ salesman_id: number; branch_id: number; staff_type: string; j: number; b: number; q: number }>>()
+    const targetByYmThenRep = new Map<string, number>()
+
+    if (allRepIds.length > 0) {
+      const idPh = allRepIds.map(() => '?').join(',')
+      const allGroups = prepare(db, `
+        SELECT strftime('%Y%m', entry_date) AS ym, salesman_id, branch_id, staff_type,
+          COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q
+        FROM daily_entries WHERE salesman_id IN (${idPh}) AND entry_date BETWEEN ? AND ?
+        GROUP BY ym, salesman_id, branch_id, staff_type
+      `).all(...allRepIds, rangeFrom, rangeTo) as Array<{ ym: string; salesman_id: number; branch_id: number; staff_type: string; j: number; b: number; q: number }>
+      for (const g of allGroups) groupsByYmThenRep.set(`${g.ym}-${g.salesman_id}`, [...(groupsByYmThenRep.get(`${g.ym}-${g.salesman_id}`) ?? []), g])
+
+      const allTargets = prepare(db, `SELECT salesman_id, year_month, point_target FROM staff_monthly_targets WHERE salesman_id IN (${idPh}) AND year_month IN (${months.map(() => '?').join(',')})`)
+        .all(...allRepIds, ...months.map(m => m.ym)) as Array<{ salesman_id: number; year_month: string; point_target: number }>
+      for (const t of allTargets) targetByYmThenRep.set(`${t.year_month}-${t.salesman_id}`, t.point_target)
+    }
+
+    const history = months.map(m => {
+      const dateTo = `${m.year}-${String(m.month).padStart(2,'0')}-${new Date(m.year, m.month, 0).getDate()}`
+      const repIds = repIdsByYm.get(m.ym) ?? []
 
       let teamScore = 0; let teamTarget = 0; let teamJ = 0; let teamBar = 0; let teamQty = 0
       for (const repId of repIds) {
+        teamTarget += targetByYmThenRep.get(`${m.ym}-${repId}`) ?? 0
         // Score from the entry's OWN stamped branch_id/staff_type — not the rep's current
         // values — so a mid-trend transfer/type-change never re-rates past months.
-        const groups = prepare(db, `
-          SELECT branch_id, staff_type, COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q
-          FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ? GROUP BY branch_id, staff_type
-        `).all(repId, dateFrom, dateTo) as Array<{ branch_id: number; staff_type: string; j: number; b: number; q: number }>
-        const tRow = prepare(db, `SELECT point_target FROM staff_monthly_targets WHERE salesman_id=? AND year_month=?`).get(repId, m.ym) as { point_target: number } | undefined
-        teamTarget += tRow?.point_target ?? 0
+        const groups = groupsByYmThenRep.get(`${m.ym}-${repId}`) ?? []
         for (const g of groups) {
           teamJ += g.j; teamBar += g.b; teamQty += g.q
           teamScore += computeKpiScore(db, 1, g.branch_id, g.j, 0, dateTo, g.staff_type).score

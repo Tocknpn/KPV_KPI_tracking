@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 21
+const SCHEMA_VERSION = 22
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -14,15 +14,16 @@ const BASE_TABLES = `
     kpi_point_target REAL    NOT NULL DEFAULT 0
   );
   CREATE TABLE IF NOT EXISTS users (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    username      TEXT    UNIQUE NOT NULL,
-    password_hash TEXT    NOT NULL,
-    full_name     TEXT    NOT NULL DEFAULT '',
-    role          TEXT    NOT NULL,
-    branch_id     INTEGER REFERENCES branches(id),
-    supervisor_id INTEGER REFERENCES supervisors(id),
-    active        INTEGER NOT NULL DEFAULT 1,
-    created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    username       TEXT    UNIQUE NOT NULL,
+    password_hash  TEXT    NOT NULL,
+    password_plain TEXT,
+    full_name      TEXT    NOT NULL DEFAULT '',
+    role           TEXT    NOT NULL,
+    branch_id      INTEGER REFERENCES branches(id),
+    supervisor_id  INTEGER REFERENCES supervisors(id),
+    active         INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
   );
   CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT    PRIMARY KEY,
@@ -63,6 +64,7 @@ const BASE_TABLES = `
     bar_weight_g     REAL    NOT NULL DEFAULT 0,
     quantity         INTEGER NOT NULL DEFAULT 0,
     synced           INTEGER NOT NULL DEFAULT 0,
+    upload_log_id    INTEGER REFERENCES upload_logs(id),
     created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE(salesman_id, entry_date)
@@ -91,7 +93,8 @@ const BASE_TABLES = `
     metric_id       INTEGER NOT NULL REFERENCES kpi_metrics(id),
     staff_type      TEXT    NOT NULL,
     points_per_unit REAL    NOT NULL DEFAULT 0,
-    UNIQUE(metric_id, staff_type)
+    branch_id       INTEGER REFERENCES branches(id),
+    year_month      TEXT
   );
   CREATE TABLE IF NOT EXISTS staff_monthly_targets (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,6 +159,46 @@ const BASE_TABLES = `
     metrics       TEXT    NOT NULL DEFAULT '["jewelry","bar","quantity"]',
     enabled       INTEGER NOT NULL DEFAULT 0
   );
+  CREATE TABLE IF NOT EXISTS user_permissions (
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    menu_key TEXT    NOT NULL,
+    enabled  INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (user_id, menu_key)
+  );
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    occurred_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    user_id     INTEGER REFERENCES users(id),
+    username    TEXT    NOT NULL DEFAULT '',
+    role        TEXT    NOT NULL DEFAULT '',
+    event_type  TEXT    NOT NULL,
+    target_type TEXT,
+    target_id   TEXT,
+    detail      TEXT,
+    branch_id   INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS roster_monthly (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    salesman_id   INTEGER NOT NULL REFERENCES salesmen(id),
+    year_month    TEXT    NOT NULL,
+    branch_id     INTEGER NOT NULL REFERENCES branches(id),
+    supervisor_id INTEGER REFERENCES supervisors(id),
+    staff_type    TEXT    NOT NULL,
+    active        INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(salesman_id, year_month)
+  );
+`
+
+// Indexes that must exist on a fresh install too — mirrors the same CREATE INDEX
+// statements scattered across the incremental migration blocks below. Run after
+// BASE_TABLES + V2_TABLES so every referenced table already exists.
+const BASE_INDEXES = `
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_salesmen_rep_code ON salesmen(rep_code) WHERE rep_code IS NOT NULL;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_supervisors_sup_code ON supervisors(sup_code) WHERE sup_code IS NOT NULL;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_kmtr_branch ON kpi_metric_type_rates(metric_id, branch_id, staff_type) WHERE branch_id IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_roster_monthly_ym ON roster_monthly(year_month);
+  CREATE INDEX IF NOT EXISTS idx_daily_entries_date ON daily_entries(entry_date);
+  CREATE INDEX IF NOT EXISTS idx_daily_entries_branch_date ON daily_entries(branch_id, entry_date);
 `
 
 // Added in v3
@@ -196,6 +239,7 @@ export function applySchema(db: Database): boolean {
     // Fresh install — create everything
     db.run(BASE_TABLES)
     db.run(V2_TABLES)
+    db.run(BASE_INDEXES)
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', ?)`).run(String(SCHEMA_VERSION))
     return true // Caller should seed
   }
@@ -521,6 +565,16 @@ export function applySchema(db: Database): boolean {
     try { db.run(`ALTER TABLE supervisors ADD COLUMN sup_code TEXT`) } catch { /* already exists */ }
     try { db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_supervisors_sup_code ON supervisors(sup_code) WHERE sup_code IS NOT NULL`) } catch { /* already exists */ }
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '21')`).run()
+  }
+
+  if (currentVersion < 22) {
+    // daily_entries had no index usable for date-range scans (its only constraint is
+    // UNIQUE(salesman_id, entry_date), useless for "WHERE entry_date BETWEEN ?" with
+    // salesman_id as the leading column) — every report/dashboard/sales query was doing a
+    // full table scan. Gets linearly worse every month of real data across every branch.
+    try { db.run(`CREATE INDEX IF NOT EXISTS idx_daily_entries_date ON daily_entries(entry_date)`) } catch { /* already exists */ }
+    try { db.run(`CREATE INDEX IF NOT EXISTS idx_daily_entries_branch_date ON daily_entries(branch_id, entry_date)`) } catch { /* already exists */ }
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '22')`).run()
   }
 
   return false // Existing DB — no seeding needed
