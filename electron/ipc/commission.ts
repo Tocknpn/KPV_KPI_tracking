@@ -136,7 +136,7 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
     let effectiveBranchIds = branchIds
     let supervisorFilter: number | null = null
 
-    if (user.role === 'supervisor') {
+    if (user.role === 'sales_sup') {
       effectiveBranchIds = [user.branch_id ?? 1]
       supervisorFilter   = user.supervisor_id
     } else if (user.role === 'branch_manager') {

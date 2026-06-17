@@ -7,12 +7,12 @@ import { pushUsersIfConfigured } from './sheets'
 
 // ── Role permission defaults (mirrors src/types/index.ts ROLE_DEFAULTS) ──
 const ROLE_DEFAULTS: Record<string, string[]> = {
-  admin:          ['dashboard','daily_entry','kpi_report','sale_report','analytics','upload_history','upload_status','kpi_settings','audit_log','user_management','settings'],
+  admin:          ['dashboard','daily_entry','kpi_report','sale_report','analytics','upload_history','upload_status','roster','kpi_settings','audit_log','user_management','settings'],
   sales_sup:      ['dashboard','kpi_report','upload_status'],
   accountant:     ['dashboard','daily_entry','sale_report','upload_history','upload_status'],
   branch_manager: ['dashboard','kpi_report','sale_report','upload_status'],
   top_manager:    ['dashboard','kpi_report','sale_report','analytics'],
-  hr:             ['upload_history','kpi_settings'],
+  hr:             ['roster','kpi_settings'],
 }
 
 function computePermissions(db: ReturnType<typeof getDb>, userId: number, role: string): string[] {
@@ -142,21 +142,24 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('auth:getUsers', async (_e, token: string) => {
     requireAdmin(token)
     return prepare(getDb(), `
-      SELECT u.id, u.username, u.full_name, u.role, u.branch_id, u.active, b.name AS branch_name
-      FROM users u LEFT JOIN branches b ON b.id = u.branch_id
+      SELECT u.id, u.username, u.full_name, u.role, u.branch_id, u.active, b.name AS branch_name,
+             u.supervisor_id, sv.full_name AS supervisor_name
+      FROM users u
+      LEFT JOIN branches b ON b.id = u.branch_id
+      LEFT JOIN supervisors sv ON sv.id = u.supervisor_id
       ORDER BY u.role, u.full_name
     `).all()
   })
 
   ipcMain.handle('auth:createUser', async (_e, token: string, data: {
-    username: string; password: string; fullName: string; role: string; branchId: number | null
+    username: string; password: string; fullName: string; role: string; branchId: number | null; supervisorId?: number | null
   }) => {
     const admin = requireAdmin(token)
     try {
       const db   = getDb()
       const hash = bcrypt.hashSync(data.password, 10)
-      const result = prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
-        .run(data.username, hash, data.fullName, data.role, data.branchId)
+      const result = prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id, supervisor_id) VALUES (?,?,?,?,?,?)`)
+        .run(data.username, hash, data.fullName, data.role, data.branchId, data.supervisorId ?? null)
       logAudit(db, admin.id, admin.username, admin.role, 'user_create', `Created user ${data.username} (${data.role})`, 'user', String(result.lastInsertRowid))
       pushUsersIfConfigured(db).catch(() => {})
       return { success: true, id: result.lastInsertRowid }
@@ -166,7 +169,7 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
   })
 
   ipcMain.handle('auth:updateUser', async (_e, token: string, id: number, data: {
-    fullName?: string; role?: string; branchId?: number | null; active?: number; password?: string
+    fullName?: string; role?: string; branchId?: number | null; supervisorId?: number | null; active?: number; password?: string
   }) => {
     const admin = requireAdmin(token)
     const db = getDb()
@@ -174,6 +177,7 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
     if (data.fullName !== undefined) prepare(db, `UPDATE users SET full_name = ? WHERE id = ?`).run(data.fullName, id)
     if (data.role !== undefined) prepare(db, `UPDATE users SET role = ? WHERE id = ?`).run(data.role, id)
     if (data.branchId !== undefined) prepare(db, `UPDATE users SET branch_id = ? WHERE id = ?`).run(data.branchId, id)
+    if (data.supervisorId !== undefined) prepare(db, `UPDATE users SET supervisor_id = ? WHERE id = ?`).run(data.supervisorId, id)
     if (data.active !== undefined) prepare(db, `UPDATE users SET active = ? WHERE id = ?`).run(data.active, id)
     logAudit(db, admin.id, admin.username, admin.role, 'user_update', JSON.stringify(data), 'user', String(id))
     pushUsersIfConfigured(db).catch(() => {})

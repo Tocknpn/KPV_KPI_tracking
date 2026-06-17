@@ -9,21 +9,26 @@ import type { UserRole } from '../../types'
 // ── Types ─────────────────────────────────────────────────────────────────
 interface UserRow {
   id: number; username: string; full_name: string
-  role: UserRole; branch_id: number | null; branch_name: string | null; active: number
+  role: UserRole; branch_id: number | null; branch_name: string | null
+  supervisor_id: number | null; supervisor_name: string | null; active: number
 }
+
+interface SupervisorOption { id: number; full_name: string; branch_id: number }
 
 interface FormState {
   username: string; password: string; fullName: string
-  role: UserRole; branchId: string; active: number
+  role: UserRole; branchId: string; supervisorId: string; active: number
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────
 const EMPTY_FORM: FormState = {
   username: '', password: '', fullName: '',
-  role: 'sales_sup', branchId: '', active: 1,
+  role: 'sales_sup', branchId: '', supervisorId: '', active: 1,
 }
 
 const ROLES_NEEDING_BRANCH: UserRole[] = ['sales_sup', 'accountant', 'branch_manager']
+// sales_sup must map to a specific team (supervisor record) — that's what scopes their data
+const ROLES_NEEDING_SUPERVISOR: UserRole[] = ['sales_sup']
 
 const ROLE_BADGE_VARIANT: Record<UserRole, 'info' | 'gold' | 'neutral' | 'success'> = {
   admin:          'info',
@@ -161,6 +166,7 @@ function PermissionModal({
 export default function UserManagement() {
   const { token, branches } = useAuthStore()
   const [users, setUsers]     = useState<UserRow[]>([])
+  const [supervisors, setSupervisors] = useState<SupervisorOption[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal]     = useState<'create' | 'edit' | null>(null)
   const [permUser, setPermUser] = useState<UserRow | null>(null)
@@ -176,8 +182,12 @@ export default function UserManagement() {
   async function load() {
     if (!token) return
     setLoading(true)
-    const data = await window.api.getUsers(token) as UserRow[]
+    const [data, sups] = await Promise.all([
+      window.api.getUsers(token) as Promise<UserRow[]>,
+      window.api.getSupervisors(token) as Promise<SupervisorOption[]>,
+    ])
     setUsers(data)
+    setSupervisors(sups)
     setLoading(false)
   }
 
@@ -188,7 +198,10 @@ export default function UserManagement() {
   }
 
   function openEdit(u: UserRow) {
-    setForm({ username: u.username, password: '', fullName: u.full_name, role: u.role, branchId: String(u.branch_id ?? ''), active: u.active })
+    setForm({
+      username: u.username, password: '', fullName: u.full_name, role: u.role,
+      branchId: String(u.branch_id ?? ''), supervisorId: String(u.supervisor_id ?? ''), active: u.active,
+    })
     setEditId(u.id); setError(''); setShowPwd(false); setModal('edit')
   }
 
@@ -205,6 +218,9 @@ export default function UserManagement() {
     if (ROLES_NEEDING_BRANCH.includes(form.role) && !form.branchId) {
       setError(`Branch is required for ${ROLE_LABELS[form.role]} role.`); return
     }
+    if (ROLES_NEEDING_SUPERVISOR.includes(form.role) && !form.supervisorId) {
+      setError(`Supervisor team is required for ${ROLE_LABELS[form.role]} role — this is what scopes their data.`); return
+    }
 
     setSaving(true); setError('')
     try {
@@ -215,6 +231,7 @@ export default function UserManagement() {
           fullName:  form.fullName.trim(),
           role:      form.role,
           branchId:  form.branchId ? Number(form.branchId) : null,
+          supervisorId: form.supervisorId ? Number(form.supervisorId) : null,
         })
         if (!res.success) { setError(res.error ?? 'Failed to create user'); return }
         showToast(`User "${form.username}" created.`)
@@ -223,6 +240,7 @@ export default function UserManagement() {
           fullName:  form.fullName.trim(),
           role:      form.role,
           branchId:  form.branchId ? Number(form.branchId) : null,
+          supervisorId: form.supervisorId ? Number(form.supervisorId) : null,
           active:    form.active,
           ...(form.password ? { password: form.password } : {}),
         })
@@ -246,6 +264,8 @@ export default function UserManagement() {
   }
 
   const needsBranch = ROLES_NEEDING_BRANCH.includes(form.role)
+  const needsSupervisor = ROLES_NEEDING_SUPERVISOR.includes(form.role)
+  const supervisorsForBranch = form.branchId ? supervisors.filter(s => s.branch_id === Number(form.branchId)) : []
 
   // Grouped users for display
   const active   = users.filter(u => u.active)
@@ -291,7 +311,7 @@ export default function UserManagement() {
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-surface-container-low/50">
-                {['User','Full Name','Role','Branch','Status','Actions'].map(h => (
+                {['User','Full Name','Role','Branch','Team','Status','Actions'].map(h => (
                   <th key={h} className="px-5 py-4 text-left font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
                     {h}
                   </th>
@@ -300,7 +320,7 @@ export default function UserManagement() {
             </thead>
             <tbody className="divide-y divide-outline-variant/10">
               {loading ? (
-                <tr><td colSpan={6} className="py-12 text-center text-on-surface-variant">
+                <tr><td colSpan={7} className="py-12 text-center text-on-surface-variant">
                   <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>
                   Loading users...
                 </td></tr>
@@ -320,6 +340,9 @@ export default function UserManagement() {
                   </td>
                   <td className="px-5 py-3 text-body-sm text-on-surface-variant">
                     {u.branch_name ?? <span className="italic text-on-surface-variant/50">—</span>}
+                  </td>
+                  <td className="px-5 py-3 text-body-sm text-on-surface-variant">
+                    {u.supervisor_name ?? <span className="italic text-on-surface-variant/50">—</span>}
                   </td>
                   <td className="px-5 py-3">
                     {u.active
@@ -424,6 +447,7 @@ export default function UserManagement() {
                       onClick={() => {
                         setField('role', r)
                         if (!ROLES_NEEDING_BRANCH.includes(r)) setField('branchId', '')
+                        if (!ROLES_NEEDING_SUPERVISOR.includes(r)) setField('supervisorId', '')
                       }}
                       className={`py-2 px-1 rounded-lg font-label-md text-[11px] border transition-all ${form.role === r ? 'bg-primary text-white border-primary' : 'border-outline-variant text-on-surface-variant hover:border-primary'}`}>
                       {ROLE_LABELS[r]}
@@ -437,13 +461,32 @@ export default function UserManagement() {
                 <label className="font-label-md text-label-md block mb-1 text-primary">
                   Branch {needsBranch ? '*' : <span className="text-on-surface-variant font-normal">(not required)</span>}
                 </label>
-                <select value={form.branchId} onChange={e => setField('branchId', e.target.value)}
+                <select value={form.branchId}
+                  onChange={e => { setField('branchId', e.target.value); setField('supervisorId', '') }}
                   disabled={!needsBranch}
                   className={`w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none ${!needsBranch ? 'opacity-40 cursor-not-allowed' : ''}`}>
                   <option value="">— Select branch —</option>
                   {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>
+
+              {/* Supervisor team — this is what scopes a sales_sup user's data to their team */}
+              {needsSupervisor && (
+                <div>
+                  <label className="font-label-md text-label-md block mb-1 text-primary">
+                    Supervisor Team *
+                  </label>
+                  <select value={form.supervisorId} onChange={e => setField('supervisorId', e.target.value)}
+                    disabled={!form.branchId}
+                    className={`w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none ${!form.branchId ? 'opacity-40 cursor-not-allowed' : ''}`}>
+                    <option value="">{form.branchId ? '— Select team —' : '— Select a branch first —'}</option>
+                    {supervisorsForBranch.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+                  </select>
+                  <p className="text-[10px] text-on-surface-variant mt-1">
+                    This is what scopes their KPI Report / Daily Entry / Commission views to just their team's reps.
+                  </p>
+                </div>
+              )}
 
               {/* Active toggle (edit only) */}
               {modal === 'edit' && (

@@ -84,9 +84,14 @@ async function pushBranches(db: Database, sheets: ReturnType<typeof google.sheet
 const METRIC_NAMES: Record<number, string> = { 1: 'Jewelry', 2: 'Bar', 3: 'Qty' }
 
 async function pushKpiRates(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
-  const rows = (prepare(db, `SELECT metric_id, staff_type, points_per_unit FROM kpi_metric_type_rates ORDER BY metric_id, staff_type`).all() as Array<{ metric_id: number; staff_type: string; points_per_unit: number }>)
-    .map(r => [METRIC_NAMES[r.metric_id] ?? r.metric_id, r.staff_type.toUpperCase(), r.points_per_unit])
-  await writeTab(sheets, spreadsheetId, TABS.KPI_RATES, ['Metric', 'Staff Type', 'Points per Unit'], rows)
+  const rows = (prepare(db, `
+    SELECT t.metric_id, t.staff_type, t.points_per_unit, COALESCE(b.code, 'Global') AS branch_code
+    FROM kpi_metric_type_rates t
+    LEFT JOIN branches b ON b.id = t.branch_id
+    ORDER BY t.metric_id, branch_code, t.staff_type
+  `).all() as Array<{ metric_id: number; staff_type: string; points_per_unit: number; branch_code: string }>)
+    .map(r => [METRIC_NAMES[r.metric_id] ?? r.metric_id, r.branch_code, r.staff_type.toUpperCase(), r.points_per_unit])
+  await writeTab(sheets, spreadsheetId, TABS.KPI_RATES, ['Metric', 'Branch', 'Staff Type', 'Points per Unit'], rows)
 }
 
 async function pushQtyTiers(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {

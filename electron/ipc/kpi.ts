@@ -16,11 +16,15 @@ export function computeKpiScore(
 ): { score: number; pct: number; tierId: number | null } {
   const pct = target > 0 ? (actual / target) * 100 : 0
 
-  // Staff-type-specific rate takes priority over metric default (jewelry/bar)
+  // Staff-type-specific rate takes priority over metric default (jewelry/bar) —
+  // a branch-specific row wins over the global (branch_id IS NULL) row for that type.
   if (staffType) {
     const typeRate = prepare(db, `
-      SELECT points_per_unit FROM kpi_metric_type_rates WHERE metric_id = ? AND staff_type = ?
-    `).get(metricId, staffType) as { points_per_unit: number } | undefined
+      SELECT points_per_unit FROM kpi_metric_type_rates
+      WHERE metric_id = ? AND staff_type = ? AND (branch_id = ? OR branch_id IS NULL)
+      ORDER BY CASE WHEN branch_id IS NULL THEN 1 ELSE 0 END
+      LIMIT 1
+    `).get(metricId, staffType, branchId) as { points_per_unit: number } | undefined
     if (typeRate && typeRate.points_per_unit > 0) {
       return { score: actual * typeRate.points_per_unit, pct, tierId: null }
     }
@@ -143,6 +147,88 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     if (!['admin','hr'].includes(u.role)) throw new Error('Forbidden')
     prepare(getDb(), `UPDATE kpi_metrics SET points_per_unit = ? WHERE id = ?`).run(pointsPerUnit, metricId)
     return { success: true }
+  })
+
+  // Jewelry/Bar B2C+B2B rates resolved for one branch — branch override merged over global fallback
+  ipcMain.handle('kpi:getBranchMetricRates', async (_e, token: string, branchId: number) => {
+    requireAuth(token)
+    const db = getDb()
+    const rows = prepare(db, `
+      SELECT metric_id, staff_type, branch_id, points_per_unit FROM kpi_metric_type_rates
+      WHERE metric_id IN (1,2) AND (branch_id = ? OR branch_id IS NULL)
+    `).all(branchId) as Array<{ metric_id: number; staff_type: string; branch_id: number | null; points_per_unit: number }>
+
+    const result: Record<'jewelry' | 'bar', Record<'b2c' | 'b2b', number>> = {
+      jewelry: { b2c: 0, b2b: 0 }, bar: { b2c: 0, b2b: 0 },
+    }
+    for (const r of rows) {
+      const metric = r.metric_id === 1 ? 'jewelry' : 'bar'
+      const type = r.staff_type as 'b2c' | 'b2b'
+      // Prefer branch-specific row; only use global if no branch-specific row seen yet
+      if (r.branch_id !== null || result[metric][type] === 0) result[metric][type] = r.points_per_unit
+    }
+    return result
+  })
+
+  ipcMain.handle('kpi:saveBranchMetricRates', async (_e, token: string, branchId: number, rates: {
+    jewelry: { b2c: number; b2b: number }; bar: { b2c: number; b2b: number }
+  }) => {
+    const u = requireAuth(token)
+    if (!['admin','hr'].includes(u.role)) throw new Error('Forbidden')
+    const db = getDb()
+    transaction(db, () => {
+      const writes: Array<[number, 'b2c' | 'b2b', number]> = [
+        [1, 'b2c', rates.jewelry.b2c], [1, 'b2b', rates.jewelry.b2b],
+        [2, 'b2c', rates.bar.b2c],     [2, 'b2b', rates.bar.b2b],
+      ]
+      for (const [metricId, staffType, pointsPerUnit] of writes) {
+        prepare(db, `DELETE FROM kpi_metric_type_rates WHERE metric_id=? AND branch_id=? AND staff_type=?`).run(metricId, branchId, staffType)
+        prepare(db, `INSERT INTO kpi_metric_type_rates (metric_id, branch_id, staff_type, points_per_unit) VALUES (?,?,?,?)`).run(metricId, branchId, staffType, pointsPerUnit)
+      }
+    })
+    pushAllConfigIfConfigured(db).catch(() => {})
+    return { success: true }
+  })
+
+  // Find-or-create the single qty tier config for a branch — no profile picker, one config per branch
+  ipcMain.handle('kpi:getBranchQtyTiers', async (_e, token: string, branchId: number) => {
+    requireAuth(token)
+    const db = getDb()
+    const config = prepare(db, `
+      SELECT id, label FROM kpi_tier_configs WHERE metric_id = 3 AND branch_id = ? AND is_active = 1 LIMIT 1
+    `).get(branchId) as { id: number; label: string } | undefined
+    if (!config) return { configId: null, tiers: [] }
+    const tiers = prepare(db, `SELECT id, threshold_pct, score FROM kpi_tiers WHERE config_id = ? ORDER BY threshold_pct DESC`).all(config.id)
+    return { configId: config.id, tiers }
+  })
+
+  ipcMain.handle('kpi:saveBranchQtyTiers', async (_e, token: string, branchId: number,
+    tiers: Array<{ thresholdPct: number; score: number }>
+  ) => {
+    const u = requireAuth(token)
+    if (!['admin','hr'].includes(u.role)) throw new Error('Forbidden')
+    const db = getDb()
+    const branch = prepare(db, `SELECT code FROM branches WHERE id = ?`).get(branchId) as { code: string } | undefined
+    let configId: number
+    transaction(db, () => {
+      const existing = prepare(db, `SELECT id FROM kpi_tier_configs WHERE metric_id = 3 AND branch_id = ? AND is_active = 1 LIMIT 1`).get(branchId) as { id: number } | undefined
+      if (existing) {
+        configId = existing.id
+        prepare(db, `DELETE FROM kpi_tiers WHERE config_id = ?`).run(configId)
+      } else {
+        const result = prepare(db, `
+          INSERT INTO kpi_tier_configs (metric_id, branch_id, label, effective_from, effective_to, is_active)
+          VALUES (3, ?, ?, '2000-01-01', NULL, 1)
+        `).run(branchId, `${branch?.code ?? 'Branch'} Qty Tiers`)
+        configId = result.lastInsertRowid as number
+      }
+      tiers.sort((a, b) => b.thresholdPct - a.thresholdPct).forEach((t, i) => {
+        prepare(db, `INSERT INTO kpi_tiers (config_id, threshold_pct, score, tier_order) VALUES (?,?,?,?)`)
+          .run(configId, t.thresholdPct, t.score, i + 1)
+      })
+    })
+    pushAllConfigIfConfigured(db).catch(() => {})
+    return { success: true, configId: configId! }
   })
 
   ipcMain.handle('kpi:saveBranchKpiTarget', async (_e, token: string, branchId: number, target: number) => {

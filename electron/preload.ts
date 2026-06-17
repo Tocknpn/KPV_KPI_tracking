@@ -57,6 +57,14 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('kpi:deleteConfig', token, configId),
   saveKpiMetricMultiplier: (token: string, metricId: number, pointsPerUnit: number) =>
     ipcRenderer.invoke('kpi:saveMetricMultiplier', token, metricId, pointsPerUnit),
+  getBranchMetricRates: (token: string, branchId: number) =>
+    ipcRenderer.invoke('kpi:getBranchMetricRates', token, branchId),
+  saveBranchMetricRates: (token: string, branchId: number, rates: { jewelry: { b2c: number; b2b: number }; bar: { b2c: number; b2b: number } }) =>
+    ipcRenderer.invoke('kpi:saveBranchMetricRates', token, branchId, rates),
+  getBranchQtyTiers: (token: string, branchId: number) =>
+    ipcRenderer.invoke('kpi:getBranchQtyTiers', token, branchId),
+  saveBranchQtyTiers: (token: string, branchId: number, tiers: Array<{ thresholdPct: number; score: number }>) =>
+    ipcRenderer.invoke('kpi:saveBranchQtyTiers', token, branchId, tiers),
   saveBranchKpiTarget: (token: string, branchId: number, target: number) =>
     ipcRenderer.invoke('kpi:saveBranchKpiTarget', token, branchId, target),
   getMonthlyBranchTargets: (token: string, year: number, month: number) =>

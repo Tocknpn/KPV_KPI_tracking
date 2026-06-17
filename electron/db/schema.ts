@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 13
+const SCHEMA_VERSION = 14
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -389,6 +389,16 @@ export function applySchema(db: Database): boolean {
       SELECT id, branch_id, staff_type, supervisor_id, active, datetime('now') FROM salesmen
     `)
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '13')`).run()
+  }
+
+  if (currentVersion < 14) {
+    // Jewelry/Bar rates become branch-scoped — branch_id NULL stays the global fallback,
+    // a branch-specific row (if present) wins. No more single "Global" editor.
+    try { db.run(`ALTER TABLE kpi_metric_type_rates ADD COLUMN branch_id INTEGER REFERENCES branches(id)`) } catch { /* already exists */ }
+    try {
+      db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_kmtr_branch ON kpi_metric_type_rates(metric_id, branch_id, staff_type) WHERE branch_id IS NOT NULL`)
+    } catch { /* already exists */ }
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '14')`).run()
   }
 
   return false // Existing DB — no seeding needed

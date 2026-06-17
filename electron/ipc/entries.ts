@@ -11,7 +11,7 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     const db = getDb()
 
     // Supervisor: see only their assigned team
-    if (user.role === 'supervisor' && user.supervisor_id) {
+    if (user.role === 'sales_sup' && user.supervisor_id) {
       return prepare(db, `
         SELECT s.*, b.name AS branch_name, sv.full_name AS supervisor_name FROM salesmen s
         JOIN branches b ON b.id = s.branch_id
@@ -20,7 +20,7 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
       `).all(user.supervisor_id)
     }
 
-    const effectiveBranchId = (user.role === 'supervisor' || user.role === 'branch_manager')
+    const effectiveBranchId = (user.role === 'sales_sup' || user.role === 'branch_manager')
       ? user.branch_id
       : (branchId ?? null)
 
@@ -68,7 +68,7 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     const db = getDb()
 
     // Supervisor: show only their assigned team members
-    if (user.role === 'supervisor' && user.supervisor_id) {
+    if (user.role === 'sales_sup' && user.supervisor_id) {
       return prepare(db, `
         SELECT
           de.id, s.id AS salesman_id, de.entry_date,
