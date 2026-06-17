@@ -406,6 +406,9 @@ export default function Reports() {
   const avgEomKpiPct = searched.length ? searched.reduce((s, r) => s + r.eomKpiPct, 0) / searched.length : 0
   const totalJewelry = searched.reduce((s, r) => s + r.actual_jewelry, 0)
   const totalBar     = searched.reduce((s, r) => s + r.actual_bar, 0)
+  const totalRepScore  = searched.reduce((s, r) => s + r.kpiScore.total, 0)
+  const totalRepTarget = searched.reduce((s, r) => s + r.kpiPointTarget, 0)
+  const totalRepKpiPct = totalRepTarget > 0 ? (totalRepScore / totalRepTarget) * 100 : 0
 
   // ── Customer Type derived ──────────────────────────────────────────────
   const b2cRows    = rows.filter(r => r.staff_type === 'b2c' && matchesSup(r.supervisor_name))
@@ -567,15 +570,6 @@ export default function Reports() {
         )}
         <div className="ml-auto flex items-center gap-3">
           <TypeMultiChips value={typeFilter} onChange={setTypeFilter} />
-          {user?.role === 'admin' && activeTab === 'commission' && (
-            <button onClick={handlePullConfigs} disabled={commPulling}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-container text-on-surface text-body-sm hover:bg-surface-container-high transition-colors border border-white/20 disabled:opacity-50">
-              <span className={`material-symbols-outlined text-sm text-secondary ${commPulling ? 'animate-spin-slow' : ''}`}>
-                {commPulling ? 'sync' : 'cloud_download'}
-              </span>
-              {commPulling ? 'Pulling...' : 'Pull Configs'}
-            </button>
-          )}
         </div>
       </div>
 
@@ -608,25 +602,28 @@ export default function Reports() {
               <div className="absolute -right-16 -top-16 w-64 h-64 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/10 transition-colors duration-700" />
               <div className="relative z-10">
                 {/* Overall header */}
-                <div className="flex justify-between items-start mb-6">
+                <div className="flex justify-between items-center mb-6">
                   <div>
-                    <span className="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-[10px] uppercase tracking-widest mb-4 inline-block">
+                    <span className="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-[10px] uppercase tracking-widest mb-3 inline-block">
                       KPI Score — {MONTHS[month - 1]} {year}
                     </span>
-                    <h3 className="font-display-xl text-display-xl text-primary tabular-nums">{fmtPct(execOverallPct)}</h3>
-                    <p className="text-on-surface-variant text-body-md mt-0.5">
+                    {/* Current % → Est. month end inline */}
+                    <div className="flex items-center gap-3 mt-1">
+                      <h3 className="font-display-xl text-display-xl text-primary tabular-nums leading-none">{fmtPct(execOverallPct)}</h3>
+                      <span className="material-symbols-outlined text-on-surface-variant/40 text-3xl select-none">arrow_forward</span>
+                      <div>
+                        <p className={`font-bold text-[32px] tabular-nums leading-none ${calcEomPct(execOverallPct) >= 100 ? 'text-green-600' : 'text-tertiary'}`}>
+                          {fmtPct(calcEomPct(execOverallPct))}
+                        </p>
+                        <p className="text-[10px] text-on-surface-variant/60 mt-0.5 uppercase tracking-wide">est. month end</p>
+                      </div>
+                    </div>
+                    <p className="text-on-surface-variant text-body-md mt-2">
                       {fmtPts(execTotalScore)} of {fmtPts(execTotalTarget)} pts across {execTotalPeople} staff
                     </p>
-                    <p className="text-[11px] text-on-surface-variant/60 mt-0.5 font-mono">{dateFrom} → {dateTo}</p>
-                    <p className="text-[12px] mt-2">
-                      Est. Month End:{' '}
-                      <span className={`font-bold tabular-nums ${calcEomPct(execOverallPct) >= 100 ? 'text-green-600' : 'text-tertiary'}`}>
-                        {fmtPct(calcEomPct(execOverallPct))}
-                      </span>
-                      <span className="text-on-surface-variant text-[10px] ml-1.5">(day {dayOfMonth} of {daysInMonth})</span>
-                    </p>
+                    <p className="text-[11px] text-on-surface-variant/50 mt-0.5 font-mono">{dateFrom} → {dateTo} · day {dayOfMonth} of {daysInMonth}</p>
                   </div>
-                  <RadialGauge pct={Math.min(execOverallPct, 100)} label="Overall KPI" size={120} color="#004f96" />
+                  <RadialGauge pct={Math.min(execOverallPct, 100)} label="Overall KPI" size={180} color="#004f96" />
                 </div>
 
                 {/* Branch grid */}
@@ -779,18 +776,60 @@ export default function Reports() {
       ═══════════════════════════════════════════════════════════════════ */}
       {activeTab === 'performance' && (<>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-card-gap mb-8">
-          {[
-            { label: 'Avg KPI Score %',    value: fmtPct(avgKpiPct),             color: 'border-primary',            sub: `Day ${meta.dayOfMonth} of ${meta.daysInMonth}` },
-            { label: 'Avg Est. Month End',  value: fmtPct(avgEomKpiPct),          color: 'border-tertiary',            sub: `${meta.daysRemaining} days remaining` },
-            { label: 'Total Jewelry MTD',   value: `${fmt(totalJewelry, 1)} Baht`, color: 'border-secondary-container', sub: `${searched.length} reps${typeFilter.length ? ` (${typeFilter.map(t => t.toUpperCase()).join('/')})` : ''}` },
-            { label: 'Total Bar MTD',       value: `${fmt(totalBar, 1)} Baht`,     color: 'border-outline-variant',    sub: `${dateFrom} → ${dateTo}` },
-          ].map(k => (
-            <GlassCard key={k.label} className={`p-5 border-l-4 ${k.color}`}>
-              <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{k.label}</p>
-              <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{k.value}</h3>
-              <p className="text-[10px] text-on-surface-variant mt-1">{k.sub}</p>
-            </GlassCard>
-          ))}
+          {/* Total Reps */}
+          <GlassCard className="p-5 border-l-4 border-primary">
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Total Reps</p>
+            <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{searched.length}</h3>
+            <p className="text-[10px] text-on-surface-variant mt-0.5">
+              {searched.filter(r => r.staff_type === 'b2c').length} B2C &nbsp;·&nbsp; {searched.filter(r => r.staff_type === 'b2b').length} B2B
+            </p>
+            <p className="text-[10px] text-on-surface-variant/50 font-mono mt-0.5">{dateFrom} → {dateTo}</p>
+          </GlassCard>
+
+          {/* Avg Team KPI with → est. month end */}
+          <GlassCard className="p-5 border-l-4 border-tertiary">
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-2">Avg Team KPI %</p>
+            <div className="flex items-center gap-2">
+              <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums leading-none">{fmtPct(avgKpiPct)}</h3>
+              <span className="material-symbols-outlined text-on-surface-variant/40 text-xl select-none">arrow_forward</span>
+              <div>
+                <p className={`text-[20px] font-bold tabular-nums leading-none ${calcEomPct(avgKpiPct) >= 100 ? 'text-green-600' : 'text-tertiary'}`}>
+                  {fmtPct(calcEomPct(avgKpiPct))}
+                </p>
+                <p className="text-[9px] text-on-surface-variant/60 mt-0.5 uppercase tracking-wide">est. month end</p>
+              </div>
+            </div>
+            <p className="text-[10px] text-on-surface-variant mt-1.5">day {meta.dayOfMonth} of {meta.daysInMonth}</p>
+          </GlassCard>
+
+          {/* Total Reps Score with insight */}
+          <GlassCard className="p-5 border-l-4 border-outline-variant">
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Total Reps Score</p>
+            <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{fmtPts(totalRepScore)}</h3>
+            <p className="text-[10px] text-on-surface-variant mt-0.5">
+              of {fmtPts(totalRepTarget)} pts &nbsp;·&nbsp;
+              <span style={{ color: kpiHex(totalRepKpiPct) }} className="font-bold">{fmtPct(totalRepKpiPct)}</span> achieved
+            </p>
+            <p className="text-[11px] mt-1">
+              Est. month end:{' '}
+              <span className={`font-bold tabular-nums ${calcEomPct(totalRepKpiPct) >= 100 ? 'text-green-600' : 'text-tertiary'}`}>
+                {fmtPct(calcEomPct(totalRepKpiPct))}
+              </span>
+            </p>
+          </GlassCard>
+
+          {/* Month Progress */}
+          <GlassCard className="p-5 border-l-4 border-secondary">
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Month Progress</p>
+            <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">
+              {fmtPct((meta.dayOfMonth / meta.daysInMonth) * 100)}
+            </h3>
+            <div className="h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden mt-1.5 mb-1">
+              <div className="h-full rounded-full bg-secondary transition-all duration-700"
+                style={{ width: `${(meta.dayOfMonth / meta.daysInMonth) * 100}%` }} />
+            </div>
+            <p className="text-[10px] text-on-surface-variant">day {meta.dayOfMonth} of {meta.daysInMonth} · {meta.daysRemaining} days left</p>
+          </GlassCard>
         </div>
 
         <div className="relative mb-4 max-w-sm">
@@ -975,7 +1014,7 @@ export default function Reports() {
                 <span className="material-symbols-outlined text-sm text-on-surface-variant">{k.icon}</span>
                 <p className="font-label-md text-label-md text-on-surface-variant uppercase">{k.label}</p>
               </div>
-              <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums text-[22px]">{k.value}</h3>
+              <h3 className="text-[18px] font-bold text-on-surface tabular-nums leading-tight">{k.value}</h3>
               <p className="text-[10px] text-on-surface-variant mt-1">{k.sub}</p>
             </GlassCard>
           ))}
