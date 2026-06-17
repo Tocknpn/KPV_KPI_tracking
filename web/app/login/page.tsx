@@ -8,66 +8,64 @@ export default async function LoginPage({ searchParams }: Props) {
   const { error } = await searchParams
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen flex items-center justify-center font-sans"
+      style={{ background: 'linear-gradient(135deg, #eef2ff 0%, #f0f9ff 100%)' }}>
+      <div className="w-full max-w-sm mx-4">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[#004f96] mb-4">
-            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg mb-4"
+            style={{ background: 'linear-gradient(135deg, #004f96 0%, #0067c0 100%)' }}>
+            <span className="material-symbols-outlined text-white text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+              diamond
+            </span>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">KPV KPI Tracker</h1>
-          <p className="text-sm text-gray-500 mt-1">Sign in to view reports</p>
+          <h1 className="text-[22px] font-bold text-on-surface tracking-tight">KPV KPI Tracker</h1>
+          <p className="text-on-surface-variant text-body-sm mt-1 text-center">Sign in to view reports</p>
         </div>
 
         {/* Card */}
-        <div className="card p-8">
+        <div className="bg-white rounded-2xl shadow-glass-elevated border border-white/80 px-8 py-7">
           {error && (
-            <div className="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+            <div className="mb-4 flex items-center gap-2 bg-error-container text-on-error-container px-3 py-2.5 rounded-lg text-body-sm">
               {decodeURIComponent(error)}
             </div>
           )}
 
           <form action={loginAction} className="space-y-4">
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
-                Username
-              </label>
+            <div className="flex items-center gap-3 border-b border-outline-variant/40 pb-3 focus-within:border-primary transition-colors">
+              <span className="material-symbols-outlined text-on-surface-variant text-[18px]">person</span>
               <input
                 id="username"
                 name="username"
                 type="text"
                 autoComplete="username"
                 required
-                className="input"
                 placeholder="Enter your username"
+                className="flex-1 bg-transparent outline-none text-body-md text-on-surface placeholder:text-on-surface-variant/50"
               />
             </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                Password
-              </label>
+            <div className="flex items-center gap-3 border-b border-outline-variant/40 pb-3 focus-within:border-primary transition-colors">
+              <span className="material-symbols-outlined text-on-surface-variant text-[18px]">lock</span>
               <input
                 id="password"
                 name="password"
                 type="password"
                 autoComplete="current-password"
                 required
-                className="input"
                 placeholder="Enter your password"
+                className="flex-1 bg-transparent outline-none text-body-md text-on-surface placeholder:text-on-surface-variant/50"
               />
             </div>
 
-            <button type="submit" className="btn-primary w-full justify-center flex mt-6">
+            <button type="submit"
+              className="w-full bg-primary text-white py-3 rounded-xl font-label-md text-label-md flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all shadow-primary mt-2">
               Sign In
             </button>
           </form>
         </div>
 
-        <p className="text-center text-xs text-gray-400 mt-6">
+        <p className="text-center text-[11px] text-on-surface-variant/60 mt-6">
           Use the same credentials as the desktop app.
           <br />Branch Manager and above only.
         </p>

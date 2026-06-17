@@ -31,9 +31,8 @@ interface Props {
 export function TopBar({ title }: Props) {
   const navigate = useNavigate()
   const { token, user, clearSession, branches } = useAuthStore()
-  const { unsyncedCount, isSyncing, setIsSyncing, setUnsyncedCount, sidebarCollapsed } = useAppStore()
+  const { unsyncedCount, isSyncing, setIsSyncing, setUnsyncedCount, sidebarCollapsed, lastSyncedAt, setLastSyncedAt } = useAppStore()
   const [syncResult, setSyncResult] = useState<string | null>(null)
-  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
   const [, setNowTick] = useState(0) // forces relativeTime() to re-render as time passes
   const [zoom, setZoomState] = useState<number>(() => {
     const saved = localStorage.getItem(ZOOM_KEY)
@@ -46,7 +45,9 @@ export function TopBar({ title }: Props) {
 
   useEffect(() => {
     if (!token) return
-    window.api.getSheetsConfig(token).then(cfg => setLastSyncedAt(cfg.lastSyncedAt || null))
+    // Only seed from the backend if nothing's set yet — Login already populates this via
+    // its own pull-on-login, so don't clobber a fresher value with a redundant refetch.
+    if (!lastSyncedAt) window.api.getSheetsConfig(token).then(cfg => setLastSyncedAt(cfg.lastSyncedAt || null))
     const tick = setInterval(() => setNowTick(t => t + 1), 30000) // refresh "Xm ago" text every 30s
     return () => clearInterval(tick)
   }, [token])
@@ -68,7 +69,7 @@ export function TopBar({ title }: Props) {
         const count = await window.api.getUnsyncedCount(token)
         setUnsyncedCount(count)
         const cfg = await window.api.getSheetsConfig(token)
-        setLastSyncedAt(cfg.lastSyncedAt || null)
+        if (cfg.lastSyncedAt) setLastSyncedAt(cfg.lastSyncedAt)
       } else {
         setSyncResult(result.error ?? 'Sync failed')
       }

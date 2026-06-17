@@ -23,5 +23,6 @@ export async function getSession() {
   return getIronSession<SessionData>(cookieStore, sessionOptions)
 }
 
-// Allowed roles for the web app (no sales_sup — data-entry only role)
-export const ALLOWED_ROLES = ['admin', 'top_manager', 'branch_manager', 'accountant', 'hr']
+// Allowed roles for the web app (no sales_sup/hr_support — those are data-entry-only roles
+// on the desktop app). 'accountant' was retired and split into officer/manager — keep both.
+export const ALLOWED_ROLES = ['admin', 'top_manager', 'branch_manager', 'accountant_officer', 'accountant_manager', 'hr']

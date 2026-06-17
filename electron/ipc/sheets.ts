@@ -620,12 +620,18 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       const sheets = google.sheets({ version: 'v4', auth })
       await sheets.spreadsheets.get({ spreadsheetId: sheetsId, fields: 'properties.title' }) // throws if unreachable/unshared
 
+      // Persist sheets_id/service_account_path only AFTER a successful pull — otherwise a
+      // pull failure (network drop mid-sync, bad tab, etc.) leaves the device marked
+      // "configured" with no real data ever having arrived, silently hiding this exact
+      // retry button (isSheetsConfigured() would now return true) with no way back except
+      // logging in with the seeded default account and finishing setup manually.
+      const result = await pullAllFromCloud(sheetsId, serviceAccountPath)
+      if (!result.success) return { success: false, error: result.error ?? 'Connected, but the initial sync failed.' }
+
       const db = getDb()
       prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('sheets_id', ?)`).run(sheetsId)
       prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('service_account_path', ?)`).run(serviceAccountPath)
 
-      const result = await pullAllFromCloud(sheetsId, serviceAccountPath)
-      if (!result.success) return { success: false, error: result.error ?? 'Connected, but the initial sync failed.' }
       const c = result.counts
       return { success: true, message: `Connected — synced ${c.users} users, ${c.roster} roster rows, ${c.entries} entries.` }
     } catch (e: unknown) {

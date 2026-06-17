@@ -24,7 +24,7 @@ export default async function KpiReportPage({ searchParams }: Props) {
     getMonthlyTargets(),
   ])
 
-  const isBranchManager = session.role === 'branch_manager'
+  const isBranchManager = session.role === 'branch_manager' || session.role === 'accountant_officer'
   const lockedBranch = isBranchManager ? (session.branchCode ?? null) : null
 
   // Determine which branch to show
@@ -44,8 +44,8 @@ export default async function KpiReportPage({ searchParams }: Props) {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">KPI Report</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h1 className="text-2xl font-bold text-on-surface">KPI Report</h1>
+          <p className="text-sm text-on-surface-variant mt-0.5">
             {MONTHS[month - 1]} {year} · Per-rep KPI breakdown
           </p>
         </div>
@@ -54,20 +54,20 @@ export default async function KpiReportPage({ searchParams }: Props) {
       {/* Filters */}
       <form method="GET" action="/kpi-report" className="card p-4 mb-6 flex flex-wrap gap-3 items-end">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Year</label>
+          <label className="block text-xs font-medium text-on-surface-variant mb-1">Year</label>
           <select name="year" defaultValue={year} className="select">
             {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Month</label>
+          <label className="block text-xs font-medium text-on-surface-variant mb-1">Month</label>
           <select name="month" defaultValue={month} className="select">
             {MONTHS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
           </select>
         </div>
         {!isBranchManager && (
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Branch</label>
+            <label className="block text-xs font-medium text-on-surface-variant mb-1">Branch</label>
             <select name="branch" defaultValue={selectedBranch ?? ''} className="select">
               <option value="">All Branches</option>
               {branches.map(b => <option key={b.code} value={b.code}>{b.name} ({b.code})</option>)}
@@ -84,18 +84,18 @@ export default async function KpiReportPage({ searchParams }: Props) {
             <div key={b.code} className="card p-4">
               <div className="flex items-center justify-between mb-2">
                 <div>
-                  <div className="font-semibold text-gray-900 text-sm">{b.name}</div>
-                  <div className="text-xs text-gray-400">{b.code} · {b.reps.length} reps</div>
+                  <div className="font-semibold text-on-surface text-sm">{b.name}</div>
+                  <div className="text-xs text-on-surface-variant/60">{b.code} · {b.reps.length} reps</div>
                 </div>
                 <span className={`kpi-badge ${kpiColor(b.kpi_pct)}`}>{b.kpi_pct.toFixed(1)}%</span>
               </div>
-              <div className="w-full bg-gray-100 rounded-full h-2">
+              <div className="w-full bg-surface-container rounded-full h-2">
                 <div
                   className={`h-2 rounded-full ${b.kpi_pct >= 80 ? 'bg-green-500' : b.kpi_pct >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
                   style={{ width: `${Math.min(b.kpi_pct, 100)}%` }}
                 />
               </div>
-              <div className="flex justify-between text-xs text-gray-400 mt-1">
+              <div className="flex justify-between text-xs text-on-surface-variant/60 mt-1">
                 <span>{b.total_score.toLocaleString()} pts</span>
                 <span>/ {b.kpi_target.toLocaleString()}</span>
               </div>
@@ -106,8 +106,8 @@ export default async function KpiReportPage({ searchParams }: Props) {
 
       {/* Rep table */}
       <div className="card overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="font-semibold text-gray-900">Rep Breakdown — {MONTHS[month - 1]} {year}</h2>
+        <div className="px-5 py-4 border-b border-outline-variant/10">
+          <h2 className="font-semibold text-on-surface">Rep Breakdown — {MONTHS[month - 1]} {year}</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -128,19 +128,19 @@ export default async function KpiReportPage({ searchParams }: Props) {
             <tbody>
               {allReps.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="table-cell text-center text-gray-400 py-8">
+                  <td colSpan={10} className="table-cell text-center text-on-surface-variant/60 py-8">
                     No data for {MONTHS[month - 1]} {year}
                   </td>
                 </tr>
               )}
               {allReps.map((rep, i) => (
-                <tr key={rep.rep_code} className="hover:bg-gray-50">
-                  <td className="table-cell text-gray-400 text-xs">{i + 1}</td>
+                <tr key={rep.rep_code} className="hover:bg-surface-container-low/50">
+                  <td className="table-cell text-on-surface-variant/60 text-xs">{i + 1}</td>
                   <td className="table-cell">
                     <div className="font-medium">{rep.full_name}</div>
-                    <div className="text-xs text-gray-400">{rep.rep_code}</div>
+                    <div className="text-xs text-on-surface-variant/60">{rep.rep_code}</div>
                   </td>
-                  <td className="table-cell text-gray-500 text-xs">{rep.branch_name}</td>
+                  <td className="table-cell text-on-surface-variant text-xs">{rep.branch_name}</td>
                   <td className="table-cell text-right">{rep.jewelry_g.toLocaleString()}</td>
                   <td className="table-cell text-right text-blue-600">{Math.round(rep.jewelry_score).toLocaleString()}</td>
                   <td className="table-cell text-right">{rep.bar_g.toLocaleString()}</td>
@@ -155,7 +155,7 @@ export default async function KpiReportPage({ searchParams }: Props) {
         </div>
       </div>
 
-      <p className="text-xs text-gray-400 mt-4 text-right">Data cached · refreshes every 5 min</p>
+      <p className="text-xs text-on-surface-variant/60 mt-4 text-right">Data cached · refreshes every 5 min</p>
     </div>
   )
 }

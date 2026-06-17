@@ -8,8 +8,10 @@ const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin',
   top_manager: 'Top Manager',
   branch_manager: 'Branch Manager',
-  accountant: 'Accountant',
+  accountant_officer: 'Accountant Officer',
+  accountant_manager: 'Accountant Manager',
   hr: 'HR',
+  hr_support: 'HR Support',
   sales_sup: 'Supervisor',
 }
 
@@ -19,43 +21,44 @@ interface Props {
   children: React.ReactNode
 }
 
+// Same icon names as the desktop app's Sidebar.tsx NAV_ITEMS, for a consistent look
 const NAV = [
-  { href: '/dashboard',   label: 'Dashboard',   icon: GridIcon },
-  { href: '/kpi-report',  label: 'KPI Report',  icon: ChartIcon },
-  { href: '/sale-report', label: 'Sale Report',  icon: BagIcon },
+  { href: '/dashboard',   label: 'Dashboard',   icon: 'dashboard' },
+  { href: '/kpi-report',  label: 'KPI Report',  icon: 'leaderboard' },
+  { href: '/sale-report', label: 'Sale Report',  icon: 'bar_chart' },
 ]
 
 export default function AppShell({ fullName, role, children }: Props) {
   const pathname = usePathname()
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-60 shrink-0 flex flex-col bg-[#004f96] text-white">
+    <div className="flex h-screen overflow-hidden bg-mica bg-surface">
+      {/* Sidebar — frosted glass, matches the desktop app's Sidebar.tsx */}
+      <aside className="w-sidebar-width shrink-0 flex flex-col bg-surface-container-low/60 backdrop-blur-[40px] border-r border-white/10 shadow-sm">
         {/* Logo */}
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
-          <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
-            <ChartIcon className="w-4 h-4" />
+        <div className="flex items-center gap-3 px-5 py-5">
+          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-primary">
+            <span className="material-symbols-outlined text-white text-lg">monitoring</span>
           </div>
           <div>
-            <div className="text-sm font-bold leading-tight">KPV Tracker</div>
-            <div className="text-[10px] text-white/60 leading-tight">Reports Portal</div>
+            <div className="text-sm font-bold leading-tight text-on-surface">KPV Tracker</div>
+            <div className="text-[10px] text-on-surface-variant leading-tight">Reports Portal</div>
           </div>
         </div>
 
         {/* Nav */}
         <nav className="flex-1 py-4 px-3 space-y-0.5">
-          {NAV.map(({ href, label, icon: Icon }) => {
+          {NAV.map(({ href, label, icon }) => {
             const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
             return (
               <Link
                 key={href}
                 href={href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  active ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-body-sm font-medium transition-colors ${
+                  active ? 'bg-primary text-white shadow-primary font-bold' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
                 }`}
               >
-                <Icon className="w-4 h-4 shrink-0" />
+                <span className="material-symbols-outlined text-base shrink-0">{icon}</span>
                 {label}
               </Link>
             )
@@ -63,21 +66,21 @@ export default function AppShell({ fullName, role, children }: Props) {
         </nav>
 
         {/* User info + Logout */}
-        <div className="border-t border-white/10 px-4 py-4">
+        <div className="border-t border-outline-variant/10 px-4 py-4">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold shrink-0">
+            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
               {fullName.charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0">
-              <div className="text-sm font-medium truncate">{fullName}</div>
-              <div className="text-[10px] text-white/60">{ROLE_LABELS[role] ?? role}</div>
+              <div className="text-sm font-medium truncate text-on-surface">{fullName}</div>
+              <div className="text-[10px] text-on-surface-variant">{ROLE_LABELS[role] ?? role}</div>
             </div>
           </div>
           <form action={logoutAction}>
             <button type="submit"
-              className="w-full text-left text-xs text-white/60 hover:text-white transition-colors flex items-center gap-2 px-1 py-1"
+              className="w-full text-left text-xs text-on-surface-variant hover:text-error transition-colors flex items-center gap-2 px-1 py-1"
             >
-              <LogoutIcon className="w-3.5 h-3.5" />
+              <span className="material-symbols-outlined text-sm">logout</span>
               Sign out
             </button>
           </form>
@@ -92,40 +95,3 @@ export default function AppShell({ fullName, role, children }: Props) {
   )
 }
 
-// ── Icons ─────────────────────────────────────────────────────────────────────
-
-function GridIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-        d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-    </svg>
-  )
-}
-
-function ChartIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-    </svg>
-  )
-}
-
-function BagIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-        d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-    </svg>
-  )
-}
-
-function LogoutIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-    </svg>
-  )
-}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { useAuthStore } from '../../store/auth.store'
+import { useAppStore } from '../../store/app.store'
 import type { SyncLog, EmailConfig } from '../../types'
 
 const DEFAULT_EMAIL: EmailConfig = {
@@ -12,6 +13,7 @@ const DEFAULT_EMAIL: EmailConfig = {
 
 export default function Settings() {
   const { token } = useAuthStore()
+  const { setLastSyncedAt } = useAppStore()
 
   const [isForceSyncing, setIsForceSyncing] = useState(false)
   const [seeding, setSeeding]       = useState(false)
@@ -54,7 +56,10 @@ export default function Settings() {
   }
 
   async function refreshLastSync() {
-    window.api.getSheetsConfig(token!).then(cfg => setLastSync(cfg.lastSyncedAt))
+    window.api.getSheetsConfig(token!).then(cfg => {
+      setLastSync(cfg.lastSyncedAt)
+      if (cfg.lastSyncedAt) setLastSyncedAt(cfg.lastSyncedAt)
+    })
   }
 
   async function forceSync() {

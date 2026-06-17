@@ -1,10 +1,12 @@
 import { useState, useEffect, FormEvent } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth.store'
+import { useAppStore } from '../../store/app.store'
 
 export default function Login() {
   const navigate = useNavigate()
   const { token, setSession } = useAuthStore()
+  const { setLastSyncedAt } = useAppStore()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPwd, setShowPwd]   = useState(false)
@@ -71,6 +73,7 @@ export default function Login() {
       try {
         const sync = await window.api.pullFromCloud(result.token)
         setSyncStatus(sync.success ? 'Up to date.' : 'Could not sync — using last saved data.')
+        if (sync.success) setLastSyncedAt(new Date().toISOString())
       } catch {
         setSyncStatus('Could not sync — using last saved data.')
       }

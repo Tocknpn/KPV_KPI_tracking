@@ -3,6 +3,7 @@ import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useAuthStore } from '../../store/auth.store'
+import { useAppStore } from '../../store/app.store'
 import type { RosterRow, Supervisor } from '../../types'
 import { validateRosterRows, downloadCSV } from '../../utils/csv'
 import { parseXLSX, readFileAsArrayBuffer } from '../../utils/xlsx'
@@ -239,6 +240,7 @@ function RosterUploadModal({ token, onDone, onClose }: {
 // ── Main screen ───────────────────────────────────────────────────────────
 export default function Roster() {
   const { token, user, branches } = useAuthStore()
+  const { setLastSyncedAt } = useAppStore()
   const now = new Date()
 
   const [year, setYear]   = useState(now.getFullYear())
@@ -319,6 +321,7 @@ export default function Roster() {
     setSyncing(true)
     try {
       await window.api.forceSyncAll(token)
+      setLastSyncedAt(new Date().toISOString())
       showToast('All data synced to Google Sheets.')
     } catch {
       showToast('Sync failed — check Sheets config in Settings.')
