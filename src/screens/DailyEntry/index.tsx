@@ -12,6 +12,9 @@ type Tab = 'manual' | 'daily-csv' | 'roster'
 function fmt(n: number) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
+interface UploadSummary { totalRecords: number; totalJewelry: number; totalBar: number; totalQty: number; totalWeight: number; complete: number; errors: number }
+interface ErrorRow { row: number; data: { date: string; repCode: string; jewelryWeightG: number; barWeightG: number; quantity: number }; reason: string }
+
 export default function DailyEntry() {
   const { token, user, branches } = useAuthStore()
   const { selectedBranchId, selectedYear, selectedMonth, setUnsyncedCount } = useAppStore()
@@ -33,6 +36,11 @@ export default function DailyEntry() {
   const [uploadResult, setUploadResult] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Upload result summary (accountant-facing) + error-fix flow
+  const [uploadSummary, setUploadSummary] = useState<UploadSummary | null>(null)
+  const [errorRows, setErrorRows] = useState<ErrorRow[]>([])
+  const [showErrorModal, setShowErrorModal] = useState(false)
 
   const effectiveBranchId = (user?.role === 'supervisor' || user?.role === 'branch_manager')
     ? (user.branchId ?? 1)
@@ -143,6 +151,7 @@ export default function DailyEntry() {
   // ── CSV upload helpers ─────────────────────────────────────────────────
   function resetUpload() {
     setUploadFile(null); setPreview(null); setUploadErrors([]); setUploadResult(null)
+    setUploadSummary(null); setErrorRows([])
   }
 
   async function handleFilePick(file: File) {
@@ -182,14 +191,42 @@ export default function DailyEntry() {
         dateTo: dates[dates.length - 1],
       })
       if (res.success) {
-        setUploadResult(`✓ Imported ${res.count} records from "${uploadFile.name}". Latest entry per staff/date kept.`)
+        setUploadSummary(res.summary ?? null)
+        setErrorRows(res.errorRows ?? [])
+        setUploadResult(null)
         setUploadErrors(errors)
-        resetUpload()
+        setUploadFile(null); setPreview(null)
         loadEntries()
       } else {
         setUploadErrors([res.error ?? 'Upload failed'])
       }
     } finally { setUploading(false) }
+  }
+
+  // Reupload corrected error rows (accountant fixed them in the error modal)
+  async function reuploadFixedRows(fixed: ErrorRow[]) {
+    if (!token) return
+    const rows = fixed.map(f => f.data)
+    const dates = rows.map(r => r.date).sort()
+    const res = await window.api.uploadDaily(token, rows, {
+      branchId: effectiveBranchId,
+      uploadType: 'daily',
+      filename: 'error-fix-reupload',
+      recordsCount: rows.length,
+      dateFrom: dates[0],
+      dateTo: dates[dates.length - 1],
+    })
+    if (res.success) {
+      const stillErrored = res.errorRows ?? []
+      setErrorRows(stillErrored)
+      setUploadSummary(prev => prev ? {
+        ...prev,
+        complete: prev.complete + (res.summary?.complete ?? 0),
+        errors: stillErrored.length,
+      } : res.summary ?? null)
+      if (stillErrored.length === 0) setShowErrorModal(false)
+      loadEntries()
+    }
   }
 
 
@@ -335,6 +372,56 @@ export default function DailyEntry() {
           fileRef={fileRef}
           submitLabel="Import Daily Data"
           accent="primary"
+        />
+      )}
+
+      {/* ── Upload result summary (accountant-facing) ── */}
+      {activeTab === 'daily-csv' && uploadSummary && (
+        <GlassCard elevated className="p-6 mt-6">
+          <h4 className="font-headline-md text-headline-md text-on-surface mb-4 flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary">fact_check</span>
+            Results after upload
+          </h4>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+            {[
+              { l: 'Total Record',  v: uploadSummary.totalRecords },
+              { l: 'Total Jewelry', v: fmt(uploadSummary.totalJewelry) + ' g' },
+              { l: 'Total Bar',     v: fmt(uploadSummary.totalBar) + ' g' },
+              { l: 'Total Qty',     v: uploadSummary.totalQty },
+              { l: 'Total Weight',  v: fmt(uploadSummary.totalWeight) + ' g' },
+              { l: 'Complete',      v: uploadSummary.complete },
+            ].map(item => (
+              <div key={item.l} className="bg-surface-container/40 rounded-xl p-3">
+                <p className="text-[9px] text-on-surface-variant uppercase font-bold mb-1">{item.l}</p>
+                <p className="font-bold text-[16px] tabular-nums text-on-surface">{item.v}</p>
+              </div>
+            ))}
+          </div>
+          {uploadSummary.errors > 0 ? (
+            <div className="flex items-center justify-between bg-error-container/20 border border-error/20 rounded-xl px-5 py-3">
+              <p className="text-body-sm text-error font-bold flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">error</span>
+                {uploadSummary.errors} record{uploadSummary.errors > 1 ? 's' : ''} failed to import
+              </p>
+              <button onClick={() => setShowErrorModal(true)}
+                className="px-4 py-2 rounded-lg bg-error text-white font-label-md text-label-md hover:opacity-90 transition-all">
+                View &amp; Fix Errors
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 bg-tertiary-fixed/30 text-on-tertiary-fixed-variant px-5 py-3 rounded-xl">
+              <span className="material-symbols-outlined text-tertiary">cloud_done</span>
+              <p className="text-body-sm font-medium">All {uploadSummary.complete} records imported and published to the cloud.</p>
+            </div>
+          )}
+        </GlassCard>
+      )}
+
+      {showErrorModal && (
+        <ErrorFixModal
+          rows={errorRows}
+          onReupload={reuploadFixedRows}
+          onClose={() => setShowErrorModal(false)}
         />
       )}
 
@@ -555,6 +642,93 @@ function CSVUploadPanel({ title, description, templateNote, onDownloadTemplate, 
           <p className="text-body-sm font-medium">{result}</p>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Error-fix modal: accountant edits failed rows here, then reuploads ─────
+function ErrorFixModal({ rows, onReupload, onClose }: {
+  rows: ErrorRow[]
+  onReupload: (fixed: ErrorRow[]) => Promise<void>
+  onClose: () => void
+}) {
+  const [local, setLocal] = useState<ErrorRow[]>(rows)
+  const [submitting, setSubmitting] = useState(false)
+
+  function updateField(idx: number, field: keyof ErrorRow['data'], value: string) {
+    setLocal(prev => prev.map((r, i) => i === idx ? {
+      ...r,
+      data: {
+        ...r.data,
+        [field]: field === 'jewelryWeightG' || field === 'barWeightG' ? (parseFloat(value) || 0)
+          : field === 'quantity' ? (parseInt(value) || 0)
+          : value,
+      },
+    } : r))
+  }
+
+  async function handleReupload() {
+    setSubmitting(true)
+    try { await onReupload(local) } finally { setSubmitting(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col animate-slide-in">
+        <div className="flex justify-between items-center p-6 border-b border-outline-variant/10">
+          <div>
+            <h3 className="font-headline-md text-on-surface">Fix Error Records</h3>
+            <p className="text-body-sm text-on-surface-variant mt-0.5">Edit the fields below, then reupload. Completed records were already published to the cloud.</p>
+          </div>
+          <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors">
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-6 space-y-3">
+          {local.map((r, i) => (
+            <div key={i} className="border border-error/20 bg-error-container/10 rounded-xl p-4">
+              <p className="text-[11px] text-error font-bold mb-2">Row {r.row}: {r.reason}</p>
+              <div className="grid grid-cols-5 gap-3">
+                <div>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">Date</label>
+                  <input value={r.data.date} onChange={e => updateField(i, 'date', e.target.value)}
+                    className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">Rep Code</label>
+                  <input value={r.data.repCode} onChange={e => updateField(i, 'repCode', e.target.value)}
+                    className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">Jewelry</label>
+                  <input type="number" value={r.data.jewelryWeightG} onChange={e => updateField(i, 'jewelryWeightG', e.target.value)}
+                    className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">Bar</label>
+                  <input type="number" value={r.data.barWeightG} onChange={e => updateField(i, 'barWeightG', e.target.value)}
+                    className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">Qty</label>
+                  <input type="number" value={r.data.quantity} onChange={e => updateField(i, 'quantity', e.target.value)}
+                    className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-3 p-6 border-t border-outline-variant/10">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border border-outline-variant text-on-surface-variant font-label-md hover:bg-surface-container transition-colors">
+            Close
+          </button>
+          <button onClick={handleReupload} disabled={submitting}
+            className="flex-1 py-2.5 rounded-lg bg-primary text-white font-label-md flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 shadow-primary">
+            <span className={`material-symbols-outlined text-sm ${submitting ? 'animate-spin-slow' : ''}`}>{submitting ? 'sync' : 'cloud_upload'}</span>
+            {submitting ? 'Reuploading...' : 'Reupload Fixed Records'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import type { RosterRow, Supervisor } from '../../types'
+import { validateRosterRows } from '../../utils/csv'
+import { parseXLSX, readFileAsArrayBuffer } from '../../utils/xlsx'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -14,24 +16,20 @@ interface RepModalProps {
   initial: Partial<RosterRow>
   branches: Array<{ id: number; name: string; code: string }>
   supervisors: Supervisor[]
-  defaultYearMonth: string
   onSave: (data: {
     id?: number; repCode: string; fullName: string; nickname: string
     branchId: number; supervisorId: number | null; staffType: string
-    yearMonth: string; pointTarget: number
   }) => void
   onClose: () => void
 }
 
-function RepModal({ mode, initial, branches, supervisors, defaultYearMonth, onSave, onClose }: RepModalProps) {
+function RepModal({ mode, initial, branches, supervisors, onSave, onClose }: RepModalProps) {
   const [repCode,     setRepCode]     = useState(initial.rep_code ?? '')
   const [fullName,    setFullName]    = useState(initial.full_name ?? '')
   const [nickname,    setNickname]    = useState(initial.nickname ?? '')
   const [branchId,    setBranchId]    = useState(initial.branch_id ?? 0)
   const [supId,       setSupId]       = useState<number | null>(initial.supervisor_id ?? null)
   const [staffType,   setStaffType]   = useState(initial.staff_type ?? 'b2c')
-  const [yearMonth,   setYearMonth]   = useState(initial.year_month ?? defaultYearMonth)
-  const [pointTarget, setPointTarget] = useState(initial.point_target ?? 0)
 
   const branchSups = supervisors.filter(s => s.branch_id === branchId)
 
@@ -45,7 +43,7 @@ function RepModal({ mode, initial, branches, supervisors, defaultYearMonth, onSa
     onSave({
       id: initial.id, repCode: repCode.trim(), fullName: fullName.trim(),
       nickname: nickname.trim(), branchId, supervisorId: supId,
-      staffType, yearMonth, pointTarget,
+      staffType,
     })
   }
 
@@ -106,19 +104,9 @@ function RepModal({ mode, initial, branches, supervisors, defaultYearMonth, onSa
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Year-Month (YYYYMM)</label>
-              <input value={yearMonth} onChange={e => setYearMonth(e.target.value)}
-                maxLength={6}
-                className="w-full bg-surface-container-low border-b-2 border-outline-variant px-3 py-2 text-body-sm outline-none font-mono" placeholder="202606" />
-            </div>
-            <div>
-              <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Point Target</label>
-              <input type="number" min={0} value={pointTarget} onChange={e => setPointTarget(Number(e.target.value))}
-                className="w-full bg-surface-container-low border-b-2 border-outline-variant px-3 py-2 text-body-sm outline-none" />
-            </div>
-          </div>
+          <p className="text-[11px] text-on-surface-variant/60 italic">
+            KPI point target is configured in KPI Settings (per branch / staff type) — not per rep.
+          </p>
         </div>
         <div className="flex gap-3 mt-6">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border border-outline-variant text-on-surface-variant font-label-md hover:bg-surface-container transition-colors">
@@ -128,6 +116,108 @@ function RepModal({ mode, initial, branches, supervisors, defaultYearMonth, onSa
             className="flex-1 py-2.5 rounded-lg bg-primary text-white font-label-md flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 shadow-primary">
             <span className="material-symbols-outlined text-sm">save</span>
             {mode === 'create' ? 'Add Rep' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Roster upload modal — file drops here, auto-syncs to Sheets on success ──
+function RosterUploadModal({ token, onDone, onClose }: {
+  token: string
+  onDone: (msg: string) => void
+  onClose: () => void
+}) {
+  const [file, setFile]       = useState<File | null>(null)
+  const [errors, setErrors]   = useState<string[]>([])
+  const [result, setResult]   = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  async function pickFile(f: File) {
+    setFile(f); setErrors([]); setResult(null)
+  }
+
+  async function submit() {
+    if (!file) return
+    setUploading(true)
+    try {
+      const buf = await readFileAsArrayBuffer(file)
+      const parsed = parseXLSX(buf)
+      const { rows, errors: parseErrors } = validateRosterRows(parsed)
+      if (parseErrors.length) setErrors(parseErrors)
+      if (!rows.length) { setUploading(false); return }
+      const res = await window.api.uploadRoster(token, rows)
+      if (res.success) {
+        setResult(`Created: ${res.created} · Updated: ${res.updated}${res.skipped ? ` · Skipped: ${res.skipped}` : ''}`)
+        onDone(`Roster uploaded — created ${res.created}, updated ${res.updated}.`)
+      } else {
+        setErrors([res.error ?? 'Upload failed'])
+      }
+    } finally { setUploading(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-7 animate-slide-in">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-headline-md text-on-surface">Upload Roster</h3>
+          <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors">
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        <p className="text-body-sm text-on-surface-variant mb-4">
+          Matches by Rep Code — existing reps update, new codes create new reps. Columns: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type.
+          KPI point target is not part of the roster — it is configured in KPI Settings.
+        </p>
+
+        {!file ? (
+          <div
+            onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={e => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files[0]; if (f) pickFile(f) }}
+            onClick={() => fileRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl h-32 flex flex-col items-center justify-center cursor-pointer transition-all ${isDragging ? 'border-secondary bg-secondary/5' : 'border-outline-variant/50 bg-surface-container/30 hover:border-secondary/40'}`}
+          >
+            <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f) }} />
+            <span className="material-symbols-outlined text-3xl text-on-surface-variant/40 mb-2">upload_file</span>
+            <p className="text-body-sm text-on-surface-variant">Drop XLSX file here or click to browse</p>
+          </div>
+        ) : (
+          <div className="bg-surface-container/40 rounded-xl p-4 flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-secondary">description</span>
+              <span className="text-body-sm font-bold">{file.name}</span>
+            </div>
+            <button onClick={() => { setFile(null); setErrors([]); setResult(null) }} className="text-on-surface-variant hover:text-error">
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          </div>
+        )}
+
+        {errors.length > 0 && (
+          <div className="mt-3 p-3 bg-error-container/20 rounded-lg max-h-32 overflow-y-auto">
+            {errors.map((e, i) => <p key={i} className="text-[11px] text-error">{e}</p>)}
+          </div>
+        )}
+        {result && (
+          <div className="mt-3 p-3 bg-tertiary-fixed/30 rounded-lg flex items-center gap-2">
+            <span className="material-symbols-outlined text-tertiary text-sm">cloud_done</span>
+            <p className="text-body-sm">{result} Synced to Google Sheets.</p>
+          </div>
+        )}
+
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border border-outline-variant text-on-surface-variant font-label-md hover:bg-surface-container transition-colors">
+            Close
+          </button>
+          <button onClick={submit} disabled={!file || uploading}
+            className="flex-1 py-2.5 rounded-lg bg-secondary text-white font-label-md flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50">
+            <span className={`material-symbols-outlined text-sm ${uploading ? 'animate-spin-slow' : ''}`}>{uploading ? 'sync' : 'cloud_upload'}</span>
+            {uploading ? 'Uploading...' : 'Upload Roster'}
           </button>
         </div>
       </div>
@@ -190,14 +280,13 @@ export default function UploadHistory() {
   // ── Roster state ──────────────────────────────────────────────────────
   const [roster, setRoster]           = useState<RosterRow[]>([])
   const [supervisors, setSupervisors] = useState<Supervisor[]>([])
-  const [availableMonths, setAvailableMonths] = useState<string[]>([])
-  const [rosterYearMonth, setRosterYearMonth] = useState<string>('')
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterSyncing, setRosterSyncing] = useState(false)
   const [repModal, setRepModal]       = useState<'create' | 'edit' | null>(null)
   const [editRep, setEditRep]         = useState<RosterRow | null>(null)
   const [rosterToast, setRosterToast] = useState('')
   const [dlTemplate, setDlTemplate]       = useState(false)
+  const [showRosterUpload, setShowRosterUpload] = useState(false)
   type RosterSort = { col: 'rep_code' | 'full_name' | 'branch_name' | 'supervisor_name' | 'staff_type'; dir: 'asc' | 'desc' }
   const [rosterSort, setRosterSort]       = useState<RosterSort>({ col: 'full_name', dir: 'asc' })
   const [filterRBranch, setFilterRBranch]   = useState<number | 'all'>('all')
@@ -205,8 +294,6 @@ export default function UploadHistory() {
   const [filterRType, setFilterRType]       = useState<'all' | 'b2c' | 'b2b'>('all')
   const [filterRSearch, setFilterRSearch]   = useState('')
   const [showInactive, setShowInactive]     = useState(false)
-
-  const defaultYearMonth = String(selectedYear) + String(selectedMonth).padStart(2, '0')
 
   function showRosterToast(msg: string) {
     setRosterToast(msg)
@@ -226,19 +313,14 @@ export default function UploadHistory() {
     } finally { setLoading(false) }
   }
 
-  async function loadRoster(ym?: string) {
+  async function loadRoster() {
     if (!token || !canManageRoster) return
     setRosterLoading(true)
     try {
-      const targetYm = ym ?? (rosterYearMonth || undefined)
-      const [reps, sups, rawMonths] = await Promise.all([
-        window.api.getRosterAll(token, targetYm),
+      const [reps, sups] = await Promise.all([
+        window.api.getRosterAll(token),
         window.api.getSupervisors(token),
-        window.api.getRosterAvailableMonths(token),
       ])
-      const monthList = (rawMonths as { year_month: string }[]).map(m => m.year_month)
-      setAvailableMonths(monthList)
-      if (!rosterYearMonth && monthList.length > 0) setRosterYearMonth(monthList[0])
       setRoster(reps as RosterRow[])
       setSupervisors(sups as Supervisor[])
     } finally { setRosterLoading(false) }
@@ -250,7 +332,6 @@ export default function UploadHistory() {
   async function handleSaveRep(data: {
     id?: number; repCode: string; fullName: string; nickname: string
     branchId: number; supervisorId: number | null; staffType: string
-    yearMonth: string; pointTarget: number
   }) {
     if (!token) return
     const res = await window.api.saveRosterRep(token, data)
@@ -293,7 +374,7 @@ export default function UploadHistory() {
     setDlTemplate(true)
     try {
       const rows = await window.api.getRosterTemplate(token) as Array<Record<string, unknown>>
-      const header = ['rep_code','full_name','nickname','branch_code','supervisor_name','staff_type','point_target','year_month']
+      const header = ['rep_code','full_name','nickname','branch_code','supervisor_name','staff_type']
       const csvRows = [header.join(',')]
       for (const r of rows) {
         csvRows.push(header.map(k => {
@@ -331,10 +412,9 @@ export default function UploadHistory() {
     return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va)
   })
 
-  const branchesWithTarget  = coverage.filter(c => c.target_uploaded).length
   const branchesWithEntries = coverage.filter(c => c.days_with_entries > 0).length
   const totalBranches       = coverage.length
-  const alertBranches       = coverage.filter(c => !c.target_uploaded || c.days_with_entries === 0)
+  const alertBranches       = coverage.filter(c => c.days_with_entries === 0)
 
   return (
     <AppShell title="Upload History">
@@ -350,9 +430,16 @@ export default function UploadHistory() {
           initial={editRep ?? {}}
           branches={branches}
           supervisors={supervisors}
-          defaultYearMonth={defaultYearMonth}
           onSave={handleSaveRep}
           onClose={() => { setRepModal(null); setEditRep(null) }}
+        />
+      )}
+
+      {showRosterUpload && token && (
+        <RosterUploadModal
+          token={token}
+          onDone={msg => { showRosterToast(msg); loadRoster() }}
+          onClose={() => setShowRosterUpload(false)}
         />
       )}
 
@@ -407,7 +494,7 @@ export default function UploadHistory() {
               <div>
                 <p className="font-label-md text-label-md text-error font-bold uppercase mb-1">Action Required</p>
                 <p className="text-body-sm text-on-surface-variant">
-                  {alertBranches.map(b => b.branch_name).join(', ')} — missing targets or daily entries for {MONTHS[selectedMonth - 1]} {selectedYear}.
+                  {alertBranches.map(b => b.branch_name).join(', ')} — no daily entries for {MONTHS[selectedMonth - 1]} {selectedYear}.
                 </p>
               </div>
             </div>
@@ -417,7 +504,6 @@ export default function UploadHistory() {
             <div className="p-5 border-b border-outline-variant/10 flex justify-between items-center">
               <h3 className="font-headline-md text-headline-md text-on-surface">Branch Coverage Matrix</h3>
               <div className="flex gap-4 text-body-sm">
-                <span className="text-tertiary font-bold">{branchesWithTarget}/{totalBranches} targets uploaded</span>
                 <span className="text-primary font-bold">{branchesWithEntries}/{totalBranches} branches have entries</span>
               </div>
             </div>
@@ -425,43 +511,27 @@ export default function UploadHistory() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-container-low/50">
-                    {['Branch','Monthly Target','Days with Entries','Last Entry','Last Upload','Status'].map(h => (
+                    {['Branch','Days with Entries','Last Entry','Last Upload','Status'].map(h => (
                       <th key={h} className="px-6 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant/10">
                   {loading ? (
-                    <tr><td colSpan={6} className="py-10 text-center text-on-surface-variant">
+                    <tr><td colSpan={5} className="py-10 text-center text-on-surface-variant">
                       <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>Loading...
                     </td></tr>
                   ) : coverage.map(c => {
                     const entryPct = c.days_in_month > 0 ? (c.days_with_entries / c.days_in_month) * 100 : 0
-                    const status   = !c.target_uploaded ? 'error' : c.days_with_entries === 0 ? 'warning' : entryPct >= 80 ? 'success' : 'neutral'
-                    const statusLabel = !c.target_uploaded ? 'No Target' : c.days_with_entries === 0 ? 'No Entries' : entryPct >= 80 ? 'Good' : 'Partial'
+                    const status   = c.days_with_entries === 0 ? 'warning' : entryPct >= 80 ? 'success' : 'neutral'
+                    const statusLabel = c.days_with_entries === 0 ? 'No Entries' : entryPct >= 80 ? 'Good' : 'Partial'
                     return (
-                      <tr key={c.branch_id} className={`transition-colors hover:bg-surface-container/20 ${status === 'error' ? 'bg-error-container/5' : status === 'warning' ? 'bg-secondary-container/5' : ''}`}>
+                      <tr key={c.branch_id} className={`transition-colors hover:bg-surface-container/20 ${status === 'warning' ? 'bg-secondary-container/5' : ''}`}>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">{c.branch_code}</div>
                             <span className="font-medium">{c.branch_name}</span>
                           </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          {c.target_uploaded ? (
-                            <div>
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="material-symbols-outlined text-tertiary text-sm">check_circle</span>
-                                <span className="text-body-sm font-bold text-tertiary">{c.target_records} records</span>
-                              </div>
-                              <p className="text-[10px] text-on-surface-variant">{fmtDate(c.target_last_upload)}</p>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2 text-error">
-                              <span className="material-symbols-outlined text-sm">cancel</span>
-                              <span className="text-body-sm font-bold">Not uploaded</span>
-                            </div>
-                          )}
                         </td>
                         <td className="px-6 py-4 min-w-[180px]">{progressBar(c.days_with_entries, c.days_in_month, 'bg-primary')}</td>
                         <td className="px-6 py-4 text-body-sm text-on-surface-variant">{fmtDate(c.last_entry)}</td>
@@ -539,15 +609,6 @@ export default function UploadHistory() {
         <>
           {/* Action bar */}
           <div className="flex flex-wrap gap-3 mb-5 items-center">
-            {/* Month selector */}
-            <select value={rosterYearMonth} onChange={e => { const ym = e.target.value; setRosterYearMonth(ym); loadRoster(ym) }}
-              className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none font-mono min-w-[130px]">
-              {availableMonths.length === 0
-                ? <option value="">No months</option>
-                : availableMonths.map(ym => <option key={ym} value={ym}>{ym.slice(0,4)}-{ym.slice(4)}</option>)
-              }
-            </select>
-
             <select value={filterRBranch} onChange={e => { setFilterRBranch(e.target.value === 'all' ? 'all' : Number(e.target.value)); setFilterRSup('all') }}
               className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none">
               <option value="all">All Branches</option>
@@ -602,6 +663,11 @@ export default function UploadHistory() {
                 <span className={`material-symbols-outlined text-sm ${rosterSyncing ? 'animate-spin-slow' : ''}`}>cloud_upload</span>
                 {rosterSyncing ? 'Syncing...' : 'Sync to Sheets'}
               </button>
+              <button onClick={() => setShowRosterUpload(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white font-label-md text-label-md hover:opacity-90 transition-all">
+                <span className="material-symbols-outlined text-sm">upload_file</span>
+                Upload Roster
+              </button>
               <button onClick={() => { setEditRep(null); setRepModal('create') }}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary transition-all">
                 <span className="material-symbols-outlined text-sm">person_add</span>
@@ -653,18 +719,18 @@ export default function UploadHistory() {
                         </span>
                       </th>
                     ))}
-                    {['Target','Status','Actions'].map(h => (
+                    {['Status','Actions'].map(h => (
                       <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant/10">
                   {rosterLoading ? (
-                    <tr><td colSpan={8} className="py-10 text-center text-on-surface-variant">
+                    <tr><td colSpan={7} className="py-10 text-center text-on-surface-variant">
                       <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>Loading roster...
                     </td></tr>
                   ) : filteredRoster.length === 0 ? (
-                    <tr><td colSpan={8} className="py-10 text-center text-on-surface-variant text-body-sm">
+                    <tr><td colSpan={7} className="py-10 text-center text-on-surface-variant text-body-sm">
                       No reps match the current filters.
                     </td></tr>
                   ) : filteredRoster.map(rep => (
@@ -694,14 +760,6 @@ export default function UploadHistory() {
                         <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ${rep.staff_type === 'b2c' ? 'bg-secondary/10 text-secondary' : 'bg-tertiary/10 text-tertiary'}`}>
                           {rep.staff_type.toUpperCase()}
                         </span>
-                      </td>
-                      <td className="px-5 py-3 text-body-sm tabular-nums">
-                        {rep.point_target != null
-                          ? <><span className="font-bold">{rep.point_target.toLocaleString()}</span><span className="text-on-surface-variant"> pts</span></>
-                          : <span className="text-on-surface-variant">—</span>}
-                        {rep.year_month && (
-                          <p className="text-[10px] text-on-surface-variant">{rep.year_month.slice(0,4)}-{rep.year_month.slice(4)}</p>
-                        )}
                       </td>
                       <td className="px-5 py-3">
                         <StatusBadge label={rep.active === 1 ? 'Active' : 'Inactive'} variant={rep.active === 1 ? 'success' : 'neutral'} />

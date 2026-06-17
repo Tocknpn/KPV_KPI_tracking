@@ -86,7 +86,7 @@ export function normaliseRow(row: Record<string, string>): Record<string, string
 // ── Validate & convert daily rows (rep_code based) ────────────────────────
 export interface DailyRowRaw { date: string; repCode: string; jewelryWeightG: number; barWeightG: number; quantity: number }
 export interface TargetRowRaw { repCode: string; year: number; month: number; jewelryWeightG: number; barWeightG: number; quantity: number }
-export interface RosterRowRaw { repCode: string; fullName: string; nickname: string; branchCode: string; supervisorName: string; staffType: 'b2c' | 'b2b'; pointTarget: number; yearMonth: string }
+export interface RosterRowRaw { repCode: string; fullName: string; nickname: string; branchCode: string; supervisorName: string; staffType: 'b2c' | 'b2b' }
 
 // Column positions for daily template: Date, Rep_Code, Full_Name, Branch_Code, Supervisor_Name, KPI_1, KPI_2, KPI_3
 export function validateDailyRows(parsed: ParseResult): { rows: DailyRowRaw[]; errors: string[] } {
@@ -148,7 +148,8 @@ export function validateTargetRows(parsed: ParseResult): { rows: TargetRowRaw[];
   return { rows, errors }
 }
 
-// Column positions for roster template: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type, Year_Month, Point_Target
+// Column positions for roster template: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type
+// KPI point target is not part of the roster — it is always looked up from HR KPI Setting.
 export function validateRosterRows(parsed: ParseResult): { rows: RosterRowRaw[]; errors: string[] } {
   const errors = [...parsed.errors]
   const rows: RosterRowRaw[] = []
@@ -167,16 +168,12 @@ export function validateRosterRows(parsed: ParseResult): { rows: RosterRowRaw[];
     const rawStaffType = (pos[5] ?? '').trim().toLowerCase()
     const staffType: 'b2c' | 'b2b' = rawStaffType === 'b2b' ? 'b2b' : 'b2c'
 
-    const yearMonth = (pos[6] ?? '').trim().replace(/\D/g, '').slice(0, 6)
-
     rows.push({
       repCode, fullName,
       nickname:       (pos[2] ?? '').trim(),
       branchCode,
       supervisorName: (pos[4] ?? '').trim(),
       staffType,
-      pointTarget:    parseFloat(pos[7] ?? '') || 0,
-      yearMonth,
     })
   }
 

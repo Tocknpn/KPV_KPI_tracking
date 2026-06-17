@@ -61,7 +61,9 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     if (!rows.length) return { success: false, error: 'No rows to import.' }
 
     const results: UploadRowResult[] = []
+    const errorRows: Array<{ row: number; data: DailyRow; reason: string }> = []
     let imported = 0
+    let sumJewelry = 0, sumBar = 0, sumQty = 0
 
     try {
       transaction(db, () => {
@@ -72,6 +74,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
             { id: number; branch_id: number } | undefined
           if (!salesman) {
             results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason: 'Rep code not found in roster' })
+            errorRows.push({ row: i + 1, data: r, reason: 'Rep code not found in roster' })
             continue
           }
 
@@ -81,6 +84,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
             VALUES (?, ?, ?, ?, ?, ?, 0, ?)
           `).run(salesman.id, salesman.branch_id, r.date, r.jewelryWeightG, r.barWeightG, r.quantity, now)
           results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'ok' })
+          sumJewelry += r.jewelryWeightG; sumBar += r.barWeightG; sumQty += r.quantity
           imported++
         }
       })
@@ -92,8 +96,15 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
       `).run(meta.branchId, user.id, meta.filename, imported, meta.dateFrom ?? null, meta.dateTo ?? null,
         skippedCodes.length ? `Skipped unknown codes: ${skippedCodes.slice(0,5).join(', ')}${skippedCodes.length > 5 ? '…' : ''}` : null)
 
+      // Completed records are saved locally above; auto-publish them to the cloud now
       syncEntriesToCloudIfConfigured(db).catch(() => {})
-      return { success: true, count: imported, skipped: skippedCodes.length, results }
+      return {
+        success: true, count: imported, skipped: skippedCodes.length, results, errorRows,
+        summary: {
+          totalRecords: rows.length, totalJewelry: sumJewelry, totalBar: sumBar, totalQty: sumQty,
+          totalWeight: sumJewelry + sumBar, complete: imported, errors: errorRows.length,
+        },
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       prepare(db, `INSERT INTO upload_logs (branch_id, user_id, upload_type, filename, records_count, status, notes) VALUES (?, ?, 'daily', ?, 0, 'error', ?)`).run(meta.branchId, user.id, meta.filename, msg)
@@ -168,23 +179,16 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           const staffType = r.staffType === 'b2b' ? 'b2b' : 'b2c'
 
           const existing = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(r.repCode) as { id: number } | undefined
-          let salesmanId: number
           if (existing) {
             prepare(db, `UPDATE salesmen SET full_name=?, nickname=?, branch_id=?, supervisor_id=?, staff_type=?, active=1 WHERE rep_code=?`)
               .run(r.fullName, r.nickname || '', branch.id, supId, staffType, r.repCode)
-            salesmanId = existing.id
             updated++
           } else {
-            const ins = prepare(db, `INSERT INTO salesmen (rep_code, full_name, nickname, branch_id, staff_type, position, department, active, supervisor_id) VALUES (?,?,?,?,?,'Sales Representative','Sales',1,?)`)
+            prepare(db, `INSERT INTO salesmen (rep_code, full_name, nickname, branch_id, staff_type, position, department, active, supervisor_id) VALUES (?,?,?,?,?,'Sales Representative','Sales',1,?)`)
               .run(r.repCode, r.fullName, r.nickname || '', branch.id, staffType, supId)
-            salesmanId = Number(ins.lastInsertRowid)
             created++
           }
-
-          if (r.pointTarget && r.yearMonth && /^\d{6}$/.test(r.yearMonth)) {
-            prepare(db, `INSERT INTO staff_monthly_targets (salesman_id, year_month, point_target) VALUES (?,?,?) ON CONFLICT(salesman_id, year_month) DO UPDATE SET point_target = excluded.point_target`)
-              .run(salesmanId, r.yearMonth, r.pointTarget)
-          }
+          // KPI point target is always resolved from HR KPI Setting — roster upload no longer carries per-rep targets
         }
       })
       pushAllConfigIfConfigured(db).catch(() => {})
