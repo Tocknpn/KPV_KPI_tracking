@@ -114,25 +114,42 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
     const supNameById = new Map((prepare(db, `SELECT id, full_name FROM supervisors`).all() as Array<{ id: number; full_name: string }>).map(s => [s.id, s.full_name]))
     const identityById = new Map((prepare(db, `SELECT id, full_name, nickname FROM salesmen`).all() as Array<{ id: number; full_name: string; nickname: string }>).map(s => [s.id, s]))
 
-    const reps = [...rosterMap.entries()]
+    const matchedSalesmanIds = [...rosterMap.entries()]
       .filter(([, v]) => v.active === 1)
       .filter(([, v]) => effectiveBranchIds.length === 0 || effectiveBranchIds.includes(v.branch_id))
       .filter(([, v]) => supervisorFilter == null || v.supervisor_id === supervisorFilter)
-      .map(([salesmanId, v]) => {
-        const idn = identityById.get(salesmanId)
-        const branch = branchById.get(v.branch_id)
-        const act = prepare(db, `
-          SELECT COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q
-          FROM daily_entries WHERE salesman_id = ? AND entry_date >= ? AND entry_date <= ?
-        `).get(salesmanId, dateFrom, dateTo) as { j: number; b: number; q: number }
-        return {
-          id: salesmanId, full_name: idn?.full_name ?? '—', nickname: idn?.nickname ?? '',
-          staff_type: v.staff_type, branch_id: v.branch_id, supervisor_id: v.supervisor_id,
-          branch_name: branch?.name ?? '', branch_code: branch?.code ?? '',
-          supervisor_name: v.supervisor_id ? (supNameById.get(v.supervisor_id) ?? null) : null,
-          actual_jewelry: act.j, actual_bar: act.b, actual_qty: act.q,
-        }
-      })
+      .map(([salesmanId]) => salesmanId)
+
+    // One batched query for every matched rep's actuals instead of one query per rep —
+    // sql.js is synchronous/single-threaded, so a 100+ rep N+1 loop here blocked the whole
+    // Electron main process (including window message handling) long enough for Windows to
+    // flag the app as "Not Responding."
+    const actualsById = new Map<number, { j: number; b: number; q: number }>()
+    if (matchedSalesmanIds.length > 0) {
+      const placeholders = matchedSalesmanIds.map(() => '?').join(',')
+      const actualRows = prepare(db, `
+        SELECT salesman_id,
+          COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q
+        FROM daily_entries
+        WHERE salesman_id IN (${placeholders}) AND entry_date >= ? AND entry_date <= ?
+        GROUP BY salesman_id
+      `).all(...matchedSalesmanIds, dateFrom, dateTo) as Array<{ salesman_id: number; j: number; b: number; q: number }>
+      for (const r of actualRows) actualsById.set(r.salesman_id, { j: r.j, b: r.b, q: r.q })
+    }
+
+    const reps = matchedSalesmanIds.map(salesmanId => {
+      const v = rosterMap.get(salesmanId)!
+      const idn = identityById.get(salesmanId)
+      const branch = branchById.get(v.branch_id)
+      const act = actualsById.get(salesmanId) ?? { j: 0, b: 0, q: 0 }
+      return {
+        id: salesmanId, full_name: idn?.full_name ?? '—', nickname: idn?.nickname ?? '',
+        staff_type: v.staff_type, branch_id: v.branch_id, supervisor_id: v.supervisor_id,
+        branch_name: branch?.name ?? '', branch_code: branch?.code ?? '',
+        supervisor_name: v.supervisor_id ? (supNameById.get(v.supervisor_id) ?? null) : null,
+        actual_jewelry: act.j, actual_bar: act.b, actual_qty: act.q,
+      }
+    })
       .sort((a, b) => (a.branch_id - b.branch_id) || a.full_name.localeCompare(b.full_name))
 
     // Cache config per staff_type
