@@ -26,7 +26,8 @@ export function snapshotSalesman(db: Database, salesmanId: number, effectiveDate
 // Active headcount for a branch AS OF the end of a given month — uses the most recent
 // snapshot at or before that month, not today's roster. New joiners after that month are
 // excluded via created_at (a real, immutable fact already on the salesmen row).
-export function getHeadcountAsOf(db: Database, branchId: number, year: number, month: number): number {
+// staffType, if given, counts only reps of that type as of that month (for B2C/B2B target splits).
+export function getHeadcountAsOf(db: Database, branchId: number, year: number, month: number, staffType?: string): number {
   const daysInMonth = new Date(year, month, 0).getDate()
   // Space separator (not 'T') — matches SQLite's own datetime('now') format used as the
   // changed_at default, so string comparison sorts correctly down to the second.
@@ -39,12 +40,16 @@ export function getHeadcountAsOf(db: Database, branchId: number, year: number, m
           s.branch_id
         ) AS branch_id,
         COALESCE(
+          (SELECT h.staff_type FROM salesman_history h WHERE h.salesman_id = s.id AND h.changed_at <= ? ORDER BY h.changed_at DESC LIMIT 1),
+          s.staff_type
+        ) AS staff_type,
+        COALESCE(
           (SELECT h.active FROM salesman_history h WHERE h.salesman_id = s.id AND h.changed_at <= ? ORDER BY h.changed_at DESC LIMIT 1),
           s.active
         ) AS active
       FROM salesmen s
       WHERE s.created_at <= ?
-    ) WHERE branch_id = ? AND active = 1
-  `).get(cutoff, cutoff, cutoff, branchId) as { cnt: number }
+    ) WHERE branch_id = ? AND active = 1 ${staffType ? 'AND staff_type = ?' : ''}
+  `).get(...(staffType ? [cutoff, cutoff, cutoff, cutoff, branchId, staffType] : [cutoff, cutoff, cutoff, cutoff, branchId])) as { cnt: number }
   return row.cnt
 }

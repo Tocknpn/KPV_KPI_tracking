@@ -21,11 +21,17 @@ function buildSalesmenBranchFilter(ids: number[]): { sql: string; params: number
   }
 }
 
-function getBranchPointTarget(db: import('sql.js').Database, branchId: number, year: number, month: number): number {
+// staffType, if given, prefers the B2C/B2B override saved in KPI Settings — falls back to
+// the overall branch target when no type-specific override is set for that month.
+function getBranchPointTarget(db: import('sql.js').Database, branchId: number, year: number, month: number, staffType?: string): number {
   const monthly = prepare(db, `
-    SELECT kpi_point_target FROM branch_kpi_monthly_targets WHERE branch_id=? AND year=? AND month=?
-  `).get(branchId, year, month) as { kpi_point_target: number } | undefined
-  if (monthly) return monthly.kpi_point_target
+    SELECT kpi_point_target, target_b2c, target_b2b FROM branch_kpi_monthly_targets WHERE branch_id=? AND year=? AND month=?
+  `).get(branchId, year, month) as { kpi_point_target: number; target_b2c: number | null; target_b2b: number | null } | undefined
+  if (monthly) {
+    if (staffType === 'b2c' && monthly.target_b2c) return monthly.target_b2c
+    if (staffType === 'b2b' && monthly.target_b2b) return monthly.target_b2b
+    return monthly.kpi_point_target
+  }
   const branch = prepare(db, `SELECT kpi_point_target FROM branches WHERE id = ?`).get(branchId) as { kpi_point_target: number } | undefined
   return branch?.kpi_point_target ?? 0
 }
@@ -89,12 +95,16 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const kpiTotalScore = kpiScoreJewelry + kpiScoreBar + kpiScoreQty
 
     // Headcount as it was AT THE END OF THAT MONTH — not today's roster — so transfers/
-    // departures since then never change a past month's target/KPI%
+    // departures since then never change a past month's target/KPI%. Split by staff_type
+    // so a branch's B2C/B2B target override (if set in KPI Settings) is actually applied.
     const targetBranches = (effectiveBranchIds.length > 0
       ? effectiveBranchIds
       : (prepare(db, `SELECT id FROM branches`).all() as Array<{ id: number }>).map(r => r.id))
-    const kpiPointTarget = targetBranches.reduce(
-      (sum, bId) => sum + getHeadcountAsOf(db, bId, year, month) * getBranchPointTarget(db, bId, year, month), 0)
+    const kpiPointTarget = targetBranches.reduce((sum, bId) =>
+      sum
+      + getHeadcountAsOf(db, bId, year, month, 'b2c') * getBranchPointTarget(db, bId, year, month, 'b2c')
+      + getHeadcountAsOf(db, bId, year, month, 'b2b') * getBranchPointTarget(db, bId, year, month, 'b2b'),
+      0)
     const kpiPct = kpiPointTarget > 0 ? (kpiTotalScore / kpiPointTarget) * 100 : 0
 
     // Top performers: combine a rep's entries across branches/types (in case of mid-period transfer)
@@ -108,15 +118,15 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       GROUP BY de.salesman_id, de.branch_id, de.staff_type
     `).all(...bParams, dateFrom, dateTo) as Array<{ salesman_id: number; branch_id: number; staff_type: string; j: number; b: number; q: number }>
 
-    const perRepMap = new Map<number, { totalJewelry: number; totalBar: number; totalQty: number; score: number; branchId: number }>()
+    const perRepMap = new Map<number, { totalJewelry: number; totalBar: number; totalQty: number; score: number; branchId: number; staffType: string }>()
     for (const r of perRepRaw) {
       const js = computeKpiScore(db, 1, r.branch_id, r.j, 0, dateTo, r.staff_type).score
       const bs = computeKpiScore(db, 2, r.branch_id, r.b, 0, dateTo, r.staff_type).score
       const qs = computeKpiScore(db, 3, r.branch_id, r.q, 0, dateTo, r.staff_type).score
-      const prev = perRepMap.get(r.salesman_id) ?? { totalJewelry: 0, totalBar: 0, totalQty: 0, score: 0, branchId: r.branch_id }
+      const prev = perRepMap.get(r.salesman_id) ?? { totalJewelry: 0, totalBar: 0, totalQty: 0, score: 0, branchId: r.branch_id, staffType: r.staff_type }
       perRepMap.set(r.salesman_id, {
         totalJewelry: prev.totalJewelry + r.j, totalBar: prev.totalBar + r.b, totalQty: prev.totalQty + r.q,
-        score: prev.score + js + bs + qs, branchId: r.branch_id, // most-recent branch wins for target lookup
+        score: prev.score + js + bs + qs, branchId: r.branch_id, staffType: r.staff_type, // most-recent branch/type wins for target lookup
       })
     }
 
@@ -134,7 +144,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       const info = repInfoMap.get(salesmanId)
       const p = { id: salesmanId, full_name: info?.full_name ?? '—', nickname: info?.nickname ?? '', position: info?.position ?? '', branch_id: agg.branchId, total_jewelry: agg.totalJewelry, total_bar: agg.totalBar, total_qty: agg.totalQty }
       const totalScore   = agg.score
-      const branchTarget = getBranchPointTarget(db, p.branch_id, year, month)
+      const branchTarget = getBranchPointTarget(db, p.branch_id, year, month, agg.staffType)
       const pct          = branchTarget > 0 ? (totalScore / branchTarget) * 100 : 0
       return { ...p, kpi_total_score: totalScore, kpi_pct: pct }
     })
@@ -170,7 +180,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const dayOfMonth   = new Date(dateTo + 'T00:00:00').getDate()
     const daysRemaining = Math.max(daysInMonth - dayOfMonth, 0)
 
-    const branchTargetMap = new Map<number, number>()
+    const branchTargetMap = new Map<string, number>()
     const { sql: sBranchSql, params: sBranchParams } = buildSalesmenBranchFilter(effectiveBranchIds)
     const supSql    = effectiveSupervisorId ? `AND s.supervisor_id = ?` : ''
     const supParams = effectiveSupervisorId ? [effectiveSupervisorId] : []
@@ -216,9 +226,10 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const enriched = baseRows.map(r => {
       const agg = scoreMap.get(r.id) ?? { j: 0, b: 0, q: 0, js: 0, bs: 0, qs: 0 }
       const totalRaw = agg.js + agg.bs + agg.qs
-      if (!branchTargetMap.has(r.branch_id))
-        branchTargetMap.set(r.branch_id, getBranchPointTarget(db, r.branch_id, year, month))
-      const branchTarget = branchTargetMap.get(r.branch_id) ?? 0
+      const targetKey = `${r.branch_id}-${r.staff_type}`
+      if (!branchTargetMap.has(targetKey))
+        branchTargetMap.set(targetKey, getBranchPointTarget(db, r.branch_id, year, month, r.staff_type))
+      const branchTarget = branchTargetMap.get(targetKey) ?? 0
       const individualTarget = getIndividualPointTarget(db, r.id, yearMonth) ?? branchTarget
       const kpiPct    = individualTarget > 0 ? (totalRaw / individualTarget) * 100 : 0
       const eomKpiPct = dayOfMonth > 0 ? (kpiPct / dayOfMonth) * daysInMonth : 0
@@ -272,10 +283,15 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       const kpiTotalScore = js + bs + qs
 
       // Headcount as it was AT THE END OF THAT MONTH — not today's roster — so a rep who
-      // later transfers or leaves never changes a past month's target/KPI%
-      const personCount     = getHeadcountAsOf(db, b.id, year, month)
+      // later transfers or leaves never changes a past month's target/KPI%. Split B2C/B2B
+      // so a branch's type-specific target override (KPI Settings) is actually applied.
+      const b2cCount  = getHeadcountAsOf(db, b.id, year, month, 'b2c')
+      const b2bCount  = getHeadcountAsOf(db, b.id, year, month, 'b2b')
+      const b2cTarget = getBranchPointTarget(db, b.id, year, month, 'b2c')
+      const b2bTarget = getBranchPointTarget(db, b.id, year, month, 'b2b')
+      const personCount     = b2cCount + b2bCount
       const perPersonTarget = getBranchPointTarget(db, b.id, year, month)
-      const kpiPointTarget  = personCount * perPersonTarget
+      const kpiPointTarget  = b2cCount * b2cTarget + b2bCount * b2bTarget
       const kpiPct          = kpiPointTarget > 0 ? (kpiTotalScore / kpiPointTarget) * 100 : 0
 
       return {
@@ -340,7 +356,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       const reps = repIds
 
       const supScore           = teamScore * supKpiPct / 100
-      const perPersonTarget    = getBranchPointTarget(db, sup.branch_id, year, month)
+      const perPersonTarget    = getBranchPointTarget(db, sup.branch_id, year, month, sup.staff_type)
       const teamTarget         = perPersonTarget * reps.length  // correct total: per-person × team size
       const teamKpiPct         = teamTarget > 0 ? (teamScore / teamTarget) * 100 : 0
       const supKpiPctAch       = teamTarget > 0 ? (supScore  / teamTarget) * 100 : 0

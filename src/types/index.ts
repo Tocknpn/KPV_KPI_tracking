@@ -3,7 +3,7 @@ export type UserRole = 'admin' | 'sales_sup' | 'accountant' | 'branch_manager' |
 
 export const MENU_KEYS = [
   'dashboard', 'daily_entry', 'kpi_report', 'sale_report', 'analytics',
-  'upload_history', 'upload_status', 'kpi_settings', 'audit_log', 'user_management', 'settings',
+  'upload_history', 'upload_status', 'roster', 'kpi_settings', 'audit_log', 'user_management', 'settings',
 ] as const
 export type MenuKey = typeof MENU_KEYS[number]
 
@@ -15,6 +15,7 @@ export const MENU_LABELS: Record<MenuKey, string> = {
   analytics:       'Analytics',
   upload_history:  'Upload History',
   upload_status:   'Upload Status',
+  roster:          'Roster',
   kpi_settings:    'KPI Settings',
   audit_log:       'Audit Log',
   user_management: 'User Management',
@@ -22,12 +23,12 @@ export const MENU_LABELS: Record<MenuKey, string> = {
 }
 
 export const ROLE_DEFAULTS: Record<UserRole, MenuKey[]> = {
-  admin:          ['dashboard','daily_entry','kpi_report','sale_report','analytics','upload_history','upload_status','kpi_settings','audit_log','user_management','settings'],
+  admin:          ['dashboard','daily_entry','kpi_report','sale_report','analytics','upload_history','upload_status','roster','kpi_settings','audit_log','user_management','settings'],
   sales_sup:      ['dashboard','kpi_report','upload_status'],
   accountant:     ['dashboard','daily_entry','sale_report','upload_history','upload_status'],
   branch_manager: ['dashboard','kpi_report','sale_report','upload_status'],
   top_manager:    ['dashboard','kpi_report','sale_report','analytics'],
-  hr:             ['upload_history','kpi_settings'],
+  hr:             ['roster','kpi_settings'],
 }
 
 export const ROLE_LABELS: Record<UserRole, string> = {

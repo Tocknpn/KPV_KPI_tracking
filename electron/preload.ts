@@ -147,10 +147,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('commission:getReport', token, branchIds, year, month, dateFrom, dateTo),
 
   // ── Roster CRUD ───────────────────────────────────────────────────────
-  getRosterAll: (token: string, yearMonth?: string) =>
-    ipcRenderer.invoke('roster:getAll', token, yearMonth),
-  getRosterAvailableMonths: (token: string) =>
-    ipcRenderer.invoke('roster:getAvailableMonths', token),
+  getRosterAll: (token: string) =>
+    ipcRenderer.invoke('roster:getAll', token),
+  getRosterAllAsOf: (token: string, year: number, month: number) =>
+    ipcRenderer.invoke('roster:getAllAsOf', token, year, month),
   saveRosterRep: (token: string, data: unknown) =>
     ipcRenderer.invoke('roster:saveRep', token, data),
   deactivateRosterRep: (token: string, id: number) =>

@@ -185,6 +185,21 @@ export default function KpiSettings() {
     c.metric_id === selectedMetric &&
     (selectedBranch === null ? c.branch_id === null : c.branch_id === selectedBranch)
   )
+  // All saved qty tier profiles, any branch — source list for "copy from existing"
+  const allQtyConfigs = configs.filter(c => c.metric_id === 3)
+
+  // Reuse an existing tier set as the starting point for a NEW config (different branch/date) —
+  // does not overwrite the source config, since editingConfigId stays null.
+  function copyTiersFrom(cfg: KpiTierConfig) {
+    setEditingConfigId(null)
+    setConfigLabel(`${cfg.label} (copy)`)
+    setEffectiveFrom(new Date().toISOString().split('T')[0])
+    setEffectiveTo('')
+    window.api.getKpiTiers(token!, cfg.id).then((ts: KpiTier[]) => {
+      setTiers(ts.map(t => ({ threshold_pct: t.threshold_pct, score: t.score })))
+    })
+    setShowQtyEditor(true)
+  }
 
   function loadConfig(cfg: KpiTierConfig) {
     setEditingConfigId(cfg.id)
@@ -658,6 +673,44 @@ export default function KpiSettings() {
               <span className="material-symbols-outlined text-sm text-primary">info</span>
               Qty Tiers for <strong className="text-primary">{selectedBranch === null ? 'Global (Fallback)' : branches.find(b => b.id === selectedBranch)?.name}</strong>
             </div>
+
+            {/* Saved profiles for this branch — click to load and edit */}
+            {filteredConfigs.length > 0 && (
+              <div className="mb-4">
+                <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-2">Saved Profiles — This Branch</p>
+                <div className="flex flex-wrap gap-2">
+                  {filteredConfigs.map(cfg => (
+                    <button key={cfg.id} onClick={() => loadConfig(cfg)}
+                      className={`px-3 py-2 rounded-lg text-left border transition-colors ${editingConfigId === cfg.id ? 'bg-primary/10 border-primary text-primary' : 'bg-surface-container border-outline-variant/20 hover:border-primary/40'}`}>
+                      <span className="font-label-md text-label-md font-bold block">{cfg.label}</span>
+                      <span className="text-[10px] text-on-surface-variant">{cfg.effective_from}{cfg.effective_to ? ` → ${cfg.effective_to}` : ' →'}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Copy tiers from any existing profile — any branch, any date — as a starting point */}
+            <div className="mb-4 flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] text-on-surface-variant uppercase font-bold">Copy Tiers From:</span>
+              <select
+                onChange={e => {
+                  const cfg = allQtyConfigs.find(c => c.id === Number(e.target.value))
+                  if (cfg) copyTiersFrom(cfg)
+                  e.target.value = ''
+                }}
+                defaultValue=""
+                className="bg-surface-container border-none rounded-lg px-3 py-1.5 text-body-sm outline-none"
+              >
+                <option value="" disabled>Select a saved profile…</option>
+                {allQtyConfigs.map(cfg => (
+                  <option key={cfg.id} value={cfg.id}>
+                    {cfg.label} — {cfg.branch_id === null ? 'Global' : branches.find(b => b.id === cfg.branch_id)?.code ?? '?'} ({cfg.effective_from})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="overflow-x-auto rounded-xl border border-outline-variant/20 mb-4">
               <table className="w-full">
                 <thead>

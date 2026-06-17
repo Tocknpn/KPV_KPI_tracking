@@ -12,6 +12,7 @@ const NAV_ITEMS: Array<{ to: string; icon: string; label: string; key: MenuKey; 
   { to: '/sale-report',    icon: 'bar_chart',       label: 'Sale Report',      key: 'sale_report' },
   { to: '/analytics',      icon: 'monitoring',      label: 'Analytics',        key: 'analytics' },
   { to: '/upload-history', icon: 'history',         label: 'Upload History',   key: 'upload_history' },
+  { to: '/roster',         icon: 'badge',           label: 'Roster',           key: 'roster' },
   { to: '/audit-log',      icon: 'history_edu',     label: 'Audit Log',        key: 'audit_log' },
   { to: '/settings',       icon: 'settings',        label: 'Settings',         key: 'settings' },
   { to: '/users',          icon: 'manage_accounts', label: 'User Management',  key: 'user_management' },

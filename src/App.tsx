@@ -10,6 +10,7 @@ import Settings from './screens/Settings'
 import KpiSettings from './screens/KpiSettings'
 import UserManagement from './screens/UserManagement'
 import UploadHistory from './screens/UploadHistory'
+import Roster from './screens/Roster'
 import SaleReport from './screens/SaleReport'
 import AuditLog from './screens/AuditLog'
 
@@ -55,6 +56,7 @@ export default function App() {
       <Route path="/users"          element={<UserManagement />} />
       <Route path="/upload-history" element={<UploadHistory />} />
       <Route path="/upload-status"  element={<Navigate to="/upload-history" replace />} />
+      <Route path="/roster"         element={<Roster />} />
       <Route path="/sale-report"    element={<SaleReport />} />
       <Route path="/audit-log"      element={<AuditLog />} />
       {/* Legacy redirects */}
