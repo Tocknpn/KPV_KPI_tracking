@@ -10,7 +10,6 @@ const NAV_ITEMS: Array<{ to: string; icon: string; label: string; key: MenuKey; 
   { to: '/entry',          icon: 'edit_document',   label: 'Daily Entry',      key: 'daily_entry' },
   { to: '/reports',        icon: 'leaderboard',     label: 'KPI Report',       key: 'kpi_report' },
   { to: '/sale-report',    icon: 'bar_chart',       label: 'Sale Report',      key: 'sale_report' },
-  { to: '/analytics',      icon: 'monitoring',      label: 'Analytics',        key: 'analytics' },
   { to: '/upload-history', icon: 'history',         label: 'Upload History',   key: 'upload_history' },
   { to: '/roster',         icon: 'badge',           label: 'Roster',           key: 'roster' },
   { to: '/audit-log',      icon: 'history_edu',     label: 'Audit Log',        key: 'audit_log' },

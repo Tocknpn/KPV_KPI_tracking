@@ -1,5 +1,6 @@
 import { IpcMain, dialog } from 'electron'
 import { google } from 'googleapis'
+import bcrypt from 'bcryptjs'
 import { readFileSync, existsSync } from 'fs'
 import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
@@ -232,18 +233,19 @@ export async function pullCommissionConfigsFromSheet(db: Database, sheets: Retur
 }
 
 async function pushUsers(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
-  // NOTE: password_hash is bcrypt — one-way hash, safe to store in Sheets.
-  // Required for multi-device login sync: new device pulls Sheets and gets all user accounts.
+  // Pushes the real plaintext password (explicit user decision, not the default) so admin
+  // can read it straight off this tab instead of resetting it. Restrict sharing on this
+  // sheet — anyone with view access now sees every account's real password.
   const rows = (prepare(db, `
     SELECT u.username, u.full_name, u.role, b.code AS branch_code,
-           sv.full_name AS supervisor_name, u.active, u.password_hash
+           sv.full_name AS supervisor_name, u.active, u.password_plain
     FROM users u
     LEFT JOIN branches b ON b.id = u.branch_id
     LEFT JOIN supervisors sv ON sv.id = u.supervisor_id
     ORDER BY u.role, u.username
-  `).all() as Array<{ username: string; full_name: string; role: string; branch_code: string | null; supervisor_name: string | null; active: number; password_hash: string }>)
-    .map(r => [r.username, r.full_name, r.role, r.branch_code ?? '', r.supervisor_name ?? '', r.active, r.password_hash])
-  await writeTab(sheets, spreadsheetId, TABS.USERS, ['username', 'full_name', 'role', 'branch_code', 'supervisor_name', 'active', 'password_hash'], rows)
+  `).all() as Array<{ username: string; full_name: string; role: string; branch_code: string | null; supervisor_name: string | null; active: number; password_plain: string | null }>)
+    .map(r => [r.username, r.full_name, r.role, r.branch_code ?? '', r.supervisor_name ?? '', r.active, r.password_plain ?? ''])
+  await writeTab(sheets, spreadsheetId, TABS.USERS, ['username', 'full_name', 'role', 'branch_code', 'supervisor_name', 'active', 'password'], rows)
 }
 
 async function pushSupervisors(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
@@ -503,15 +505,15 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     counts.configs += await pullCommissionConfigsFromSheet(db, sheets, sheetsId).catch(() => 0)
 
     // ── Users ──────────────────────────────────────────────────────────
-    // password_hash is bcrypt — syncing enables multi-device login without
-    // manually recreating accounts on every new install.
+    // The sheet now carries the real plaintext password (explicit user decision) — re-hash
+    // it on the way in so login still checks a bcrypt hash, not the plaintext directly.
     const usersRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Users!A:G' }).catch(() => null)
     if (usersRes) {
       const all = usersRes.data.values ?? []
       const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'username' ? all.slice(1) : all
       for (const row of data) {
-        const [username, fullName, role, branchCode, supervisorName, activeStr, passwordHash] = row as string[]
-        if (!username || !role || !passwordHash) continue
+        const [username, fullName, role, branchCode, supervisorName, activeStr, passwordPlain] = row as string[]
+        if (!username || !role || !passwordPlain) continue
         const branch = branchCode ? prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined : undefined
         let supId: number | null = null
         if (supervisorName && branch) {
@@ -519,13 +521,18 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
           supId = sup?.id ?? null
         }
         const active = activeStr === '0' ? 0 : 1
-        const existing = prepare(db, `SELECT id FROM users WHERE username = ?`).get(username) as { id: number } | undefined
+        const existing = prepare(db, `SELECT id, password_plain FROM users WHERE username = ?`).get(username) as { id: number; password_plain: string | null } | undefined
         if (existing) {
-          prepare(db, `UPDATE users SET full_name=?, role=?, branch_id=?, supervisor_id=?, active=?, password_hash=? WHERE username=?`)
-            .run(fullName ?? '', role, branch?.id ?? null, supId, active, passwordHash, username)
+          // Only re-hash if the plaintext actually changed — avoids a needless rehash (and a
+          // pointless write) on every pull when nothing about this user's password moved.
+          if (existing.password_plain !== passwordPlain) {
+            prepare(db, `UPDATE users SET password_hash=?, password_plain=? WHERE username=?`).run(bcrypt.hashSync(passwordPlain, 10), passwordPlain, username)
+          }
+          prepare(db, `UPDATE users SET full_name=?, role=?, branch_id=?, supervisor_id=?, active=? WHERE username=?`)
+            .run(fullName ?? '', role, branch?.id ?? null, supId, active, username)
         } else {
-          prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id, supervisor_id, active) VALUES (?,?,?,?,?,?,?)`)
-            .run(username, passwordHash, fullName ?? '', role, branch?.id ?? null, supId, active)
+          prepare(db, `INSERT INTO users (username, password_hash, password_plain, full_name, role, branch_id, supervisor_id, active) VALUES (?,?,?,?,?,?,?,?)`)
+            .run(username, bcrypt.hashSync(passwordPlain, 10), passwordPlain, fullName ?? '', role, branch?.id ?? null, supId, active)
         }
         counts.users++
       }

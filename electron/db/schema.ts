@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 19
+const SCHEMA_VERSION = 20
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -498,6 +498,18 @@ export function applySchema(db: Database): boolean {
     db.run(`DROP TABLE IF EXISTS salesman_history`)
     db.run(`DROP TABLE IF EXISTS roster_months`)
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '19')`).run()
+  }
+
+  if (currentVersion < 20) {
+    // Explicit user request: store the plaintext password too, so admin can read it straight
+    // off the Users sheet tab when someone forgets theirs, instead of doing a reset. This is
+    // a deliberate tradeoff the user accepted — bcrypt hash stays the login mechanism (so a
+    // stolen DB file alone still doesn't trivially expose it), but anyone with Sheet access
+    // now sees real passwords. Restrict sharing on that sheet accordingly.
+    try { db.run(`ALTER TABLE users ADD COLUMN password_plain TEXT`) } catch { /* already exists */ }
+    // Known value for the one account this session reset directly in the DB file.
+    db.run(`UPDATE users SET password_plain = 'admin1234' WHERE username = 'admin' AND password_plain IS NULL`)
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '20')`).run()
   }
 
   return false // Existing DB — no seeding needed

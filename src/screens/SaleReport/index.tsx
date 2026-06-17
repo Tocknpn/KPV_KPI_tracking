@@ -68,6 +68,54 @@ function VarChip({ pct, compact = false }: { pct: number | null; compact?: boole
   )
 }
 
+// ── Weekday heatmap — % contribution to period total, by day of week ──────
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+function WeekdayHeatmap({ rows }: { rows: DayRow[] }) {
+  const byWeekday = WEEKDAY_LABELS.map(() => 0)
+  for (const r of rows) {
+    const dow = new Date(r.date + 'T00:00:00').getDay()
+    byWeekday[dow] += r.total
+  }
+  const grandTotal = byWeekday.reduce((s, v) => s + v, 0)
+  const contrib = byWeekday.map(v => grandTotal > 0 ? (v / grandTotal) * 100 : 0)
+  const maxContrib = Math.max(...contrib, 0.0001)
+  const busiestIdx = contrib.indexOf(Math.max(...contrib))
+
+  function cellColor(pct: number): string {
+    const intensity = pct / maxContrib // 0..1, relative to the busiest day
+    const alpha = 0.08 + intensity * 0.82
+    return `rgba(0, 79, 150, ${alpha.toFixed(2)})`
+  }
+
+  return (
+    <GlassCard elevated className="p-6">
+      <h4 className="font-headline-md text-headline-md text-on-surface mb-1">Volume by Day of Week</h4>
+      <p className="text-body-sm text-on-surface-variant mb-4">
+        % contribution to period total (jewelry + bar weight) · busiest: <strong>{WEEKDAY_LABELS[busiestIdx]}</strong>
+      </p>
+      <div className="grid grid-cols-7 gap-2">
+        {WEEKDAY_LABELS.map((label, i) => (
+          <div key={label} className="rounded-xl overflow-hidden border border-outline-variant/10">
+            <div
+              className="flex flex-col items-center justify-center py-6 transition-all"
+              style={{ backgroundColor: cellColor(contrib[i]) }}
+              title={`${label}: ${fmt(contrib[i], 1)}% (${fmt(byWeekday[i], 1)} Baht)`}
+            >
+              <span className={`font-bold text-lg tabular-nums ${contrib[i] / maxContrib > 0.55 ? 'text-white' : 'text-on-surface'}`}>
+                {fmt(contrib[i], 1)}%
+              </span>
+            </div>
+            <div className="text-center py-1.5 bg-surface-container-low/40">
+              <span className="text-[11px] font-bold uppercase text-on-surface-variant">{label}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </GlassCard>
+  )
+}
+
 // ── Branch multi-select ───────────────────────────────────────────────────
 function BranchDropdown({ branches, selectedIds, onChange }: {
   branches: Array<{ id: number; name: string; code: string }>
@@ -699,6 +747,9 @@ export default function SaleReport() {
                   </div>
                 </GlassCard>
               )}
+
+              {/* Weekday heatmap — which day of week carries the most volume */}
+              {d.dailyTrend.length > 0 && <WeekdayHeatmap rows={d.dailyTrend} />}
 
               {/* Qty daily line */}
               {d.dailyTrend.length > 0 && (

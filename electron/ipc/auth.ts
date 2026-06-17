@@ -7,13 +7,13 @@ import { pushUsersIfConfigured } from './sheets'
 
 // ── Role permission defaults (mirrors src/types/index.ts ROLE_DEFAULTS) ──
 const ROLE_DEFAULTS: Record<string, string[]> = {
-  admin:              ['dashboard','sale_report','analytics','upload_history','upload_status','audit_log','user_management','settings'],
+  admin:              ['dashboard','kpi_report','sale_report','upload_history','upload_status','audit_log','user_management','settings'],
   sales_sup:          ['dashboard','kpi_report','sale_report','upload_status'],
   accountant_officer: ['daily_entry','sale_report','upload_history','upload_status'],
   accountant_manager: ['sale_report','upload_history','upload_status','audit_log'],
   branch_manager:     ['dashboard','kpi_report','sale_report','upload_status'],
-  top_manager:        ['dashboard','kpi_report','sale_report','analytics','upload_history','roster','kpi_settings','audit_log','settings'],
-  hr:                 ['dashboard','kpi_report','sale_report','analytics','upload_history','upload_status','roster','kpi_settings','audit_log','settings'],
+  top_manager:        ['dashboard','kpi_report','sale_report','upload_history','roster','kpi_settings','audit_log','settings'],
+  hr:                 ['dashboard','kpi_report','sale_report','upload_history','upload_status','roster','kpi_settings','audit_log','settings'],
   hr_support:         ['roster','upload_status'],
 }
 
@@ -160,8 +160,8 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
     try {
       const db   = getDb()
       const hash = bcrypt.hashSync(data.password, 10)
-      const result = prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id, supervisor_id) VALUES (?,?,?,?,?,?)`)
-        .run(data.username, hash, data.fullName, data.role, data.branchId, data.supervisorId ?? null)
+      const result = prepare(db, `INSERT INTO users (username, password_hash, password_plain, full_name, role, branch_id, supervisor_id) VALUES (?,?,?,?,?,?,?)`)
+        .run(data.username, hash, data.password, data.fullName, data.role, data.branchId, data.supervisorId ?? null)
       logAudit(db, admin.id, admin.username, admin.role, 'user_create', `Created user ${data.username} (${data.role})`, 'user', String(result.lastInsertRowid))
       pushUsersIfConfigured(db).catch(() => {})
       return { success: true, id: result.lastInsertRowid }
@@ -175,7 +175,9 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
   }) => {
     const admin = requireAdmin(token)
     const db = getDb()
-    if (data.password) prepare(db, `UPDATE users SET password_hash = ? WHERE id = ?`).run(bcrypt.hashSync(data.password, 10), id)
+    if (data.password) {
+      prepare(db, `UPDATE users SET password_hash = ?, password_plain = ? WHERE id = ?`).run(bcrypt.hashSync(data.password, 10), data.password, id)
+    }
     if (data.fullName !== undefined) prepare(db, `UPDATE users SET full_name = ? WHERE id = ?`).run(data.fullName, id)
     if (data.role !== undefined) prepare(db, `UPDATE users SET role = ? WHERE id = ?`).run(data.role, id)
     if (data.branchId !== undefined) prepare(db, `UPDATE users SET branch_id = ? WHERE id = ?`).run(data.branchId, id)

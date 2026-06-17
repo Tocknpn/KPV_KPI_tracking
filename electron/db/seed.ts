@@ -14,17 +14,14 @@ export function seedDatabase(db: Database): void {
     // Role strings here must match UserRole in src/types/index.ts + ROLE_DEFAULTS
     // in electron/ipc/auth.ts exactly — a stale value (e.g. old 'supervisor' /
     // 'executive') silently gets zero menu access since it matches no ROLE_DEFAULTS key.
-    const adminHash = bcrypt.hashSync('admin1234', 10)
-    const supHash   = bcrypt.hashSync('sup1234',   10)
-    const bmHash    = bcrypt.hashSync('bm1234',    10)
-    const topHash   = bcrypt.hashSync('top1234',   10)
-    const acctOffHash = bcrypt.hashSync('acctoff1234', 10)
-    const acctMgrHash = bcrypt.hashSync('acctmgr1234', 10)
-    const hrHash       = bcrypt.hashSync('hr1234',      10)
-    const hrSupHash     = bcrypt.hashSync('hrsup1234',    10)
+    // password_plain stored alongside the hash per explicit user decision — admin can read
+    // it straight off the Users sheet tab instead of resetting it. See schema.ts v20.
+    function insertUser(username: string, plain: string, fullName: string, role: string, branchId: number | null) {
+      prepare(db, `INSERT INTO users (username, password_hash, password_plain, full_name, role, branch_id) VALUES (?,?,?,?,?,?)`)
+        .run(username, bcrypt.hashSync(plain, 10), plain, fullName, role, branchId)
+    }
 
-    prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
-      .run('admin', adminHash, 'System Administrator', 'admin', null)
+    insertUser('admin', 'admin1234', 'System Administrator', 'admin', null)
 
     // One sales supervisor user per branch (supervisor_id linked in seedTestData)
     const supers = [
@@ -33,10 +30,7 @@ export function seedDatabase(db: Database): void {
       ['sup_it', 'Supervisor ITecc',            3],
       ['sup_vt', 'Supervisor VangThong',        4],
     ] as [string, string, number][]
-    for (const [u, n, b] of supers) {
-      prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
-        .run(u, supHash, n, 'sales_sup', b)
-    }
+    for (const [u, n, b] of supers) insertUser(u, 'sup1234', n, 'sales_sup', b)
 
     // One branch manager per branch
     const managers = [
@@ -45,10 +39,7 @@ export function seedDatabase(db: Database): void {
       ['bm_it', 'Branch Manager ITecc',            3],
       ['bm_vt', 'Branch Manager VangThong',        4],
     ] as [string, string, number][]
-    for (const [u, n, b] of managers) {
-      prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
-        .run(u, bmHash, n, 'branch_manager', b)
-    }
+    for (const [u, n, b] of managers) insertUser(u, 'bm1234', n, 'branch_manager', b)
 
     // One Accountant Officer per branch (uploads daily XLSX, own branch only)
     const acctOfficers = [
@@ -57,26 +48,19 @@ export function seedDatabase(db: Database): void {
       ['acct_off_it', 'Accountant Officer ITecc',            3],
       ['acct_off_vt', 'Accountant Officer VangThong',        4],
     ] as [string, string, number][]
-    for (const [u, n, b] of acctOfficers) {
-      prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
-        .run(u, acctOffHash, n, 'accountant_officer', b)
-    }
+    for (const [u, n, b] of acctOfficers) insertUser(u, 'acctoff1234', n, 'accountant_officer', b)
 
     // Accountant Manager — approves/clears upload batches, all branches
-    prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
-      .run('acct_mgr', acctMgrHash, 'Accountant Manager', 'accountant_manager', null)
+    insertUser('acct_mgr', 'acctmgr1234', 'Accountant Manager', 'accountant_manager', null)
 
     // HR — full function except User Management and Sales Upload
-    prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
-      .run('hr', hrHash, 'HR', 'hr', null)
+    insertUser('hr', 'hr1234', 'HR', 'hr', null)
 
     // HR Support — Roster Upload + Commission Payment only
-    prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
-      .run('hr_support', hrSupHash, 'HR Support', 'hr_support', null)
+    insertUser('hr_support', 'hrsup1234', 'HR Support', 'hr_support', null)
 
     // Top Manager — view-only oversight, all branches, all menus except User Management
-    prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
-      .run('top_manager', topHash, 'Top Manager', 'top_manager', null)
+    insertUser('top_manager', 'top1234', 'Top Manager', 'top_manager', null)
 
     // ── KPI Metrics (3 core) ──────────────────────────────────────────────
     // Jewelry: score = actual_weight × 15;  Bar: score = actual_weight × 7.5

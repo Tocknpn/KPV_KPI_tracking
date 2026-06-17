@@ -4,7 +4,6 @@ import Login from './screens/Login'
 import Dashboard from './screens/Dashboard'
 import DailyEntry from './screens/DailyEntry'
 import Reports from './screens/Reports'
-import Analytics from './screens/Analytics'
 import Executive from './screens/Executive'
 import Settings from './screens/Settings'
 import KpiSettings from './screens/KpiSettings'
@@ -65,7 +64,7 @@ export default function App() {
       <Route path="/dashboard"      element={<Dashboard />} />
       <Route path="/entry"          element={<DailyEntry />} />
       <Route path="/reports"        element={<Reports />} />
-      <Route path="/analytics"      element={<Analytics />} />
+      <Route path="/analytics"      element={<Navigate to="/reports" replace />} />
       <Route path="/executive"      element={<Executive />} />
       <Route path="/settings"       element={<Settings />} />
       <Route path="/kpi-settings"   element={<KpiSettings />} />

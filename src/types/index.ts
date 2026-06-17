@@ -2,7 +2,7 @@
 export type UserRole = 'admin' | 'sales_sup' | 'accountant_officer' | 'accountant_manager' | 'branch_manager' | 'top_manager' | 'hr' | 'hr_support'
 
 export const MENU_KEYS = [
-  'dashboard', 'daily_entry', 'kpi_report', 'sale_report', 'analytics',
+  'dashboard', 'daily_entry', 'kpi_report', 'sale_report',
   'upload_history', 'upload_status', 'roster', 'kpi_settings', 'audit_log', 'user_management', 'settings',
 ] as const
 export type MenuKey = typeof MENU_KEYS[number]
@@ -12,7 +12,6 @@ export const MENU_LABELS: Record<MenuKey, string> = {
   daily_entry:     'Daily Entry Upload',
   kpi_report:      'KPI Report',
   sale_report:     'Sale Report',
-  analytics:       'Analytics',
   upload_history:  'Upload History',
   upload_status:   'Upload Status',
   roster:          'Roster',
@@ -23,13 +22,13 @@ export const MENU_LABELS: Record<MenuKey, string> = {
 }
 
 export const ROLE_DEFAULTS: Record<UserRole, MenuKey[]> = {
-  admin:              ['dashboard','sale_report','analytics','upload_history','upload_status','audit_log','user_management','settings'],
+  admin:              ['dashboard','kpi_report','sale_report','upload_history','upload_status','audit_log','user_management','settings'],
   sales_sup:          ['dashboard','kpi_report','sale_report','upload_status'],
   accountant_officer: ['daily_entry','sale_report','upload_history','upload_status'],
   accountant_manager: ['sale_report','upload_history','upload_status','audit_log'],
   branch_manager:     ['dashboard','kpi_report','sale_report','upload_status'],
-  top_manager:        ['dashboard','kpi_report','sale_report','analytics','upload_history','roster','kpi_settings','audit_log','settings'],
-  hr:                 ['dashboard','kpi_report','sale_report','analytics','upload_history','upload_status','roster','kpi_settings','audit_log','settings'],
+  top_manager:        ['dashboard','kpi_report','sale_report','upload_history','roster','kpi_settings','audit_log','settings'],
+  hr:                 ['dashboard','kpi_report','sale_report','upload_history','upload_status','roster','kpi_settings','audit_log','settings'],
   hr_support:         ['roster','upload_status'],
 }
 
