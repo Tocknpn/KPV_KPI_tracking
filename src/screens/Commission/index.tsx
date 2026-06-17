@@ -104,10 +104,10 @@ export default function Commission() {
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3500) }
 
   const isAdmin    = user?.role === 'admin'
-  const isExec     = user?.role === 'executive' || isAdmin
+  const isExec     = user?.role === 'top_manager' || isAdmin
   const isBranchMgr = user?.role === 'branch_manager'
 
-  const effectiveBranchIds: number[] = (user?.role === 'supervisor' || isBranchMgr)
+  const effectiveBranchIds: number[] = (user?.role === 'sales_sup' || isBranchMgr)
     ? [user.branchId ?? 1]
     : selectedBranchIds
 
@@ -160,7 +160,7 @@ export default function Commission() {
   const totalB2c = reps.filter(r => r.staff_type === 'b2c').reduce((s, r) => s + r.commission_lak, 0)
   const totalB2b = reps.filter(r => r.staff_type === 'b2b').reduce((s, r) => s + r.commission_lak, 0)
 
-  const scopeLabel = (user?.role === 'supervisor' || isBranchMgr)
+  const scopeLabel = (user?.role === 'sales_sup' || isBranchMgr)
     ? (branches.find(b => b.id === user?.branchId)?.name ?? 'My Branch')
     : effectiveBranchIds.length === 0 ? 'All Branches'
     : effectiveBranchIds.length === 1 ? (branches.find(b => b.id === effectiveBranchIds[0])?.name ?? '1 Branch')
@@ -189,7 +189,7 @@ export default function Commission() {
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <MonthDropdown year={year} month={month} onChange={(y, m) => { setYear(y); setMonth(m) }} />
-          {(isExec || isBranchMgr) && user?.role !== 'supervisor' && user?.role !== 'branch_manager' && (
+          {(isExec || isBranchMgr) && user?.role !== 'sales_sup' && user?.role !== 'branch_manager' && (
             <BranchDropdown branches={branches} selectedIds={selectedBranchIds} onChange={setSelectedBranchIds} />
           )}
           {isAdmin && (

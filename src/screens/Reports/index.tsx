@@ -255,7 +255,7 @@ export default function Reports() {
   const [typeFilter, setTypeFilter] = useState<string[]>([])  // [] = all
 
   // ── Tab ────────────────────────────────────────────────────────────────
-  const canSeeOverview = user?.role === 'admin' || user?.role === 'executive'
+  const canSeeOverview = user?.role === 'admin' || user?.role === 'top_manager'
   const [activeTab, setActiveTab] = useState<ReportTab>(canSeeOverview ? 'company_overview' : 'performance')
 
   // ── Toast ──────────────────────────────────────────────────────────────
@@ -266,7 +266,7 @@ export default function Reports() {
   const isBranchScoped = user?.role === 'sales_sup' || user?.role === 'branch_manager' || user?.role === 'accountant'
   const effectiveBranchIds: number[] = isBranchScoped ? [user.branchId ?? 1] : selectedBranchIds
   const isMultiBranch = effectiveBranchIds.length !== 1
-  const showSupFilter = user?.role !== 'supervisor'
+  const showSupFilter = user?.role !== 'sales_sup'
 
   const scopeLabel = isBranchScoped
     ? branches.find(b => b.id === user?.branchId)?.name ?? 'My Branch'

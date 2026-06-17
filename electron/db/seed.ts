@@ -11,15 +11,22 @@ export function seedDatabase(db: Database): void {
     prepare(db, `INSERT INTO branches (name, code, kpi_point_target) VALUES (?, ?, ?)`).run('VangThong',        'VT', 7000)
 
     // ── Users ─────────────────────────────────────────────────────────────
+    // Role strings here must match UserRole in src/types/index.ts + ROLE_DEFAULTS
+    // in electron/ipc/auth.ts exactly — a stale value (e.g. old 'supervisor' /
+    // 'executive') silently gets zero menu access since it matches no ROLE_DEFAULTS key.
     const adminHash = bcrypt.hashSync('admin1234', 10)
     const supHash   = bcrypt.hashSync('sup1234',   10)
     const bmHash    = bcrypt.hashSync('bm1234',    10)
-    const ceoHash   = bcrypt.hashSync('ceo1234',   10)
+    const topHash   = bcrypt.hashSync('top1234',   10)
+    const acctOffHash = bcrypt.hashSync('acctoff1234', 10)
+    const acctMgrHash = bcrypt.hashSync('acctmgr1234', 10)
+    const hrHash       = bcrypt.hashSync('hr1234',      10)
+    const hrSupHash     = bcrypt.hashSync('hrsup1234',    10)
 
     prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
       .run('admin', adminHash, 'System Administrator', 'admin', null)
 
-    // One supervisor user per branch (supervisor_id linked in seedTestData)
+    // One sales supervisor user per branch (supervisor_id linked in seedTestData)
     const supers = [
       ['sup_mm', 'Supervisor Morning Market',   1],
       ['sup_vc', 'Supervisor Vientiane Center', 2],
@@ -28,7 +35,7 @@ export function seedDatabase(db: Database): void {
     ] as [string, string, number][]
     for (const [u, n, b] of supers) {
       prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
-        .run(u, supHash, n, 'supervisor', b)
+        .run(u, supHash, n, 'sales_sup', b)
     }
 
     // One branch manager per branch
@@ -43,9 +50,33 @@ export function seedDatabase(db: Database): void {
         .run(u, bmHash, n, 'branch_manager', b)
     }
 
-    // CEO/executive
+    // One Accountant Officer per branch (uploads daily XLSX, own branch only)
+    const acctOfficers = [
+      ['acct_off_mm', 'Accountant Officer Morning Market',   1],
+      ['acct_off_vc', 'Accountant Officer Vientiane Center', 2],
+      ['acct_off_it', 'Accountant Officer ITecc',            3],
+      ['acct_off_vt', 'Accountant Officer VangThong',        4],
+    ] as [string, string, number][]
+    for (const [u, n, b] of acctOfficers) {
+      prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
+        .run(u, acctOffHash, n, 'accountant_officer', b)
+    }
+
+    // Accountant Manager — approves/clears upload batches, all branches
     prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
-      .run('ceo', ceoHash, 'Chief Executive Officer', 'executive', null)
+      .run('acct_mgr', acctMgrHash, 'Accountant Manager', 'accountant_manager', null)
+
+    // HR — full function except User Management and Sales Upload
+    prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
+      .run('hr', hrHash, 'HR', 'hr', null)
+
+    // HR Support — Roster Upload + Commission Payment only
+    prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
+      .run('hr_support', hrSupHash, 'HR Support', 'hr_support', null)
+
+    // Top Manager — view-only oversight, all branches, all menus except User Management
+    prepare(db, `INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?,?,?,?,?)`)
+      .run('top_manager', topHash, 'Top Manager', 'top_manager', null)
 
     // ── KPI Metrics (3 core) ──────────────────────────────────────────────
     // Jewelry: score = actual_weight × 15;  Bar: score = actual_weight × 7.5
@@ -244,7 +275,7 @@ export function seedTestData(db: Database): void {
     for (const branchId of [1, 2, 3, 4]) {
       const alphaSupId = supIdsByBranchAndTier[`${branchId}-alpha`]
       if (alphaSupId) {
-        prepare(db, `UPDATE users SET supervisor_id = ? WHERE username = ? AND role = 'supervisor'`)
+        prepare(db, `UPDATE users SET supervisor_id = ? WHERE username = ? AND role = 'sales_sup'`)
           .run(alphaSupId, branchSupUserMap[branchId])
       }
     }

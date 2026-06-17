@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 17
+const SCHEMA_VERSION = 18
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -454,6 +454,16 @@ export function applySchema(db: Database): boolean {
       })
     }
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '17')`).run()
+  }
+
+  if (currentVersion < 18) {
+    // Links each entry back to the upload batch that created it, so an Accountant Manager
+    // can delete one bad upload (clearing the slate for resubmission) without touching
+    // other branches/dates. NULL for legacy rows from the removed Manual Entry feature
+    // and anything imported before this column existed — those are simply never deletable
+    // as a "batch", which is fine since they were never part of one.
+    try { db.run(`ALTER TABLE daily_entries ADD COLUMN upload_log_id INTEGER REFERENCES upload_logs(id)`) } catch { /* already exists */ }
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '18')`).run()
   }
 
   return false // Existing DB — no seeding needed

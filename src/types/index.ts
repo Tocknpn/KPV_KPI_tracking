@@ -1,5 +1,5 @@
 // ── Auth ──────────────────────────────────────────────────────────────────
-export type UserRole = 'admin' | 'sales_sup' | 'accountant' | 'branch_manager' | 'top_manager' | 'hr'
+export type UserRole = 'admin' | 'sales_sup' | 'accountant' | 'accountant_officer' | 'accountant_manager' | 'branch_manager' | 'top_manager' | 'hr' | 'hr_support'
 
 export const MENU_KEYS = [
   'dashboard', 'daily_entry', 'kpi_report', 'sale_report', 'analytics',
@@ -23,21 +23,27 @@ export const MENU_LABELS: Record<MenuKey, string> = {
 }
 
 export const ROLE_DEFAULTS: Record<UserRole, MenuKey[]> = {
-  admin:          ['dashboard','daily_entry','kpi_report','sale_report','analytics','upload_history','upload_status','roster','kpi_settings','audit_log','user_management','settings'],
-  sales_sup:      ['dashboard','kpi_report','upload_status'],
-  accountant:     ['dashboard','daily_entry','sale_report','upload_history','upload_status'],
-  branch_manager: ['dashboard','kpi_report','sale_report','upload_status'],
-  top_manager:    ['dashboard','kpi_report','sale_report','analytics'],
-  hr:             ['roster','kpi_settings'],
+  admin:              ['dashboard','sale_report','analytics','upload_history','upload_status','audit_log','user_management','settings'],
+  sales_sup:          ['dashboard','kpi_report','sale_report','upload_status'],
+  accountant:         ['dashboard','daily_entry','sale_report','upload_history','upload_status'],
+  accountant_officer: ['daily_entry','sale_report','upload_history','upload_status'],
+  accountant_manager: ['sale_report','upload_history','upload_status','audit_log'],
+  branch_manager:     ['dashboard','kpi_report','sale_report','upload_status'],
+  top_manager:        ['dashboard','kpi_report','sale_report','analytics','upload_history','roster','kpi_settings','audit_log','settings'],
+  hr:                 ['dashboard','kpi_report','sale_report','analytics','upload_history','upload_status','roster','kpi_settings','audit_log','settings'],
+  hr_support:         ['roster','upload_status'],
 }
 
 export const ROLE_LABELS: Record<UserRole, string> = {
-  admin:          'Admin',
-  sales_sup:      'Sales Supervisor',
-  accountant:     'Accountant',
-  branch_manager: 'Branch Manager',
-  top_manager:    'Top Manager',
-  hr:             'HR',
+  admin:              'Admin',
+  sales_sup:          'Sales Supervisor',
+  accountant:         'Accountant (Legacy)',
+  accountant_officer: 'Accountant Officer',
+  accountant_manager: 'Accountant Manager',
+  branch_manager:     'Branch Manager',
+  top_manager:        'Top Manager',
+  hr:                 'HR',
+  hr_support:         'HR Support',
 }
 
 export interface AuthUser {

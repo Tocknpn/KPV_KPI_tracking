@@ -1,32 +1,20 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useRef, useState } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
-import type { DailyEntry } from '../../types'
 import { validateDailyRows } from '../../utils/csv'
 import { parseXLSX, readFileAsArrayBuffer, generateDailyTemplateXLSX, downloadXLSX } from '../../utils/xlsx'
 
-type Tab = 'manual' | 'daily-csv'
-
 function fmt(n: number) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 interface UploadSummary { totalRecords: number; totalJewelry: number; totalBar: number; totalQty: number; totalWeight: number; complete: number; errors: number }
 interface ErrorRow { row: number; data: { date: string; repCode: string; jewelryWeightG: number; barWeightG: number; quantity: number }; reason: string }
 
 export default function DailyEntry() {
   const { token, user, branches } = useAuthStore()
-  const { selectedBranchId, selectedYear, selectedMonth, setUnsyncedCount } = useAppStore()
-  const [activeTab, setActiveTab] = useState<Tab>('manual')
-
-  // Manual entry state
-  const [entries, setEntries] = useState<DailyEntry[]>([])
-  const [loadingEntries, setLoadingEntries] = useState(true)
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
-  const [saving, setSaving] = useState<Record<number, boolean>>({})
-  const [savedAt, setSavedAt] = useState<string | null>(null)
-  const [savingAll, setSavingAll] = useState(false)
+  const { selectedBranchId } = useAppStore()
+  const [date] = useState(new Date().toISOString().split('T')[0])
 
   // CSV upload state
   const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -42,67 +30,12 @@ export default function DailyEntry() {
   const [errorRows, setErrorRows] = useState<ErrorRow[]>([])
   const [showErrorModal, setShowErrorModal] = useState(false)
 
-  const effectiveBranchId = (user?.role === 'sales_sup' || user?.role === 'branch_manager' || user?.role === 'accountant')
+  const effectiveBranchId = (user?.role === 'sales_sup' || user?.role === 'branch_manager' || user?.role === 'accountant' || user?.role === 'accountant_officer')
     ? (user.branchId ?? 1)
     : (selectedBranchId ?? branches[0]?.id ?? 1)
 
-  const showSupColumn = user?.role !== 'sales_sup'
-
   const branchName = branches.find(b => b.id === effectiveBranchId)?.name ?? ''
 
-  // ── Manual entry ─────────────────────────────────────────────────────
-  async function loadEntries() {
-    if (!token) return
-    setLoadingEntries(true)
-    try {
-      const data = await window.api.getEntries(token, effectiveBranchId, date)
-      setEntries(data)
-    } finally { setLoadingEntries(false) }
-  }
-
-  useEffect(() => { if (activeTab === 'manual') loadEntries() }, [token, effectiveBranchId, date, activeTab])
-
-  const handleCellChange = useCallback(async (salesmanId: number, branchId: number, field: 'jewelry_weight_g' | 'bar_weight_g' | 'quantity', value: string) => {
-    const numVal = field === 'quantity' ? (parseInt(value) || 0) : (parseFloat(value) || 0)
-    // Capture updated entry inside functional update to avoid stale closure
-    let updated: DailyEntry | null = null
-    setEntries(prev => prev.map(e => {
-      if (e.salesman_id === salesmanId) {
-        updated = { ...e, [field]: numVal, synced: 0 }
-        return updated
-      }
-      return e
-    }))
-    if (!updated) return
-    setSaving(prev => ({ ...prev, [salesmanId]: true }))
-    await window.api.saveEntry(token!, {
-      salesmanId, branchId, date,
-      jewelryWeightG: (updated as DailyEntry).jewelry_weight_g,
-      barWeightG:     (updated as DailyEntry).bar_weight_g,
-      quantity:       (updated as DailyEntry).quantity,
-    })
-    setSaving(prev => ({ ...prev, [salesmanId]: false }))
-    setSavedAt(new Date().toLocaleTimeString())
-    const count = await window.api.getUnsyncedCount(token!)
-    setUnsyncedCount(count)
-  }, [token, date])
-
-  async function saveAll() {
-    if (!token || !entries.length) return
-    setSavingAll(true)
-    const toSave = entries.filter(e => e.jewelry_weight_g > 0 || e.bar_weight_g > 0 || e.quantity > 0)
-    await window.api.saveBatchEntries(token, toSave.map(e => ({
-      salesmanId: e.salesman_id, branchId: effectiveBranchId, date,
-      jewelryWeightG: e.jewelry_weight_g, barWeightG: e.bar_weight_g, quantity: e.quantity,
-    })))
-    setSavedAt(new Date().toLocaleTimeString())
-    setSavingAll(false)
-    const count = await window.api.getUnsyncedCount(token)
-    setUnsyncedCount(count)
-    loadEntries()
-  }
-
-  // ── CSV upload helpers ─────────────────────────────────────────────────
   function resetUpload() {
     setUploadFile(null); setPreview(null); setUploadErrors([]); setUploadResult(null)
     setUploadSummary(null); setErrorRows([])
@@ -150,7 +83,6 @@ export default function DailyEntry() {
         setUploadResult(null)
         setUploadErrors(errors)
         setUploadFile(null); setPreview(null)
-        loadEntries()
       } else {
         setUploadErrors([res.error ?? 'Upload failed'])
       }
@@ -179,10 +111,8 @@ export default function DailyEntry() {
         errors: stillErrored.length,
       } : res.summary ?? null)
       if (stillErrored.length === 0) setShowErrorModal(false)
-      loadEntries()
     }
   }
-
 
   // Template downloads (XLSX)
   async function downloadDailyTemplate() {
@@ -192,144 +122,39 @@ export default function DailyEntry() {
     downloadXLSX(`daily_template_${branchName.replace(/\s+/g,'_')}_${date}.xlsx`, data)
   }
 
-
-  const totals = entries.reduce((a, e) => ({ j: a.j + (e.jewelry_weight_g ?? 0), b: a.b + (e.bar_weight_g ?? 0), q: a.q + (e.quantity ?? 0) }), { j: 0, b: 0, q: 0 })
-  const filled = entries.filter(e => e.jewelry_weight_g > 0 || e.bar_weight_g > 0 || e.quantity > 0).length
-
   return (
     <AppShell title="SalesTrack Pro">
       {/* Header */}
       <div className="flex justify-between items-end mb-6">
         <div>
-          <h2 className="font-headline-lg text-headline-lg text-on-surface">Performance Entry</h2>
+          <h2 className="font-headline-lg text-headline-lg text-on-surface">Daily XLSX Upload</h2>
           <p className="text-on-surface-variant text-body-md">{branchName}</p>
         </div>
-        <GlassCard className="px-4 py-2 flex items-center gap-4">
-          <div>
-            <span className="font-label-md text-[10px] text-on-surface-variant uppercase block">Date</span>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              className="font-tabular-nums text-sm font-bold text-primary bg-transparent border-none outline-none" />
-          </div>
-          <div className="w-px h-8 bg-black/5" />
-          <div>
-            <span className="font-label-md text-[10px] text-on-surface-variant uppercase block">Entries</span>
-            <span className="font-tabular-nums text-sm font-bold text-secondary">{filled} / {entries.length}</span>
-          </div>
-        </GlassCard>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-surface-container rounded-xl p-1 w-fit">
-        {([
-          { key: 'manual',    label: 'Manual Entry',      icon: 'edit_document' },
-          { key: 'daily-csv', label: 'Daily XLSX Upload', icon: 'upload_file'   },
-        ] as const).map(t => (
-          <button key={t.key} onClick={() => { setActiveTab(t.key); resetUpload() }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-label-md text-label-md transition-all ${activeTab === t.key ? 'bg-white shadow-sm text-primary font-bold' : 'text-on-surface-variant hover:text-primary'}`}>
-            <span className="material-symbols-outlined text-sm">{t.icon}</span>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <CSVUploadPanel
+        title="Daily Performance Upload"
+        description="Upload daily KPI data for one or more dates. If a record already exists for a rep + date, the row is rejected — ask an Accountant Manager to clear the conflicting upload batch before re-uploading."
+        templateNote="Format: Date (YYYY-MM-DD), Staff_ID, Full_Name, Branch_ID, KPI_1 (Jewelry g), KPI_2 (Bar g), KPI_3 (Quantity)"
+        onDownloadTemplate={downloadDailyTemplate}
+        templateFilename={`daily_template_${date}.xlsx`}
+        onFilePick={handleFilePick}
+        uploadFile={uploadFile}
+        uploading={uploading}
+        preview={preview}
+        errors={uploadErrors}
+        result={uploadResult}
+        onSubmit={submitDailyCSV}
+        onReset={resetUpload}
+        isDragging={isDragging}
+        setIsDragging={setIsDragging}
+        fileRef={fileRef}
+        submitLabel="Import Daily Data"
+        accent="primary"
+      />
 
-      {/* ── Tab: Manual Entry ── */}
-      {activeTab === 'manual' && (
-        <>
-          <GlassCard className="overflow-hidden mb-6" elevated>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="bg-surface-container-highest/50 border-b border-black/5">
-                    {(['Salesman', ...(showSupColumn ? ['Team Sup'] : []), 'Position','Jewelry (Baht)','Bar (Baht)','Qty','Status'] as string[]).map(h => (
-                      <th key={h} className="px-5 py-4 text-left font-label-md text-label-md text-on-surface-variant uppercase whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-black/5">
-                  {loadingEntries ? (
-                    <tr><td colSpan={6 + (showSupColumn ? 1 : 0)} className="py-10 text-center text-on-surface-variant">
-                      <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>Loading...
-                    </td></tr>
-                  ) : entries.map(e => {
-                    const isSaving = saving[e.salesman_id]
-                    const hasData  = e.jewelry_weight_g > 0 || e.bar_weight_g > 0 || e.quantity > 0
-                    return (
-                      <tr key={e.salesman_id} className="hover:bg-primary/[0.02] transition-colors">
-                        <td className="px-5 py-compact-row">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold uppercase">
-                              {e.salesman_name?.slice(0,1)}
-                            </div>
-                            <div>
-                              <p className="font-medium text-body-sm">{e.salesman_name}</p>
-                              <p className="text-[10px] text-on-surface-variant font-mono">
-                                {(e as { rep_code?: string }).rep_code ?? e.nickname ?? ''}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        {showSupColumn && (
-                          <td className="px-5 py-compact-row text-body-sm text-on-surface-variant whitespace-nowrap">{e.supervisor_name ?? '—'}</td>
-                        )}
-                        <td className="px-5 py-compact-row text-body-sm text-on-surface-variant">{e.position}</td>
-                        <EditCell value={e.jewelry_weight_g} onBlur={v => handleCellChange(e.salesman_id, effectiveBranchId, 'jewelry_weight_g', v)} />
-                        <EditCell value={e.bar_weight_g} onBlur={v => handleCellChange(e.salesman_id, effectiveBranchId, 'bar_weight_g', v)} />
-                        <EditCell value={e.quantity} onBlur={v => handleCellChange(e.salesman_id, effectiveBranchId, 'quantity', v)} isInt />
-                        <td className="px-5 py-compact-row text-center">
-                          {isSaving ? <span className="material-symbols-outlined text-secondary text-lg animate-spin-slow">sync</span>
-                            : hasData ? (e.synced ? <span className="material-symbols-outlined text-green-500 text-lg">cloud_done</span> : <span className="material-symbols-outlined text-secondary text-lg">save</span>)
-                            : <span className="material-symbols-outlined text-on-surface-variant/30 text-lg">pending</span>}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </GlassCard>
-
-          {/* Totals */}
-          <div className="grid grid-cols-3 gap-card-gap">
-            {[
-              { label: 'Total Jewelry', value: `${fmt(totals.j)} g`, color: 'text-primary' },
-              { label: 'Total Bar',     value: `${fmt(totals.b)} g`, color: 'text-secondary' },
-              { label: 'Total Qty',     value: `${totals.q} pcs`,    color: 'text-tertiary' },
-            ].map(k => (
-              <GlassCard key={k.label} className="p-5">
-                <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{k.label}</p>
-                <h4 className={`font-headline-md text-headline-md font-bold tabular-nums ${k.color}`}>{k.value}</h4>
-              </GlassCard>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* ── Tab: Daily CSV Upload ── */}
-      {activeTab === 'daily-csv' && (
-        <CSVUploadPanel
-          title="Daily Performance Upload"
-          description="Upload daily KPI data for one or more dates. If same staff + date already exists, latest upload replaces it."
-          templateNote="Format: Date (YYYY-MM-DD), Staff_ID, Full_Name, Branch_ID, KPI_1 (Jewelry g), KPI_2 (Bar g), KPI_3 (Quantity)"
-          onDownloadTemplate={downloadDailyTemplate}
-          templateFilename={`daily_template_${date}.xlsx`}
-          onFilePick={handleFilePick}
-          uploadFile={uploadFile}
-          uploading={uploading}
-          preview={preview}
-          errors={uploadErrors}
-          result={uploadResult}
-          onSubmit={submitDailyCSV}
-          onReset={resetUpload}
-          isDragging={isDragging}
-          setIsDragging={setIsDragging}
-          fileRef={fileRef}
-          submitLabel="Import Daily Data"
-          accent="primary"
-        />
-      )}
-
-      {/* ── Upload result summary (accountant-facing) ── */}
-      {activeTab === 'daily-csv' && uploadSummary && (
+      {/* Upload result summary (accountant-facing) */}
+      {uploadSummary && (
         <GlassCard elevated className="p-6 mt-6">
           <h4 className="font-headline-md text-headline-md text-on-surface mb-4 flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">fact_check</span>
@@ -377,68 +202,7 @@ export default function DailyEntry() {
           onClose={() => setShowErrorModal(false)}
         />
       )}
-
-
-      {/* Sticky footer for manual entry */}
-      {activeTab === 'manual' && (
-        <>
-          <div className="fixed bottom-0 left-sidebar-width right-0 h-20 bg-surface-container-low/90 backdrop-blur-xl border-t border-white/20 z-40 flex items-center justify-between px-8">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Auto-save</span>
-              </div>
-              <p className="text-sm text-on-surface-variant">{filled} / {entries.length} filled for {date}</p>
-              {savedAt && (
-                <p className="text-xs text-green-600 font-medium flex items-center gap-1">
-                  <span className="material-symbols-outlined text-sm">check_circle</span>
-                  Saved {savedAt}
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              <button onClick={loadEntries} className="px-4 py-2 rounded-lg border border-outline-variant text-on-surface-variant hover:bg-surface-container flex items-center gap-2 text-sm">
-                <span className="material-symbols-outlined text-base">refresh</span> Refresh
-              </button>
-              <button onClick={saveAll} disabled={savingAll || filled === 0}
-                className="px-5 py-2.5 rounded-lg bg-primary text-white font-bold hover:opacity-90 disabled:opacity-40 flex items-center gap-2 text-sm">
-                <span className={`material-symbols-outlined text-base ${savingAll ? 'animate-spin-slow' : ''}`}>
-                  {savingAll ? 'sync' : 'save'}
-                </span>
-                {savingAll ? 'Saving...' : 'Save All'}
-              </button>
-            </div>
-          </div>
-          <div className="h-20" />
-        </>
-      )}
     </AppShell>
-  )
-}
-
-// ── Inline editable cell ───────────────────────────────────────────────────
-function EditCell({ value, onBlur, isInt = false }: { value: number; onBlur: (v: string) => void; isInt?: boolean }) {
-  const [local, setLocal] = useState(value > 0 ? String(value) : '')
-  const focused = useRef(false)
-
-  // Sync value from parent (e.g. after Refresh) only when not actively typing
-  useEffect(() => {
-    if (!focused.current) {
-      setLocal(value > 0 ? String(value) : '')
-    }
-  }, [value])
-
-  return (
-    <td className="px-5 py-compact-row text-right border-b-2 border-transparent focus-within:border-primary focus-within:bg-primary/[0.02] transition-all">
-      <input
-        type="number" step={isInt ? '1' : '0.01'} min="0"
-        value={local}
-        onChange={e => setLocal(e.target.value)}
-        onFocus={() => { focused.current = true }}
-        onBlur={e => { focused.current = false; onBlur(e.target.value) }}
-        className="w-full bg-transparent border-none text-right focus:ring-0 font-tabular-nums text-sm p-1 outline-none"
-      />
-    </td>
   )
 }
 

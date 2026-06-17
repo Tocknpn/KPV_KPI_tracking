@@ -1,11 +1,9 @@
 import { IpcMain } from 'electron'
 import { google } from 'googleapis'
 import { getDb } from '../db/connection'
-import { prepare, transaction } from '../db/query'
+import { prepare } from '../db/query'
 import { requireAuth, requireAdmin } from './auth'
-import { getServiceAuth, getSetting } from './sheets'
-
-const COMMISSION_CONFIG_HEADERS = ['Staff_Type', 'Year_Month', 'Jewelry_Rate_LAK', 'Bar_Rate_LAK', 'Qty_Rate_LAK']
+import { getServiceAuth, getSetting, pushCommission, pullCommissionConfigsFromSheet } from './sheets'
 
 interface CommissionConfig {
   staff_type: string
@@ -52,31 +50,15 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
         qty_rate_lak     = excluded.qty_rate_lak
     `).run(data.staffType, data.yearMonth, data.jewelryRateLak, data.barRateLak, data.qtyRateLak)
 
-    // Push all configs to Sheets CommissionConfig tab
+    // Push all configs to Sheets CommissionConfig tab — uses the same writer as Force Full
+    // Sync (pushCommission in sheets.ts) so there's exactly one column format for this tab.
     const sheetsId = getSetting('sheets_id')
     const saPath   = getSetting('service_account_path')
     if (sheetsId && saPath) {
       try {
         const auth   = getServiceAuth(saPath)
         const sheets = google.sheets({ version: 'v4', auth })
-        const allConfigs = prepare(db, `SELECT * FROM commission_configs ORDER BY year_month, staff_type`).all() as Array<{
-          staff_type: string; year_month: string; jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number
-        }>
-        // Clear then rewrite entire tab
-        await sheets.spreadsheets.batchUpdate({
-          spreadsheetId: sheetsId,
-          requestBody: { requests: [{ addSheet: { properties: { title: 'CommissionConfig' } } }] },
-        }).catch(() => { /* tab already exists */ })
-        await sheets.spreadsheets.values.clear({ spreadsheetId: sheetsId, range: 'CommissionConfig!A:E' })
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: sheetsId, range: 'CommissionConfig!A1', valueInputOption: 'USER_ENTERED',
-          requestBody: {
-            values: [
-              COMMISSION_CONFIG_HEADERS,
-              ...allConfigs.map(c => [c.staff_type, c.year_month, c.jewelry_rate_lak, c.bar_rate_lak, c.qty_rate_lak]),
-            ],
-          },
-        })
+        await pushCommission(db, sheets, sheetsId)
       } catch { /* Sheets not configured or unavailable — silently skip */ }
     }
 
@@ -94,27 +76,7 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
       const auth   = getServiceAuth(saPath)
       const sheets = google.sheets({ version: 'v4', auth })
       const db     = getDb()
-
-      const res = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'CommissionConfig!A:E' })
-      const allRows = res.data.values ?? []
-      const dataRows = allRows.length > 0 && String(allRows[0][0]).toLowerCase().includes('type') ? allRows.slice(1) : allRows
-
-      let imported = 0
-      transaction(db, () => {
-        for (const row of dataRows) {
-          const [staffType, yearMonth, jRate, bRate, qRate] = row as string[]
-          if (!staffType || !yearMonth) continue
-          prepare(db, `
-            INSERT INTO commission_configs (staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak)
-            VALUES (?,?,?,?,?)
-            ON CONFLICT(staff_type, year_month) DO UPDATE SET
-              jewelry_rate_lak = excluded.jewelry_rate_lak,
-              bar_rate_lak     = excluded.bar_rate_lak,
-              qty_rate_lak     = excluded.qty_rate_lak
-          `).run(staffType, yearMonth, parseFloat(jRate) || 0, parseFloat(bRate) || 0, parseFloat(qRate) || 0)
-          imported++
-        }
-      })
+      const imported = await pullCommissionConfigsFromSheet(db, sheets, sheetsId)
       return { success: true, count: imported }
     } catch (e: unknown) {
       return { success: false, error: e instanceof Error ? e.message : String(e) }

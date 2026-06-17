@@ -146,13 +146,48 @@ function readableYearMonth(yearMonth: string): string {
   const y = yearMonth.slice(0, 4); const m = parseInt(yearMonth.slice(4), 10)
   return m >= 1 && m <= 12 ? `${MONTH_NAMES[m - 1]} ${y}` : yearMonth
 }
+// Reverse of readableYearMonth — "May 2026" -> "202605". Returns null if unparseable
+// (e.g. it's actually a header cell, not a data row).
+function parseReadableYearMonth(label: string): string | null {
+  const m = /^([A-Za-z]{3})\s+(\d{4})$/.exec((label ?? '').trim())
+  if (!m) return null
+  const idx = MONTH_NAMES.findIndex(n => n.toLowerCase() === m[1].toLowerCase())
+  if (idx === -1) return null
+  return `${m[2]}${String(idx + 1).padStart(2, '0')}`
+}
 
-async function pushCommission(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+export async function pushCommission(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
   const rows = (prepare(db, `SELECT staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak FROM commission_configs ORDER BY year_month, staff_type`).all() as Array<{ staff_type: string; year_month: string; jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number }>)
     .map(r => r.staff_type === 'supervisor'
       ? [readableYearMonth(r.year_month), 'Supervisor', `${r.jewelry_rate_lak}% of team commission`, '', '']
       : [readableYearMonth(r.year_month), r.staff_type.toUpperCase(), r.jewelry_rate_lak, r.bar_rate_lak, r.qty_rate_lak])
   await writeTab(sheets, spreadsheetId, TABS.COMMISSION, ['Month', 'Staff Type', 'Jewelry Rate (₭/Baht)', 'Bar Rate (₭/Baht)', 'Qty Rate (₭/pc)'], rows)
+}
+
+// Single source of truth for reading the CommissionConfig tab back into the DB — must stay
+// in lockstep with pushCommission's column order (Month, Staff Type, ...), since a mismatch
+// here silently swaps columns and even inserts the header row as garbage data (this exact
+// bug previously existed in two separate places: here and in commission.ts's own pull handler).
+export async function pullCommissionConfigsFromSheet(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<number> {
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'CommissionConfig!A:E' })
+  const allRows = res.data.values ?? []
+  const dataRows = allRows.length > 0 && String(allRows[0][0]).toLowerCase().includes('month') ? allRows.slice(1) : allRows
+
+  let imported = 0
+  for (const row of dataRows as string[][]) {
+    const [monthLabel, staffTypeLabel, jRate, bRate, qRate] = row
+    const yearMonth = parseReadableYearMonth(monthLabel)
+    if (!yearMonth || !staffTypeLabel) continue
+    const staffType = staffTypeLabel.toLowerCase()
+    // parseFloat tolerates the Supervisor row's "50% of team commission" string fine — it
+    // just reads the leading number and stops at the first non-numeric character.
+    prepare(db, `
+      INSERT INTO commission_configs (staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak) VALUES (?,?,?,?,?)
+      ON CONFLICT(staff_type, year_month) DO UPDATE SET jewelry_rate_lak=excluded.jewelry_rate_lak, bar_rate_lak=excluded.bar_rate_lak, qty_rate_lak=excluded.qty_rate_lak
+    `).run(staffType, yearMonth, parseFloat(jRate) || 0, parseFloat(bRate) || 0, parseFloat(qRate) || 0)
+    imported++
+  }
+  return imported
 }
 
 async function pushUsers(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
@@ -455,20 +490,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     }
 
     // ── Commission Configs ─────────────────────────────────────────────
-    const cfgRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'CommissionConfig!A:E' }).catch(() => null)
-    if (cfgRes) {
-      const all = cfgRes.data.values ?? []
-      const data = all.length > 0 && String(all[0][0]).toLowerCase().includes('type') ? all.slice(1) : all
-      for (const row of data) {
-        const [staffType, yearMonth, jRate, bRate, qRate] = row as string[]
-        if (!staffType || !yearMonth) continue
-        prepare(db, `
-          INSERT INTO commission_configs (staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak) VALUES (?,?,?,?,?)
-          ON CONFLICT(staff_type, year_month) DO UPDATE SET jewelry_rate_lak=excluded.jewelry_rate_lak, bar_rate_lak=excluded.bar_rate_lak, qty_rate_lak=excluded.qty_rate_lak
-        `).run(staffType, yearMonth, parseFloat(jRate) || 0, parseFloat(bRate) || 0, parseFloat(qRate) || 0)
-        counts.configs++
-      }
-    }
+    counts.configs += await pullCommissionConfigsFromSheet(db, sheets, sheetsId).catch(() => 0)
 
     // ── Users ──────────────────────────────────────────────────────────
     // password_hash is bcrypt — syncing enables multi-device login without

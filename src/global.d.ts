@@ -61,6 +61,13 @@ interface Window {
     uploadTargets(token: string, rows: unknown[], meta: unknown): Promise<{ success: boolean; count?: number; error?: string }>
     getUploadLogs(token: string, branchId?: number, uploadType?: string, limit?: number): Promise<unknown[]>
     getUploadCoverage(token: string, year: number, month: number): Promise<unknown[]>
+    getDailyUploadBatches(token: string, branchId?: number): Promise<Array<{
+      id: number; branch_id: number; branch_name: string; branch_code: string
+      user_id: number; uploaded_by: string; filename: string; records_count: number
+      date_from: string | null; date_to: string | null; status: string; notes: string | null
+      uploaded_at: string; active_entries: number
+    }>>
+    deleteDailyUploadBatch(token: string, uploadLogId: number): Promise<{ success: boolean; deletedEntries?: number; error?: string }>
     getSalesmenForTemplate(token: string, branchId: number): Promise<unknown[]>
     getRepUploadStatus(token: string, branchIds?: number[], days?: number): Promise<{ dates: string[]; branches: Array<{ branch_id: number; branch_name: string; branch_code: string; reps: Array<{ id: number; rep_code: string; full_name: string; nickname: string; staff_type: string; supervisor_name: string | null; days: boolean[] }> }> }>
 

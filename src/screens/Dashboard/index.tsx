@@ -194,7 +194,7 @@ export default function Dashboard() {
   // Max allowed dateTo: today for current month, last day of month otherwise
   const maxDateAllowed = getDefaultDateRange(year, month).dateTo
 
-  const effectiveBranchIds: number[] = user?.role === 'supervisor'
+  const effectiveBranchIds: number[] = user?.role === 'sales_sup'
     ? [user.branchId ?? 1]
     : selectedBranchIds
 
@@ -224,7 +224,7 @@ export default function Dashboard() {
   const kpiPct      = s?.kpiPct ?? 0
 
   const scopeLabel = (() => {
-    if (user?.role === 'supervisor') return branches.find(b => b.id === user.branchId)?.name ?? 'My Branch'
+    if (user?.role === 'sales_sup') return branches.find(b => b.id === user.branchId)?.name ?? 'My Branch'
     if (effectiveBranchIds.length === 0) return 'All Branches'
     if (effectiveBranchIds.length === 1) return branches.find(b => b.id === effectiveBranchIds[0])?.name ?? '1 Branch'
     return `${effectiveBranchIds.length} Branches`
@@ -250,7 +250,7 @@ export default function Dashboard() {
         {/* Filters row */}
         <div className="flex flex-wrap items-center gap-3">
           {/* Branch selector */}
-          {user?.role !== 'supervisor' && branches.length > 0 && (
+          {user?.role !== 'sales_sup' && branches.length > 0 && (
             <BranchDropdown
               branches={branches}
               selectedIds={selectedBranchIds}

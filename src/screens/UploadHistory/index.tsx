@@ -22,6 +22,13 @@ interface LogRow {
   status: string; notes: string | null; uploaded_by: string
 }
 
+interface DailyBatch {
+  id: number; branch_id: number; branch_name: string; branch_code: string
+  user_id: number; uploaded_by: string; filename: string; records_count: number
+  date_from: string | null; date_to: string | null; status: string; notes: string | null
+  uploaded_at: string; active_entries: number
+}
+
 function fmtDate(iso: string | null) {
   if (!iso) return '—'
   try { return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) }
@@ -41,7 +48,7 @@ function progressBar(value: number, total: number, color: string) {
 }
 
 export default function UploadHistory() {
-  const { token } = useAuthStore()
+  const { token, user } = useAuthStore()
   const { selectedYear, selectedMonth, setSelectedPeriod } = useAppStore()
 
   const [coverage, setCoverage] = useState<CoverageRow[]>([])
@@ -49,6 +56,31 @@ export default function UploadHistory() {
   const [loading, setLoading]   = useState(true)
   const [filterType, setFilterType]     = useState<'all' | 'target' | 'daily'>('all')
   const [filterBranch, setFilterBranch] = useState<number | undefined>(undefined)
+
+  const isApprover = user?.role === 'accountant_manager' || user?.role === 'admin'
+  const [batches, setBatches] = useState<DailyBatch[]>([])
+  const [batchesLoading, setBatchesLoading] = useState(false)
+  const [clearingId, setClearingId] = useState<number | null>(null)
+
+  async function loadBatches() {
+    if (!token || !isApprover) return
+    setBatchesLoading(true)
+    try {
+      const data = await window.api.getDailyUploadBatches(token)
+      setBatches(data)
+    } finally { setBatchesLoading(false) }
+  }
+
+  async function clearBatch(batch: DailyBatch) {
+    if (!token) return
+    if (!window.confirm(`Delete "${batch.filename}" (${batch.active_entries} entries)? This re-opens those rep/dates for resubmission and cannot be undone.`)) return
+    setClearingId(batch.id)
+    try {
+      const res = await window.api.deleteDailyUploadBatch(token, batch.id)
+      if (res.success) { loadBatches(); loadHistory() }
+      else window.alert(res.error ?? 'Failed to delete upload batch.')
+    } finally { setClearingId(null) }
+  }
 
   async function loadHistory() {
     if (!token) return
@@ -64,6 +96,7 @@ export default function UploadHistory() {
   }
 
   useEffect(() => { loadHistory() }, [token, selectedYear, selectedMonth, filterType, filterBranch])
+  useEffect(() => { loadBatches() }, [token, isApprover])
 
   const branchesWithEntries = coverage.filter(c => c.days_with_entries > 0).length
   const totalBranches       = coverage.length
@@ -102,6 +135,60 @@ export default function UploadHistory() {
             </p>
           </div>
         </div>
+      )}
+
+      {isApprover && (
+        <GlassCard elevated className="overflow-hidden mb-8">
+          <div className="p-5 border-b border-outline-variant/10">
+            <h3 className="font-headline-md text-headline-md text-on-surface">Sales Upload Records — Approval</h3>
+            <p className="text-body-sm text-on-surface-variant mt-1">
+              Each row is one Accountant Officer upload batch. Delete a batch to clear its entries and let the officer resubmit corrected data.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-surface-container-low/50">
+                  {['Uploaded','Branch','Filename','Period','Entries','Uploaded By','Status',''].map(h => (
+                    <th key={h} className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/10">
+                {batchesLoading ? (
+                  <tr><td colSpan={8} className="py-10 text-center text-on-surface-variant">
+                    <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>Loading...
+                  </td></tr>
+                ) : batches.length === 0 ? (
+                  <tr><td colSpan={8} className="py-10 text-center text-on-surface-variant text-body-sm">No daily upload batches yet.</td></tr>
+                ) : batches.map(b => (
+                  <tr key={b.id} className="hover:bg-surface-container/20 transition-colors">
+                    <td className="px-5 py-3 text-body-sm font-tabular-nums">{fmtDate(b.uploaded_at)}</td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center">{b.branch_code}</span>
+                        <span className="text-body-sm">{b.branch_name}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 text-body-sm text-on-surface-variant max-w-[180px] truncate" title={b.filename}>{b.filename || '—'}</td>
+                    <td className="px-5 py-3 text-body-sm text-on-surface-variant">
+                      {b.date_from ? (b.date_from === b.date_to ? b.date_from : `${b.date_from} → ${b.date_to}`) : '—'}
+                    </td>
+                    <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{b.active_entries}</td>
+                    <td className="px-5 py-3 text-body-sm">{b.uploaded_by}</td>
+                    <td className="px-5 py-3"><StatusBadge label={b.status === 'success' ? 'OK' : 'Error'} variant={b.status === 'success' ? 'success' : 'error'} /></td>
+                    <td className="px-5 py-3 text-right">
+                      <button onClick={() => clearBatch(b)} disabled={clearingId === b.id || b.active_entries === 0}
+                        className="px-3 py-1.5 rounded-lg bg-error text-white text-[11px] font-bold hover:opacity-90 disabled:opacity-40 transition-all">
+                        {clearingId === b.id ? 'Clearing…' : 'Delete & Allow Resubmit'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </GlassCard>
       )}
 
       <GlassCard elevated className="overflow-hidden mb-8">

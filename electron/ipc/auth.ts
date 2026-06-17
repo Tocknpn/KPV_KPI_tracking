@@ -7,12 +7,15 @@ import { pushUsersIfConfigured } from './sheets'
 
 // ── Role permission defaults (mirrors src/types/index.ts ROLE_DEFAULTS) ──
 const ROLE_DEFAULTS: Record<string, string[]> = {
-  admin:          ['dashboard','daily_entry','kpi_report','sale_report','analytics','upload_history','upload_status','roster','kpi_settings','audit_log','user_management','settings'],
-  sales_sup:      ['dashboard','kpi_report','upload_status'],
-  accountant:     ['dashboard','daily_entry','sale_report','upload_history','upload_status'],
-  branch_manager: ['dashboard','kpi_report','sale_report','upload_status'],
-  top_manager:    ['dashboard','kpi_report','sale_report','analytics'],
-  hr:             ['roster','kpi_settings'],
+  admin:              ['dashboard','sale_report','analytics','upload_history','upload_status','audit_log','user_management','settings'],
+  sales_sup:          ['dashboard','kpi_report','sale_report','upload_status'],
+  accountant:         ['dashboard','daily_entry','sale_report','upload_history','upload_status'],
+  accountant_officer: ['daily_entry','sale_report','upload_history','upload_status'],
+  accountant_manager: ['sale_report','upload_history','upload_status','audit_log'],
+  branch_manager:     ['dashboard','kpi_report','sale_report','upload_status'],
+  top_manager:        ['dashboard','kpi_report','sale_report','analytics','upload_history','roster','kpi_settings','audit_log','settings'],
+  hr:                 ['dashboard','kpi_report','sale_report','analytics','upload_history','upload_status','roster','kpi_settings','audit_log','settings'],
+  hr_support:         ['roster','upload_status'],
 }
 
 function computePermissions(db: ReturnType<typeof getDb>, userId: number, role: string): string[] {

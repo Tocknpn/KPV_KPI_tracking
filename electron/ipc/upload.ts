@@ -1,7 +1,7 @@
 import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
-import { requireAuth, requireAdmin } from './auth'
+import { requireAuth, requireAdmin, logAudit } from './auth'
 import { pushAllConfigIfConfigured, syncEntriesToCloudIfConfigured } from './sheets'
 import { snapshotSalesman, publishMonth, publishMonthFromDate } from '../db/history'
 
@@ -60,12 +60,22 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
   // ── Process daily upload (rep_code based matching) ────────────────────
   ipcMain.handle('upload:daily', async (_e, token: string, rows: DailyRow[], meta: UploadLogEntry) => {
     const user = requireAuth(token)
+    if (!['accountant_officer', 'accountant', 'admin'].includes(user.role)) throw new Error('Forbidden')
     if (!rows.length) return { success: false, error: 'No rows to import.' }
 
     const results: UploadRowResult[] = []
     const errorRows: Array<{ row: number; data: DailyRow; reason: string }> = []
     let imported = 0
     let sumJewelry = 0, sumBar = 0, sumQty = 0
+
+    // Reserve the upload_logs row up front so every inserted entry can be tagged with its
+    // id — this is what lets an Accountant Manager later delete exactly this batch to
+    // re-open it for resubmission, without touching unrelated entries.
+    const logResult = prepare(db, `
+      INSERT INTO upload_logs (branch_id, user_id, upload_type, filename, records_count, date_from, date_to, status)
+      VALUES (?, ?, 'daily', ?, 0, ?, ?, 'success')
+    `).run(meta.branchId, user.id, meta.filename, meta.dateFrom ?? null, meta.dateTo ?? null)
+    const logId = Number(logResult.lastInsertRowid)
 
     try {
       transaction(db, () => {
@@ -80,11 +90,21 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
             continue
           }
 
-          prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(salesman.id, r.date)
+          // Sales data is tied to KPI/commission — silently overwriting an existing record
+          // would let edits slip through unreviewed. Reject instead; an Accountant Manager
+          // must delete the conflicting upload batch before this rep/date can be resubmitted.
+          const existing = prepare(db, `SELECT id FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).get(salesman.id, r.date) as { id: number } | undefined
+          if (existing) {
+            const reason = 'Existing record for this rep/date — ask an Accountant Manager to clear the conflicting upload batch before re-uploading.'
+            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason })
+            errorRows.push({ row: i + 1, data: r, reason })
+            continue
+          }
+
           prepare(db, `
-            INSERT INTO daily_entries (salesman_id, branch_id, staff_type, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
-          `).run(salesman.id, salesman.branch_id, salesman.staff_type, r.date, r.jewelryWeightG, r.barWeightG, r.quantity, now)
+            INSERT INTO daily_entries (salesman_id, branch_id, staff_type, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at, upload_log_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+          `).run(salesman.id, salesman.branch_id, salesman.staff_type, r.date, r.jewelryWeightG, r.barWeightG, r.quantity, now, logId)
           results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'ok' })
           sumJewelry += r.jewelryWeightG; sumBar += r.barWeightG; sumQty += r.quantity
           imported++
@@ -92,11 +112,11 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
       })
 
       const skippedCodes = results.filter(r => r.status === 'error').map(r => r.code)
-      prepare(db, `
-        INSERT INTO upload_logs (branch_id, user_id, upload_type, filename, records_count, date_from, date_to, status, notes)
-        VALUES (?, ?, 'daily', ?, ?, ?, ?, 'success', ?)
-      `).run(meta.branchId, user.id, meta.filename, imported, meta.dateFrom ?? null, meta.dateTo ?? null,
-        skippedCodes.length ? `Skipped unknown codes: ${skippedCodes.slice(0,5).join(', ')}${skippedCodes.length > 5 ? '…' : ''}` : null)
+      prepare(db, `UPDATE upload_logs SET records_count = ?, notes = ? WHERE id = ?`)
+        .run(imported, skippedCodes.length ? `Skipped: ${skippedCodes.slice(0,5).join(', ')}${skippedCodes.length > 5 ? '…' : ''}` : null, logId)
+
+      logAudit(db, user.id, user.username, user.role, 'sales_upload_submitted',
+        `${meta.filename}: ${imported} imported, ${skippedCodes.length} rejected`, 'upload_log', String(logId), meta.branchId)
 
       // Completed records are saved locally above; auto-publish them to the cloud now
       syncEntriesToCloudIfConfigured(db).catch(() => {})
@@ -109,9 +129,45 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
-      prepare(db, `INSERT INTO upload_logs (branch_id, user_id, upload_type, filename, records_count, status, notes) VALUES (?, ?, 'daily', ?, 0, 'error', ?)`).run(meta.branchId, user.id, meta.filename, msg)
+      prepare(db, `UPDATE upload_logs SET status = 'error', notes = ? WHERE id = ?`).run(msg, logId)
       return { success: false, error: msg }
     }
+  })
+
+  // ── Accountant Manager: list daily upload batches awaiting/eligible for clearing ──
+  ipcMain.handle('upload:getDailyBatches', async (_e, token: string, branchId?: number) => {
+    const user = requireAuth(token)
+    if (!['accountant_manager', 'admin'].includes(user.role)) throw new Error('Forbidden')
+    let sql = `
+      SELECT ul.id, ul.branch_id, b.name AS branch_name, b.code AS branch_code,
+             ul.user_id, u.full_name AS uploaded_by, ul.filename, ul.records_count,
+             ul.date_from, ul.date_to, ul.status, ul.notes, ul.uploaded_at,
+             (SELECT COUNT(*) FROM daily_entries de WHERE de.upload_log_id = ul.id) AS active_entries
+      FROM upload_logs ul
+      JOIN branches b ON b.id = ul.branch_id
+      JOIN users u ON u.id = ul.user_id
+      WHERE ul.upload_type = 'daily'
+    `
+    const params: number[] = []
+    if (branchId) { sql += ` AND ul.branch_id = ?`; params.push(branchId) }
+    sql += ` ORDER BY ul.uploaded_at DESC LIMIT 200`
+    return prepare(db, sql).all(...params)
+  })
+
+  // ── Accountant Manager: delete a daily upload batch, freeing those rep/dates for resubmission ──
+  ipcMain.handle('upload:deleteDailyBatch', async (_e, token: string, uploadLogId: number) => {
+    const user = requireAuth(token)
+    if (!['accountant_manager', 'admin'].includes(user.role)) throw new Error('Forbidden')
+
+    const batch = prepare(db, `SELECT id, branch_id, filename FROM upload_logs WHERE id = ? AND upload_type = 'daily'`).get(uploadLogId) as
+      { id: number; branch_id: number; filename: string } | undefined
+    if (!batch) return { success: false, error: 'Upload batch not found.' }
+
+    const deleted = prepare(db, `DELETE FROM daily_entries WHERE upload_log_id = ?`).run(uploadLogId)
+    logAudit(db, user.id, user.username, user.role, 'sales_upload_deleted',
+      `Cleared "${batch.filename}" (${deleted.changes ?? 0} entries) — open for resubmission`, 'upload_log', String(uploadLogId), batch.branch_id)
+    syncEntriesToCloudIfConfigured(db).catch(() => {})
+    return { success: true, deletedEntries: deleted.changes ?? 0 }
   })
 
   // ── Process target upload (rep_code based) ───────────────────────────
@@ -158,7 +214,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
   // ── Roster upload: upsert salesmen by rep_code (admin + HR) ──────────
   ipcMain.handle('upload:roster', async (_e, token: string, rows: RosterRow[]) => {
     const u = requireAuth(token)
-    if (!['admin', 'hr'].includes(u.role)) throw new Error('Forbidden')
+    if (!['admin', 'hr', 'hr_support'].includes(u.role)) throw new Error('Forbidden')
     if (!rows.length) return { success: false, error: 'No rows to import.' }
 
     let created = 0; let updated = 0; const skipped: string[] = []

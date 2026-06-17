@@ -243,6 +243,8 @@ export default function Roster() {
   const [year, setYear]   = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
   const isHr = user?.role === 'hr'
+  const canEdit = user?.role === 'admin' || user?.role === 'hr'
+  const canUpload = canEdit || user?.role === 'hr_support'
 
   const [roster, setRoster]           = useState<RosterRow[]>([])
   const [published, setPublished]     = useState(true)
@@ -451,21 +453,27 @@ export default function Roster() {
               No roster was uploaded or confirmed for this month. No people = no mapping = Daily Entry and KPI Report have nothing to show for {MONTHS[month - 1]} {year} until this is resolved.
             </p>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={() => setShowUpload(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white font-label-md text-label-md hover:opacity-90 transition-all">
-                <span className="material-symbols-outlined text-sm">upload_file</span>
-                Upload Roster
-              </button>
-              <button onClick={() => { setEditRep(null); setRepModal('create') }}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary transition-all">
-                <span className="material-symbols-outlined text-sm">person_add</span>
-                Add Rep
-              </button>
-              <button onClick={handleConfirmNoChanges} disabled={publishing}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant text-on-surface font-label-md text-label-md hover:bg-surface-container disabled:opacity-60 transition-all">
-                <span className={`material-symbols-outlined text-sm ${publishing ? 'animate-spin-slow' : ''}`}>{publishing ? 'sync' : 'check_circle'}</span>
-                Confirm Roster (No Changes)
-              </button>
+              {canUpload && (
+                <button onClick={() => setShowUpload(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white font-label-md text-label-md hover:opacity-90 transition-all">
+                  <span className="material-symbols-outlined text-sm">upload_file</span>
+                  Upload Roster
+                </button>
+              )}
+              {canEdit && (
+                <button onClick={() => { setEditRep(null); setRepModal('create') }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary transition-all">
+                  <span className="material-symbols-outlined text-sm">person_add</span>
+                  Add Rep
+                </button>
+              )}
+              {canEdit && (
+                <button onClick={handleConfirmNoChanges} disabled={publishing}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant text-on-surface font-label-md text-label-md hover:bg-surface-container disabled:opacity-60 transition-all">
+                  <span className={`material-symbols-outlined text-sm ${publishing ? 'animate-spin-slow' : ''}`}>{publishing ? 'sync' : 'check_circle'}</span>
+                  Confirm Roster (No Changes)
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -527,16 +535,20 @@ export default function Roster() {
             <span className={`material-symbols-outlined text-sm ${syncing ? 'animate-spin-slow' : ''}`}>cloud_upload</span>
             {syncing ? 'Syncing...' : 'Sync to Sheets'}
           </button>
-          <button onClick={() => setShowUpload(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white font-label-md text-label-md hover:opacity-90 transition-all">
-            <span className="material-symbols-outlined text-sm">upload_file</span>
-            Upload Roster
-          </button>
-          <button onClick={() => { setEditRep(null); setRepModal('create') }}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary transition-all">
-            <span className="material-symbols-outlined text-sm">person_add</span>
-            Add Rep
-          </button>
+          {canUpload && (
+            <button onClick={() => setShowUpload(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white font-label-md text-label-md hover:opacity-90 transition-all">
+              <span className="material-symbols-outlined text-sm">upload_file</span>
+              Upload Roster
+            </button>
+          )}
+          {canEdit && (
+            <button onClick={() => { setEditRep(null); setRepModal('create') }}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary transition-all">
+              <span className="material-symbols-outlined text-sm">person_add</span>
+              Add Rep
+            </button>
+          )}
         </div>
       </div>
 
@@ -632,23 +644,25 @@ export default function Roster() {
                     <StatusBadge label={rep.active === 1 ? 'Active' : 'Inactive'} variant={rep.active === 1 ? 'success' : 'neutral'} />
                   </td>
                   <td className="px-5 py-3">
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setEditRep(rep); setRepModal('edit') }}
-                        className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Edit rep">
-                        <span className="material-symbols-outlined text-sm">edit</span>
-                      </button>
-                      {rep.active === 1 ? (
-                        <button onClick={() => handleDeactivate(rep)}
-                          className="p-1.5 text-error hover:bg-error-container/30 rounded-lg transition-colors" title="Deactivate">
-                          <span className="material-symbols-outlined text-sm">person_off</span>
+                    {canEdit && (
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setEditRep(rep); setRepModal('edit') }}
+                          className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Edit rep">
+                          <span className="material-symbols-outlined text-sm">edit</span>
                         </button>
-                      ) : (
-                        <button onClick={() => handleReactivate(rep)}
-                          className="p-1.5 text-tertiary hover:bg-tertiary/10 rounded-lg transition-colors" title="Reactivate">
-                          <span className="material-symbols-outlined text-sm">person_check</span>
-                        </button>
-                      )}
-                    </div>
+                        {rep.active === 1 ? (
+                          <button onClick={() => handleDeactivate(rep)}
+                            className="p-1.5 text-error hover:bg-error-container/30 rounded-lg transition-colors" title="Deactivate">
+                            <span className="material-symbols-outlined text-sm">person_off</span>
+                          </button>
+                        ) : (
+                          <button onClick={() => handleReactivate(rep)}
+                            className="p-1.5 text-tertiary hover:bg-tertiary/10 rounded-lg transition-colors" title="Reactivate">
+                            <span className="material-symbols-outlined text-sm">person_check</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

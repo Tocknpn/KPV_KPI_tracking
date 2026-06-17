@@ -26,26 +26,32 @@ const EMPTY_FORM: FormState = {
   role: 'sales_sup', branchId: '', supervisorId: '', active: 1,
 }
 
-const ROLES_NEEDING_BRANCH: UserRole[] = ['sales_sup', 'accountant', 'branch_manager']
+const ROLES_NEEDING_BRANCH: UserRole[] = ['sales_sup', 'accountant', 'accountant_officer', 'branch_manager']
 // sales_sup must map to a specific team (supervisor record) — that's what scopes their data
 const ROLES_NEEDING_SUPERVISOR: UserRole[] = ['sales_sup']
 
 const ROLE_BADGE_VARIANT: Record<UserRole, 'info' | 'gold' | 'neutral' | 'success'> = {
-  admin:          'info',
-  sales_sup:      'gold',
-  accountant:     'neutral',
-  branch_manager: 'gold',
-  top_manager:    'info',
-  hr:             'neutral',
+  admin:              'info',
+  sales_sup:          'gold',
+  accountant:         'neutral',
+  accountant_officer: 'neutral',
+  accountant_manager: 'success',
+  branch_manager:     'gold',
+  top_manager:        'info',
+  hr:                 'neutral',
+  hr_support:         'neutral',
 }
 
 const ROLE_AVATAR_COLOR: Record<UserRole, string> = {
-  admin:          'bg-error',
-  top_manager:    'bg-primary',
-  branch_manager: 'bg-primary',
-  accountant:     'bg-tertiary',
-  sales_sup:      'bg-secondary',
-  hr:             'bg-secondary',
+  admin:              'bg-error',
+  top_manager:        'bg-primary',
+  branch_manager:     'bg-primary',
+  accountant:         'bg-tertiary',
+  accountant_officer: 'bg-tertiary',
+  accountant_manager: 'bg-tertiary',
+  sales_sup:          'bg-secondary',
+  hr:                 'bg-secondary',
+  hr_support:         'bg-secondary',
 }
 
 const ALL_MENU_ITEMS = MENU_KEYS.map(key => ({ key, label: MENU_LABELS[key] }))
