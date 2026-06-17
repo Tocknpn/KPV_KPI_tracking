@@ -300,6 +300,12 @@ export function seedTestData(db: Database): void {
           }
           if (!sid) continue
 
+          // roster_monthly is the source of truth for "who was active where, which month" —
+          // without a row here the rep shows up nowhere on the Roster screen and
+          // getHeadcountAsOf() resolves to 0, zeroing out branch point targets.
+          prepare(db, `INSERT OR IGNORE INTO roster_monthly (salesman_id, year_month, branch_id, supervisor_id, staff_type, active) VALUES (?,?,?,?,?,1)`).run(sid, mayYearMonth, branchId, supId ?? null, staffType)
+          prepare(db, `INSERT OR IGNORE INTO roster_monthly (salesman_id, year_month, branch_id, supervisor_id, staff_type, active) VALUES (?,?,?,?,?,1)`).run(sid, yearMonth, branchId, supId ?? null, staffType)
+
           const ptTarget = staffType === 'b2b' ? 7000 : 5000
 
           // Legacy targets for May + current month

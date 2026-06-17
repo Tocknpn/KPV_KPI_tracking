@@ -3,7 +3,7 @@ import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
 import { requireAuth } from './auth'
 import { computeKpiScore } from './kpi'
-import { getHeadcountAsOf } from '../db/history'
+import { getHeadcountAsOf, resolveYm } from '../db/history'
 
 function buildBranchFilter(ids: number[]): { sql: string; params: number[] } {
   if (ids.length === 0) return { sql: '', params: [] }
@@ -181,29 +181,33 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const daysRemaining = Math.max(daysInMonth - dayOfMonth, 0)
 
     const branchTargetMap = new Map<string, number>()
-    const { sql: sBranchSql, params: sBranchParams } = buildSalesmenBranchFilter(effectiveBranchIds)
-    const supSql    = effectiveSupervisorId ? `AND s.supervisor_id = ?` : ''
-    const supParams = effectiveSupervisorId ? [effectiveSupervisorId] : []
-
     const yearMonth = `${year}${String(month).padStart(2, '0')}`
 
-    // Display fields (name/branch/supervisor) come from the CURRENT roster — this is a
-    // "my team right now" view. But SCORING must use what was true at the time of each
-    // sale (daily_entries.branch_id / staff_type), so a transfer or type change never
-    // retroactively re-prices a rep's past entries.
-    const baseRows = prepare(db, `
-      SELECT s.id, s.rep_code, s.full_name, s.nickname, s.position, s.branch_id, s.staff_type,
+    // Who's "on the team" for this row, which branch they're filed under, and which rate/
+    // target applies to them must all reflect what was true AS OF this month — not today's
+    // roster — so a later transfer or deactivation never changes how a past month reads.
+    // Only SCORING separately re-derives entry.branch_id/staff_type (stamped at write time),
+    // which is what actually protects the score itself from retroactive re-pricing.
+    const resolvedYm = resolveYm(db, year, month)
+    const rmBranchSql = effectiveBranchIds.length > 0 ? `AND rm.branch_id IN (${effectiveBranchIds.map(() => '?').join(',')})` : ''
+    const rmBranchParams = effectiveBranchIds.length > 0 ? effectiveBranchIds : []
+    const rmSupSql    = effectiveSupervisorId ? `AND rm.supervisor_id = ?` : ''
+    const rmSupParams = effectiveSupervisorId ? [effectiveSupervisorId] : []
+
+    const baseRows = resolvedYm ? prepare(db, `
+      SELECT s.id, s.rep_code, s.full_name, s.nickname, s.position, rm.branch_id, rm.staff_type,
         b.name AS branch_name,
         sv.full_name AS supervisor_name
-      FROM salesmen s
-      LEFT JOIN branches b ON b.id = s.branch_id
-      LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
-      WHERE s.active=1 ${sBranchSql} ${supSql}
-      ORDER BY s.branch_id, sv.full_name, s.full_name
-    `).all(...sBranchParams, ...supParams) as Array<{
+      FROM roster_monthly rm
+      JOIN salesmen s ON s.id = rm.salesman_id
+      LEFT JOIN branches b ON b.id = rm.branch_id
+      LEFT JOIN supervisors sv ON sv.id = rm.supervisor_id
+      WHERE rm.year_month = ? AND rm.active=1 ${rmBranchSql} ${rmSupSql}
+      ORDER BY rm.branch_id, sv.full_name, s.full_name
+    `).all(resolvedYm, ...rmBranchParams, ...rmSupParams) as Array<{
       id: number; rep_code: string | null; full_name: string; nickname: string; position: string
       branch_id: number; branch_name: string; supervisor_name: string | null; staff_type: string
-    }>
+    }> : []
 
     const repIds = baseRows.map(r => r.id)
     const entryGroups = repIds.length ? prepare(db, `

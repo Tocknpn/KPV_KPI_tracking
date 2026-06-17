@@ -1,3 +1,5 @@
+> **OUTDATED — describes the old single-branch-supervisor / Manual Entry system.** See `GO_LIVE_GUIDEBOOK.md` (Role 2 — Sales Supervisor) for the current workflow. Left here for historical context only.
+
 # Supervisor Daily Workflow
 ### SalesTrack Pro — Branch Operations Guide
 > For slide presentation · Supervisor role

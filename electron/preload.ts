@@ -5,6 +5,12 @@ contextBridge.exposeInMainWorld('api', {
   // ── Auth ──────────────────────────────────────────────────────────────
   login: (username: string, password: string) =>
     ipcRenderer.invoke('auth:login', username, password),
+  isSheetsConfigured: () =>
+    ipcRenderer.invoke('sheets:isConfigured'),
+  bootstrapConnect: (sheetsId: string, serviceAccountPath: string) =>
+    ipcRenderer.invoke('sheets:bootstrapConnect', sheetsId, serviceAccountPath),
+  browseFileBootstrap: () =>
+    ipcRenderer.invoke('sheets:browseFileBootstrap'),
   logout: (token: string) =>
     ipcRenderer.invoke('auth:logout', token),
   getUsers: (token: string) =>

@@ -6,6 +6,9 @@ interface Window {
   api: {
     // Auth
     login(username: string, password: string): Promise<{ success: boolean; token: string; user: import('./types').AuthUser; permissions: string[]; error?: string }>
+    isSheetsConfigured(): Promise<boolean>
+    bootstrapConnect(sheetsId: string, serviceAccountPath: string): Promise<{ success: boolean; message?: string; error?: string }>
+    browseFileBootstrap(): Promise<string | null>
     logout(token: string): Promise<{ success: boolean }>
     getUsers(token: string): Promise<unknown[]>
     createUser(token: string, data: unknown): Promise<{ success: boolean; id?: number; error?: string }>
@@ -51,7 +54,7 @@ interface Window {
 
     // Sheets
     syncToCloud(token: string): Promise<{ success: boolean; count?: number; message?: string; error?: string }>
-    pullFromCloud(token: string): Promise<{ success: boolean; count?: number; error?: string }>
+    pullFromCloud(token: string): Promise<{ success: boolean; count?: number; message?: string; error?: string }>
     getSyncLogs(token: string): Promise<import('./types').SyncLog[]>
     getSheetsConfig(token: string): Promise<{ sheetsId: string; serviceAccountPath: string; lastSyncedAt: string }>
     saveSheetsConfig(token: string, config: { sheetsId: string; serviceAccountPath: string }): Promise<{ success: boolean }>

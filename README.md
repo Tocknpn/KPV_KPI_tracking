@@ -1,6 +1,6 @@
 # SalesTrack Pro — Developer GuideBook
 
-> **Who this is for:** The developer, tech lead, or person in charge who takes over this codebase.  
+> **Who this is for:** The developer, tech lead, or person in charge who takes over this codebase.
 > Everything you need to understand how the app works, where to find things, and how to change them safely.
 
 ---
@@ -13,53 +13,49 @@
 4. [Architecture — Big Picture](#4-architecture--big-picture)
 5. [Folder Structure](#5-folder-structure)
 6. [Database — Schema & Migrations](#6-database--schema--migrations)
-7. [IPC Communication — How Frontend Talks to Backend](#7-ipc-communication--how-frontend-talks-to-backend)
+7. [IPC Communication — Full Channel Reference](#7-ipc-communication--full-channel-reference)
 8. [Role-Based Access Control](#8-role-based-access-control)
 9. [KPI Scoring Engine](#9-kpi-scoring-engine)
-10. [Data Entry Flows](#10-data-entry-flows)
-11. [Google Sheets Sync](#11-google-sheets-sync)
-12. [Rep Code System](#12-rep-code-system)
+10. [Roster — How It Actually Works](#10-roster--how-it-actually-works)
+11. [Sales Upload — Approval Workflow](#11-sales-upload--approval-workflow)
+12. [Google Sheets Sync](#12-google-sheets-sync)
 13. [Screens — What Each Page Does](#13-screens--what-each-page-does)
 14. [Frontend State Management](#14-frontend-state-management)
 15. [Build & Deploy](#15-build--deploy)
 16. [Default Credentials](#16-default-credentials)
 17. [Security Notes](#17-security-notes)
-18. [How to Add a New Feature](#18-how-to-add-a-new-feature)
+18. [Known Gaps / Technical Debt](#18-known-gaps--technical-debt)
+19. [How to Add a New Feature](#19-how-to-add-a-new-feature)
 
 ---
 
 ## 1. What This App Does
 
-SalesTrack Pro is a **Windows desktop app** for tracking daily gold/jewelry sales KPIs across 4 branches.
+SalesTrack Pro is a **Windows desktop app** (Electron) for tracking daily gold/jewelry sales KPIs across 4 branches (Morning Market, Vientiane Center, ITecc, VangThong), plus roster management, commission calculation, and an approval-gated sales data correction workflow.
 
 Each sales rep is scored on 3 metrics every day:
-- **Jewelry** (weight in Baht) × 15 pts/Baht
-- **Bar** (weight in Baht) × 7.5 pts/Baht
-- **Quantity** (pieces sold) × tier multiplier (branch-specific)
+- **Jewelry** (weight in Baht) × rate (branch/staff-type/month-specific, default 15 pts/Baht for B2C)
+- **Bar** (weight in Baht) × rate (default 7.5 pts/Baht for B2C)
+- **Quantity** (pieces sold) × tier multiplier (branch-specific, qty-threshold tiers)
 
-KPI % = `Total Points ÷ Branch Point Target × 100`
+`KPI % = Total Points ÷ Branch Point Target × 100`
 
-Managers see live progress, estimated month-end projections, and can push data to Google Sheets for backup/reporting.
+8 user roles see different slices of this data (see [§8](#8-role-based-access-control)). Sales data upload is approval-gated (see [§11](#11-sales-upload--approval-workflow)) since it directly drives KPI and commission payouts. Everything can sync to Google Sheets for backup/cross-device access.
 
 ---
 
 ## 2. Quick Start
 
 ```bash
-# Install dependencies
 npm install
-
-# Run in development (hot reload)
-npm run dev
-
-# Type-check without building
-npm run typecheck
-
-# Build distributable Windows exe
-npm run dist:win
+npm run dev          # hot reload (renderer only — main/preload need a full restart)
+npm run typecheck     # see the warning in §18 before trusting this
+npm run dist:win      # build Windows installer
 ```
 
-**Dev mode** opens DevTools automatically. The SQLite DB is stored in `%APPDATA%\salestrack-pro\data\salestrack.db`.
+**Dev mode** opens DevTools automatically. SQLite DB lives at `%APPDATA%\salestrack-pro\data\salestrack.db`.
+
+**Electron main-process code (electron/*.ts) does NOT hot-reload** — after editing `main.ts`, `preload.ts`, or anything under `electron/`, kill the dev process and run `npm run dev` again. Only renderer (`src/`) hot-reloads.
 
 ---
 
@@ -70,15 +66,15 @@ npm run dist:win
 | Desktop shell | **Electron 31** | Cross-platform native Windows app |
 | Build system | **electron-vite** | Vite-powered, fast rebuilds, ESM support |
 | Frontend | **React 18** + **React Router 6** | UI + client-side routing |
-| State management | **Zustand** | Lightweight, no boilerplate |
-| Database | **sql.js (SQLite WASM)** | In-memory SQLite, persisted to `.db` file |
-| Charts | **Recharts** | Bar, Line, Pie charts |
+| State management | **Zustand** | Lightweight, no boilerplate, persisted to localStorage |
+| Database | **sql.js (SQLite WASM)** | In-memory SQLite, persisted to a `.db` file on every write |
+| Charts | **Recharts** | Bar, Line, Area, Pie charts |
 | Styles | **Tailwind CSS 3** | Utility-first, no CSS files needed |
 | Google API | **googleapis** | Google Sheets push/pull |
 | XLSX | **xlsx (SheetJS)** | Generate + parse Excel templates |
-| Auth | **bcryptjs** | Password hashing |
-| Email | **nodemailer** + **node-cron** | Scheduled reports |
-| Types | **TypeScript 5** | Full type safety end-to-end |
+| Auth | **bcryptjs** | Password hashing (plus a plaintext column — see [§17](#17-security-notes)) |
+| Email | **nodemailer** + **node-cron** | Scheduled KPI report emails |
+| Types | **TypeScript 5** | Project-referenced (`tsconfig.node.json` / `tsconfig.web.json`) |
 
 ---
 
@@ -89,26 +85,19 @@ npm run dist:win
 │                      ELECTRON MAIN PROCESS                     │
 │                                                                │
 │  electron/main.ts                                              │
-│  ├── initDatabase()   <- loads sql.js WASM, creates tables     │
-│  ├── register*Handlers()  <- registers all IPC channels        │
-│  └── createWindow()   <- creates BrowserWindow                 │
+│  ├── initDatabase()        <- loads sql.js WASM, runs migrations│
+│  ├── registerAllHandlers() <- wires every IPC channel           │
+│  └── createWindow()        <- creates BrowserWindow             │
 │                                                                │
 │  electron/db/                                                  │
-│  ├── connection.ts    <- singleton DB, persist to disk         │
-│  ├── schema.ts        <- table definitions + migrations v1-v9  │
-│  ├── seed.ts          <- initial data + test data              │
-│  └── query.ts         <- prepare() / transaction() helpers     │
+│  ├── connection.ts    <- DB singleton, file persistence (WASM) │
+│  ├── schema.ts        <- table DDL + migration runner (v1-v20) │
+│  ├── seed.ts           <- seedDatabase() (fresh install) +      │
+│  │                        seedTestData() (108-rep mock dataset) │
+│  ├── history.ts        <- roster_monthly read/write helpers     │
+│  └── query.ts          <- prepare()/transaction() wrappers      │
 │                                                                │
-│  electron/ipc/        <- ONE FILE PER DOMAIN                   │
-│  ├── auth.ts          <- login, sessions, user CRUD            │
-│  ├── entries.ts       <- daily entries + supervisors CRUD      │
-│  ├── targets.ts       <- monthly targets per salesman          │
-│  ├── kpi.ts           <- KPI config, scoring engine            │
-│  ├── reports.ts       <- dashboard, monthly, executive, team   │
-│  ├── upload.ts        <- XLSX bulk import (daily/target/roster)│
-│  ├── sheets.ts        <- Google Sheets sync push/pull          │
-│  ├── email.ts         <- SMTP config + scheduled emails        │
-│  └── admin.ts         <- seed test data, data stats            │
+│  electron/ipc/        <- ONE FILE PER DOMAIN (see §7)          │
 │                                                                │
 ├────── contextBridge (electron/preload.ts) ─────────────────────┤
 │  Exposes typed window.api object — ONLY channel through        │
@@ -116,17 +105,13 @@ npm run dist:win
 ├────────────────────────────────────────────────────────────────┤
 │                    RENDERER PROCESS (React)                    │
 │                                                                │
-│  src/main.tsx         <- React entry point                     │
-│  src/App.tsx          <- Router + AuthGuard + route tree       │
-│                                                                │
-│  src/store/           <- Zustand global state                  │
-│  ├── auth.store.ts    <- user session (token, role, branchId)  │
-│  └── app.store.ts     <- UI state (branch filter, date range)  │
-│                                                                │
-│  src/screens/         <- one folder per page/route             │
-│  src/components/      <- shared layout + UI components         │
-│  src/utils/           <- csv.ts, xlsx.ts, dates.ts             │
-│  src/types/index.ts   <- all TypeScript interfaces             │
+│  src/main.tsx, src/App.tsx <- entry + route tree                │
+│  src/store/            <- Zustand global state                 │
+│  src/screens/          <- one folder per page/route             │
+│  src/components/       <- shared layout + UI components         │
+│  src/utils/             <- csv.ts, xlsx.ts, dates.ts             │
+│  src/types/index.ts     <- roles, menu keys, shared interfaces  │
+│  src/global.d.ts        <- window.api TS surface (PARTIAL — §18)│
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -134,23 +119,20 @@ npm run dist:win
 
 ```
 React Component
-    |
     |  window.api.someMethod(token, ...args)
     v
 preload.ts  (contextBridge — safe bridge)
-    |
     |  ipcRenderer.invoke('channel:action', token, ...args)
     v
 ipcMain.handle('channel:action', handler)
-    |
-    |  1. requireAuth(token) — validates session, returns user
-    |  2. Business logic (SQL queries)
+    |  1. requireAuth(token) / requireAdmin(token) — validates session
+    |  2. Business logic (parameterized SQL)
     |  3. Return result object
     v
 React Component receives result
 ```
 
-Every handler receives a `token` as first argument. The token is validated against the `sessions` table before any logic runs.
+Every handler receives `token` first. `requireAuth` validates it against the `sessions` table (8-hour expiry) and returns `{ id, role, username, branch_id, supervisor_id }`. **The backend is the real security boundary** — frontend role checks only hide UI, they don't protect data. Every report/entry handler independently re-derives the caller's allowed `branch_id`/`supervisor_id` server-side rather than trusting client-passed filters.
 
 ---
 
@@ -160,73 +142,51 @@ Every handler receives a `token` as first argument. The token is validated again
 KPV sale performance tracking/
 │
 ├── electron/                   <- MAIN PROCESS (Node.js/Electron)
-│   ├── main.ts                 <- App entry: init DB, register IPC, create window
-│   ├── preload.ts              <- contextBridge: exposes window.api to renderer
+│   ├── main.ts                 <- entry: init DB (45s timeout + error screen), register IPC, create window
+│   ├── preload.ts               <- contextBridge: exposes window.api to renderer
 │   ├── db/
-│   │   ├── connection.ts       <- DB singleton, file persistence, WASM loading
-│   │   ├── schema.ts           <- Table DDL + migration runner (v1-v9)
-│   │   ├── seed.ts             <- seedDatabase() + seedTestData()
-│   │   └── query.ts            <- prepare(db, sql) and transaction(db, fn) wrappers
+│   │   ├── connection.ts        <- DB singleton, file persistence, WASM loading
+│   │   ├── schema.ts            <- table DDL + migration runner (SCHEMA_VERSION = 20)
+│   │   ├── seed.ts              <- seedDatabase() + seedTestData()
+│   │   ├── history.ts           <- roster_monthly resolve/materialize/snapshot helpers
+│   │   └── query.ts             <- prepare(db, sql) and transaction(db, fn) wrappers
 │   └── ipc/
-│       ├── auth.ts             <- auth:login/logout/getUsers/createUser/updateUser/deleteUser
-│       ├── entries.ts          <- entry:getSalesmen/getEntries/save + supervisor:getAll/save
-│       ├── targets.ts          <- target:getTargets/saveTargets
-│       ├── kpi.ts              <- kpi:getMetrics/getConfigs/saveConfig + computeKpiScore()
-│       ├── reports.ts          <- report:dashboard/monthly/executive/teamPerformance/repHistory/supHistory/repDailyEntries
-│       ├── upload.ts           <- upload:daily/targets/roster/getLogs/getCoverage
-│       ├── sheets.ts           <- sheets:syncToCloud/forceSyncAll/pullFromCloud/testConnection/browseFile
-│       ├── roster.ts           <- roster:getAll/saveRep/deactivate/reactivate/getAvailableMonths
-│       ├── commission.ts       <- commission:getConfigs/saveConfig/getReport
-│       ├── email.ts            <- email:getConfig/saveConfig/sendTest + cron scheduler
-│       └── admin.ts            <- admin:seedTestData/dataStats
+│       ├── auth.ts              <- login/logout/sessions/users/permissions/audit log + ROLE_DEFAULTS
+│       ├── entries.ts           <- legacy salesman CRUD + entry:* (mostly superseded by roster.ts) + supervisor CRUD
+│       ├── targets.ts            <- legacy per-rep monthly targets table (mostly superseded by staff_monthly_targets)
+│       ├── kpi.ts               <- KPI config CRUD + computeKpiScore() scoring engine
+│       ├── reports.ts            <- dashboard/monthly/executive/teamPerformance/repHistory/supHistory
+│       ├── sales.ts              <- Sale Report aggregations (period compare, by-branch, by-type, weekly/daily trend)
+│       ├── upload.ts             <- XLSX bulk import (daily/targets/roster) + daily upload-batch approval workflow
+│       ├── sheets.ts             <- Google Sheets push/pull for every config tab + Roster + Users + Entries
+│       ├── roster.ts             <- roster:* — month-aware roster CRUD (built on roster_monthly)
+│       ├── commission.ts         <- commission config CRUD + commission report + Sheets sync
+│       ├── email.ts              <- SMTP config + scheduled report emails
+│       └── admin.ts              <- seed test data, data stats
 │
-├── src/                        <- RENDERER PROCESS (React)
-│   ├── main.tsx                <- ReactDOM.createRoot entry
-│   ├── App.tsx                 <- Router + role-based route guards
-│   ├── global.d.ts             <- TypeScript: declare window.api type
-│   ├── types/index.ts          <- ALL shared interfaces (AuthUser, Salesman, etc.)
+├── src/                         <- RENDERER PROCESS (React)
+│   ├── main.tsx, App.tsx        <- entry + route tree
+│   ├── global.d.ts              <- window.api TypeScript surface — INCOMPLETE, see §18
+│   ├── types/index.ts            <- UserRole, MENU_KEYS, ROLE_DEFAULTS, ROLE_LABELS, all shared interfaces
 │   ├── store/
-│   │   ├── auth.store.ts       <- login state: token, user, role, branchId, supervisorId
-│   │   └── app.store.ts        <- UI state: selected branch, date range
+│   │   ├── auth.store.ts        <- token, user, permissions (persisted)
+│   │   └── app.store.ts          <- selected branch/period filters (persisted)
 │   ├── utils/
-│   │   ├── csv.ts              <- parse + validate XLSX rows (daily/target/roster)
-│   │   ├── xlsx.ts             <- generate XLSX templates (daily/target/roster)
-│   │   └── dates.ts            <- date helper functions
+│   │   ├── csv.ts                <- parse + validate XLSX rows (daily/target/roster)
+│   │   ├── xlsx.ts               <- generate XLSX templates
+│   │   └── dates.ts              <- date range helpers
 │   ├── components/
-│   │   ├── layout/
-│   │   │   ├── AppShell.tsx    <- outer wrapper: sidebar + topbar + main content
-│   │   │   ├── Sidebar.tsx     <- nav links, role-filtered visibility
-│   │   │   └── TopBar.tsx      <- branch selector, sync button, user info
-│   │   └── ui/
-│   │       ├── GlassCard.tsx   <- frosted card container
-│   │       ├── KpiCard.tsx     <- stat card with title + value + trend
-│   │       ├── ArcGauge.tsx    <- SVG arc gauge (KPI % display)
-│   │       ├── RadialGauge.tsx <- radial variant gauge
-│   │       ├── PeriodFilter.tsx <- month/date-range picker
-│   │       └── StatusBadge.tsx <- colored status chip
-│   └── screens/
-│       ├── Login/              <- username/password form
-│       ├── Dashboard/          <- MTD stats, KPI gauge, top performers
-│       ├── DailyEntry/         <- manual entry table + XLSX upload + roster upload
-│       ├── Reports/            <- monthly perf table per rep (4 tabs) + IndividualProfileModal (rep/sup drill-down)
-│       ├── TeamPerformance/    <- supervisor KPI% + team assignment UI
-│       ├── Analytics/          <- branch-level charts (pie, line, matrix)
-│       ├── Executive/          <- company-wide KPI, branch comparison, sup chart
-│       ├── KpiSettings/        <- admin: unified KPI config (Jewelry/Bar/Qty inline + month scope), branch targets, commission rates
-│       ├── Settings/           <- Google Sheets config (incl. Force Full Sync), email config
-│       ├── UploadHistory/      <- Upload History tab + Roster tab (admin: inline CRUD, month/sup/branch filters)
-│       └── UserManagement/     <- admin: user CRUD
+│   │   ├── layout/ (AppShell, Sidebar, TopBar)
+│   │   └── ui/ (GlassCard, KpiCard, ArcGauge, RadialGauge, PeriodFilter, StatusBadge)
+│   └── screens/                  <- see §13 for the full table
 │
-├── credentials/                <- GITIGNORED — never commit contents
-│   └── *.json                  <- Google service account key (stays local)
-│
-├── package.json                <- version, scripts, dependencies
-├── electron-builder.yml        <- Windows installer config
-├── electron.vite.config.mjs    <- build paths for main/preload/renderer
-├── tailwind.config.ts          <- Tailwind theme
-├── tsconfig.json               <- root TS config (references node + web)
-├── tsconfig.node.json          <- electron/ TypeScript config
-└── tsconfig.web.json           <- src/ TypeScript config
+├── credentials/                  <- GITIGNORED — Google service account key, never commit
+├── package.json                  <- version, scripts, deps (bump version on every change!)
+├── electron-builder.yml           <- Windows installer config
+├── electron.vite.config.mjs       <- build paths for main/preload/renderer
+├── tsconfig.json                  <- root, project-references only (see §18 typecheck caveat)
+├── tsconfig.node.json             <- electron/ TS config
+└── tsconfig.web.json              <- src/ TS config
 ```
 
 ---
@@ -235,595 +195,440 @@ KPV sale performance tracking/
 
 ### Storage Location
 
-- **Dev:** `%APPDATA%\salestrack-pro\data\salestrack.db`
-- **Prod:** same (Electron's `app.getPath('userData')`)
-- **In-memory while running** — sql.js loads the file into RAM on startup and writes back to disk via `persistDb()` after every transaction.
+`%APPDATA%\salestrack-pro\data\salestrack.db` — loaded fully into memory by sql.js on startup, written back to disk via `persistDb()` after every write (standalone writes immediately; inside a `transaction()` block, once after COMMIT).
 
 ### How Migrations Work
 
-`electron/db/schema.ts` stores `SCHEMA_VERSION = 9`. On startup:
+`electron/db/schema.ts` stores `SCHEMA_VERSION = 20`. On startup:
 
-1. DB reads `app_settings.schema_version`
-2. If row missing → fresh install → run all tables + seed
-3. If version < current → run migration blocks in order
-4. Each migration is idempotent (`IF NOT EXISTS`, `try/catch` for `ALTER TABLE`)
+1. Read `app_settings.schema_version`.
+2. Missing → fresh install → run `BASE_TABLES` DDL + `seedDatabase()`.
+3. `version < SCHEMA_VERSION` → run each `if (currentVersion < N)` migration block in order, bumping the stored version after each.
+4. Every migration must be idempotent (`CREATE TABLE IF NOT EXISTS`, `try { ALTER TABLE ... } catch {}` for new columns) since it may partially-run before a crash.
 
-**Never change BASE_TABLES without adding a migration.** If you add a column, add it to BASE_TABLES for fresh installs AND write a `v10 migration` block for existing users.
+**Never change `BASE_TABLES` without also adding a migration block** — fresh installs read `BASE_TABLES`; existing installs only ever see migration blocks.
 
-### Table Reference
+> **Known footgun:** raw `db.prepare(sql).run(...)` (sql.js's native API, used in `schema.ts`) takes **one array** of bind params, not variadic arguments — `.run([a, b])`, not `.run(a, b)`. Passing separate arguments silently leaves params unbound (NULL), which only surfaces as a `NOT NULL constraint failed` at runtime, not a compile error. This caused a real production incident (app stuck on "Starting up…" forever) earlier in this project's history. The wrapped `prepare(db, sql)` from `db/query.ts` used everywhere else in `electron/ipc/*.ts` *does* accept variadic args — only raw `db.prepare()` calls inside `schema.ts` need the array form.
+
+### Table Reference (current)
 
 | Table | Purpose |
 |-------|---------|
-| `app_settings` | Key-value config store (schema_version, sheets_id, kpi settings, sup_kpi_pct) |
-| `branches` | 4 branches: Morning Market, Vientiane Center, ITecc, VangThong |
-| `users` | Login accounts — roles: admin/supervisor/branch_manager/executive |
-| `sessions` | Auth tokens — 8-hour expiry, validated on every IPC call |
-| `salesmen` | Sales reps — linked to branch + optional supervisor. Has `rep_code` (unique company ID) |
-| `targets` | Monthly targets per salesman (jewelry/bar/qty) |
-| `daily_entries` | One row per salesman per date. `synced=0` = not yet pushed to Sheets |
-| `kpi_metrics` | 3 rows: Jewelry (id=1), Bar (id=2), Quantity (id=3). Stores `points_per_unit` |
-| `kpi_metric_type_rates` | `(metric_id, staff_type)` → `points_per_unit` (B2C vs B2B split rates) |
-| `kpi_tier_configs` | Config set per metric+branch combo (effective date range) |
-| `kpi_tiers` | Rows under a config: threshold qty → multiplier |
-| `branch_kpi_monthly_targets` | Override per branch per month (fallback: `branches.kpi_point_target`) |
-| `staff_monthly_targets` | Per-rep point target per year_month (YYYYMM). Loaded from roster upload |
-| `supervisors` | Team supervisor records (separate from user accounts) |
-| `commission_configs` | LAK commission rates per `(staff_type, year_month)` — editable in KPI Settings |
-| `sync_logs` | History of push/pull operations to Google Sheets |
-| `upload_logs` | History of XLSX bulk imports |
-| `email_config` | SMTP settings + schedule for automated reports |
+| `app_settings` | Key-value store: `schema_version`, `sheets_id`, `service_account_path`, `kpi_total_base/weight`, `sup_kpi_pct` |
+| `branches` | The 4 real branches: Morning Market (MM), Vientiane Center (VC), ITecc (IT), VangThong (VT) |
+| `users` | Login accounts. `password_hash` (bcrypt, used for login) + `password_plain` (plaintext, see §17) |
+| `sessions` | Auth tokens, 8-hour expiry |
+| `user_permissions` | Per-user menu overrides on top of `ROLE_DEFAULTS` (`user_id, menu_key, enabled`) |
+| `audit_logs` | login/logout/user changes/sales-upload-submit/sales-upload-delete events |
+| `salesmen` | Sales reps. `branch_id/staff_type/supervisor_id/active` here = the **live/current** state (used by daily-upload matching, team listings). Has `rep_code` (unique) |
+| `supervisors` | Team supervisor records (separate from `users` login accounts) |
+| `roster_monthly` | **The roster source of truth** — one row per rep per month it changed. See [§10](#10-roster--how-it-actually-works) |
+| `daily_entries` | One row per salesman per date. `branch_id`/`staff_type` stamped at write time (immutable — a later transfer never re-prices history). `upload_log_id` links back to the upload batch that created it. `synced=0` = not yet pushed to Sheets |
+| `upload_logs` | One row per upload batch (`upload_type: 'daily' \| 'target'`, who, when, filename, record count, status) |
+| `targets` | Legacy per-rep monthly weight/qty targets (largely superseded by `staff_monthly_targets` + KPI Settings) |
+| `staff_monthly_targets` | Per-rep KPI point target per `year_month` |
+| `kpi_metrics` | 3 fixed rows: Jewelry (id=1), Bar (id=2), Quantity (id=3) — `points_per_unit` default multiplier |
+| `kpi_metric_type_rates` | `(metric_id, staff_type, branch_id?, year_month?)` → `points_per_unit`. NULL `branch_id`/`year_month` = fallback. See priority rule in [§9](#9-kpi-scoring-engine) |
+| `kpi_tier_configs` / `kpi_tiers` | Qty scoring tiers — config scoped by branch + `effective_from/effective_to` date range; tiers are `threshold_pct → score` rows under a config |
+| `branch_kpi_monthly_targets` | Per-branch-per-month point target override (fallback: `branches.kpi_point_target`) |
+| `commission_configs` | LAK commission rates per `(staff_type, year_month)`, plus a `staff_type='supervisor'` row storing the team-share % |
+| `sync_logs` | History of Sheets push/pull operations |
+| `email_config` | SMTP settings + schedule for automated KPI report emails |
 
-### Key Relationships
+### Removed Tables (don't reintroduce without reading §10)
 
-```
-branches (1) ──── (N) salesmen
-branches (1) ──── (N) users
-supervisors (1) ── (N) salesmen          <- salesmen.supervisor_id FK
-supervisors (1) ── (0-1) users           <- users.supervisor_id links login to supervisor record
-salesmen (1) ───── (N) daily_entries
-salesmen (1) ───── (N) targets
-kpi_tier_configs (1) ── (N) kpi_tiers
-```
+`salesman_history` and `roster_months` existed through schema v19 (an event-log + a publish-gate table, reconstructed via correlated subqueries). Both were **dropped in v20** in favor of the single `roster_monthly` table — simpler to read, simpler to push to one Sheet tab, no separate "did this month get touched" gate needed.
 
-### Schema Version History
+### Schema Version History (high-level)
 
 | Version | Change |
 |---------|--------|
-| v1 | Base tables (all core tables) |
-| v2 | `upload_logs` table |
-| v3 | `kpi_metrics.points_per_unit` column |
-| v4 | `app_settings`: kpi_total_base, kpi_total_weight defaults |
-| v5 | `branches.kpi_point_target` column |
-| v6 | `branch_kpi_monthly_targets` table |
-| v7 | `supervisors` table + `salesmen.supervisor_id` + `sup_kpi_pct` setting |
-| v8 | `users.supervisor_id` — links login account to a supervisor record |
-| v9 | `salesmen.rep_code` TEXT UNIQUE — company-issued rep ID for cross-machine sync |
-| v10 | `staff_monthly_targets` + `commission_configs` + `kpi_metric_type_rates` tables; `salesmen.staff_type` column |
+| v1–v9 | Base tables, `upload_logs`, KPI multipliers, branch targets, `supervisors`, rep codes |
+| v10 | `staff_monthly_targets`, `commission_configs`, `kpi_metric_type_rates`, `salesmen.staff_type` |
+| v13 | `salesman_history` (since removed, see v19) |
+| v14 | `kpi_metric_type_rates.branch_id` — rates become branch-scoped |
+| v15 | `roster_months` gate table (since removed, see v19) |
+| v16 | `kpi_metric_type_rates.year_month` — rates become month-scoped (editing today never rewrites past months' scores) |
+| v17 | Bugfix: reset corrupted Global qty-tier fallback values |
+| v18 | `daily_entries.upload_log_id` — links entries back to their upload batch, for the approval workflow (§11) |
+| v19 | **Roster redesign**: new `roster_monthly` table; dropped `salesman_history` + `roster_months` |
+| v20 | `users.password_plain` — see §17 |
 
 ---
 
-## 7. IPC Communication — How Frontend Talks to Backend
+## 7. IPC Communication — Full Channel Reference
 
-All calls go through `window.api.*` (defined in `electron/preload.ts`).
+All calls go through `window.api.*` (defined in `electron/preload.ts`). `requireAuth` = any logged-in user; `requireAdmin` = `role === 'admin'` only; other restrictions are noted.
 
-### Full Channel Reference
+#### Auth & Permissions (`auth.ts`)
+`auth:login` · `auth:logout` · `auth:getPermissions` · `auth:getUserPermissions` (admin) · `auth:saveUserPermissions` (admin) · `auth:getUsers` (admin) · `auth:createUser` (admin) · `auth:updateUser` (admin) · `auth:deleteUser` (admin, soft-delete) · `auth:getBranches` · `audit:getLogs` (admin)
 
-#### Auth (`electron/ipc/auth.ts`)
+#### Legacy Entries & Supervisors (`entries.ts`)
+`entry:getSalesmen` · `entry:createSalesman` · `entry:updateSalesman` · `entry:getEntries` · `entry:getEntriesByMonth` · `entry:save` · `entry:saveBatch` · `entry:getUnsyncedCount` — these last 4 (`entry:save*`) back the now-removed Manual Entry UI; no screen calls them anymore but they're left in place. `supervisor:getAll` · `supervisor:save` · `supervisor:delete` · `supervisor:assignSalesmen` (used by TeamPerformance) · `supervisor:getSalesmenForBranch`
 
-| `window.api` method | IPC channel | Who can call |
-|---------------------|-------------|-------------|
-| `login(user, pass)` | `auth:login` | anyone |
-| `logout(token)` | `auth:logout` | any authenticated |
-| `getUsers(token)` | `auth:getUsers` | admin only |
-| `createUser(token, data)` | `auth:createUser` | admin only |
-| `updateUser(token, id, data)` | `auth:updateUser` | admin only |
-| `deleteUser(token, id)` | `auth:deleteUser` | admin only (soft-delete) |
-| `getBranches(token)` | `auth:getBranches` | any authenticated |
+#### Legacy Targets (`targets.ts`)
+`target:getTargets` · `target:saveTargets` — weight/qty targets; KPI point targets now live in KPI Settings + `staff_monthly_targets` instead.
 
-#### Entries & Supervisors (`electron/ipc/entries.ts`)
+#### KPI Engine (`kpi.ts`)
+`kpi:getMetrics` · `kpi:getConfigs` · `kpi:getTiers` · `kpi:saveConfig` (admin/hr) · `kpi:deleteConfig` (admin/hr) · `kpi:saveMetricMultiplier` (admin/hr) · `kpi:getBranchMetricRates` · `kpi:saveBranchMetricRates` (admin/hr) · `kpi:getBranchQtyTiers` · `kpi:saveBranchQtyTiers` (admin/hr) · `kpi:saveBranchKpiTarget` (admin) · `kpi:getMonthlyBranchTargets` · `kpi:saveMonthlyBranchTargets` (admin/hr) · `kpi:getFormula` · `kpi:saveFormula` (admin) · `kpi:simulate` · `kpi:getSupKpiPct` · `kpi:saveSupKpiPct` (admin)
 
-| `window.api` method | IPC channel | Notes |
-|---------------------|-------------|-------|
-| `getSalesmen(token, branchId?)` | `entry:getSalesmen` | supervisor: own team only |
-| `createSalesman(token, data)` | `entry:createSalesman` | any auth |
-| `updateSalesman(token, id, data)` | `entry:updateSalesman` | any auth |
-| `getEntries(token, branchId, date)` | `entry:getEntries` | supervisor: own team only |
-| `getEntriesByMonth(token, branchId, y, m)` | `entry:getEntriesByMonth` | any auth |
-| `saveEntry(token, entry)` | `entry:save` | any auth |
-| `saveBatchEntries(token, entries[])` | `entry:saveBatch` | any auth |
-| `getUnsyncedCount(token)` | `entry:getUnsyncedCount` | any auth |
-| `getSupervisors(token, branchId?)` | `supervisor:getAll` | any auth |
-| `saveSupervisor(token, data)` | `supervisor:save` | any auth |
-| `deleteSupervisor(token, id)` | `supervisor:delete` | any auth |
-| `assignSalesmen(token, supId, ids[])` | `supervisor:assignSalesmen` | any auth |
-| `getSalesmenForBranch(token, branchId)` | `supervisor:getSalesmenForBranch` | any auth |
+#### Reports (`reports.ts`)
+`report:dashboard` · `report:monthly` · `report:executive` · `report:teamPerformance` · `report:repHistory` (6-month trend + commission) · `report:repDailyEntries` (drill-down chart) · `report:supHistory` · `report:branchAnalytics`
 
-#### Targets (`electron/ipc/targets.ts`)
+#### Sale Report (`sales.ts`)
+`sales:getReport` — period vs. prior-period vs. same-period-last-month, by-branch, by-staff-type, weekly trend (8 weeks), daily trend, calendar-week WoW comparison.
 
-| `window.api` method | IPC channel |
-|---------------------|-------------|
-| `getTargets(token, branchId, y, m)` | `target:getTargets` |
-| `saveTargets(token, targets[])` | `target:saveTargets` |
+#### Upload (`upload.ts`)
+`upload:daily` (accountant_officer only — rejects rows that conflict with an existing record, see §11) · `upload:getDailyBatches` (accountant_manager/admin) · `upload:deleteDailyBatch` (accountant_manager/admin) · `upload:targets` · `upload:roster` (admin/hr/hr_support) · `upload:getRosterTemplate` · `upload:getLogs` · `upload:getCoverage` · `upload:getSalesmenForTemplate` · `upload:getRepUploadStatus`
 
-#### KPI Engine (`electron/ipc/kpi.ts`)
+#### Roster (`roster.ts`) — see [§10](#10-roster--how-it-actually-works)
+`roster:getAll` (admin/hr) · `roster:getAllAsOf` (admin/hr) · `roster:saveRep` (admin/hr) · `roster:deactivate` (admin/hr) · `roster:reactivate` (admin/hr)
 
-| `window.api` method | IPC channel | Notes |
-|---------------------|-------------|-------|
-| `getKpiMetrics(token)` | `kpi:getMetrics` | |
-| `getKpiConfigs(token, branchId?)` | `kpi:getConfigs` | |
-| `getKpiTiers(token, configId)` | `kpi:getTiers` | |
-| `saveKpiConfig(token, config, tiers[])` | `kpi:saveConfig` | admin only |
-| `deleteKpiConfig(token, configId)` | `kpi:deleteConfig` | admin only |
-| `saveKpiMetricMultiplier(token, metricId, ppu)` | `kpi:saveMetricMultiplier` | admin only |
-| `saveBranchKpiTarget(token, branchId, target)` | `kpi:saveBranchKpiTarget` | admin only |
-| `getMonthlyBranchTargets(token, y, m)` | `kpi:getMonthlyBranchTargets` | |
-| `saveMonthlyBranchTargets(token, y, m, targets[])` | `kpi:saveMonthlyBranchTargets` | admin only |
-| `getKpiFormula(token)` | `kpi:getFormula` | |
-| `saveKpiFormula(token, base, weight)` | `kpi:saveFormula` | admin only |
-| `simulateKpiScore(token, metricId, branchId, actual, target)` | `kpi:simulate` | |
-| `getSupKpiPct(token)` | `kpi:getSupKpiPct` | |
-| `saveSupKpiPct(token, pct)` | `kpi:saveSupKpiPct` | admin only |
+#### Commission (`commission.ts`)
+`commission:getConfigs` · `commission:saveConfig` (admin, also pushes to Sheets) · `commission:pullConfigs` (admin) · `commission:getReport`
 
-#### Reports (`electron/ipc/reports.ts`)
+#### Google Sheets (`sheets.ts`)
+`sheets:getConfig` · `sheets:saveConfig` · `sheets:getSyncLogs` · `sheets:testConnection` · `sheets:browseFile` · `sheets:syncToCloud` (push unsynced entries only) · `sheets:pullFromCloud` · `sheets:pushConfig` (push all config tabs) · `sheets:forceSyncAll` (full bidirectional resync — see §12)
 
-| `window.api` method | IPC channel |
-|---------------------|-------------|
-| `getDashboardStats(token, branchIds[], y, m, from, to)` | `report:dashboard` |
-| `getMonthlyReport(token, branchIds[], y, m, from, to, supId?)` | `report:monthly` |
-| `getExecutiveReport(token, y, m, from, to)` | `report:executive` |
-| `getBranchAnalytics(token, y, m, from, to)` | `report:branchAnalytics` |
-| `getTeamPerformance(token, branchIds[], y, m, from, to)` | `report:teamPerformance` |
-| `getRepHistory(token, salesmanId, numMonths?)` | `report:repHistory` — 6-month trend + commission per month |
-| `getRepDailyEntries(token, salesmanId, year, month)` | `report:repDailyEntries` — daily entries for drill-down chart |
-| `getSupHistory(token, supId, numMonths?)` | `report:supHistory` — supervisor team 6-month trend |
+#### Email (`email.ts`)
+`email:getConfig` · `email:saveConfig` · `email:sendTest`
 
-#### Upload (`electron/ipc/upload.ts`)
-
-| `window.api` method | IPC channel | Notes |
-|---------------------|-------------|-------|
-| `uploadDaily(token, rows[], meta)` | `upload:daily` | rows keyed by `repCode` |
-| `uploadTargets(token, rows[], meta)` | `upload:targets` | rows keyed by `repCode` |
-| `uploadRoster(token, rows[])` | `upload:roster` | admin only |
-| `getUploadLogs(token, branchId?, type?, limit?)` | `upload:getLogs` | |
-| `getUploadCoverage(token, y, m)` | `upload:getCoverage` | |
-| `getSalesmenForTemplate(token, branchId)` | `upload:getSalesmenForTemplate` | |
-| `getRosterTemplate(token)` | `upload:getRosterTemplate` | |
-
-#### Google Sheets (`electron/ipc/sheets.ts`)
-
-| `window.api` method | IPC channel |
-|---------------------|-------------|
-| `getSheetsConfig(token)` | `sheets:getConfig` |
-| `saveSheetsConfig(token, config)` | `sheets:saveConfig` |
-| `getSyncLogs(token)` | `sheets:getSyncLogs` |
-| `syncToCloud(token)` | `sheets:syncToCloud` — pushes unsynced entries only |
-| `forceSyncAll(token)` | `sheets:forceSyncAll` — resets all synced=0, clears Entries tab, re-pushes ALL entries + all 6 config tabs |
-| `pullFromCloud(token)` | `sheets:pullFromCloud` |
-| `testSheetsConnection(token)` | `sheets:testConnection` |
-| `browseSheetsFile(token)` | `sheets:browseFile` — opens native file dialog |
-
-#### Roster CRUD (`electron/ipc/roster.ts`)
-
-| `window.api` method | IPC channel | Notes |
-|---------------------|-------------|-------|
-| `getRosterAll(token, yearMonth?)` | `roster:getAll` | admin only; yearMonth=YYYYMM filters staff_monthly_targets LEFT JOIN |
-| `getRosterAvailableMonths(token)` | `roster:getAvailableMonths` | admin only |
-| `saveRosterRep(token, data)` | `roster:saveRep` | admin only; upsert salesman + target |
-| `deactivateRosterRep(token, id)` | `roster:deactivate` | admin only |
-| `reactivateRosterRep(token, id)` | `roster:reactivate` | admin only |
-
-#### Commission (`electron/ipc/commission.ts`)
-
-| `window.api` method | IPC channel |
-|---------------------|-------------|
-| `getCommissionConfigs(token, yearMonth?)` | `commission:getConfigs` |
-| `saveCommissionConfig(token, data)` | `commission:saveConfig` — also pushes CommissionConfig tab to Sheets |
-| `getCommissionReport(token, branchIds[], y, m, from?, to?)` | `commission:getReport` |
-
-#### Admin (`electron/ipc/admin.ts`)
-
-| `window.api` method | IPC channel |
-|---------------------|-------------|
-| `seedTestData(token)` | `admin:seedTestData` — admin only |
-| `getDataStats(token)` | `admin:dataStats` — admin only |
+#### Admin (`admin.ts`)
+`admin:seedTestData` (admin) · `admin:dataStats` (admin)
 
 ---
 
 ## 8. Role-Based Access Control
 
-### The 4 Roles
+### The 8 Roles
 
-| Role | What They See |
-|------|--------------|
-| `admin` | Everything — all branches, all menus, KPI settings, user management |
-| `branch_manager` | Their assigned branch only — all reps + all supervisors under that branch |
-| `supervisor` | Only their own team (linked via `users.supervisor_id` → `supervisors.id`) |
-| `executive` | Read-only — all branches, analytics, executive view, no data entry |
+| Role | Scope | Notes |
+|------|-------|-------|
+| `admin` | All branches | Full function + User Management, but **no** Sales Upload, KPI Setup, or Roster |
+| `sales_sup` | Own team (`supervisor_id`) | Team Report, Team KPI, Team Commission |
+| `accountant_officer` | Own branch | Sales Upload (XLSX only — Manual Entry was removed app-wide), Sale Report |
+| `accountant_manager` | All branches | Approves/clears upload batches (§11), Sale Report |
+| `branch_manager` | Own branch | All teams within their branch, Sale Report |
+| `hr` | All branches | Everything except User Management — includes KPI Settings, Roster — but no Sales Upload |
+| `hr_support` | — | Roster Upload only (not full Roster CRUD) |
+| `top_manager` | All branches | View-only oversight, everything except User Management |
 
-### How Scoping Works in Backend
+A legacy `accountant` role string existed mid-redesign and has since been **fully removed** from the codebase — if you see it anywhere, it's stale.
+
+### Where Defaults Live (and the #1 gotcha)
+
+`ROLE_DEFAULTS` (role → default `MenuKey[]`) is defined **twice**:
+- `src/types/index.ts` — frontend fallback / display
+- `electron/ipc/auth.ts` — backend, what `computePermissions()` actually returns at login
+
+**These must be edited together.** A real bug occurred earlier in this project from exactly this drifting out of sync (a menu key added to one copy but not the other → menu silently invisible despite the frontend "knowing" it should exist).
+
+On top of `ROLE_DEFAULTS`, a `user_permissions` table holds **per-user overrides** (`user_id, menu_key, enabled`) settable in User Management's permission modal — lets you grant one specific "special" user extra menus beyond their role, without touching the role itself.
+
+### Scoping in Practice
+
+Every relevant handler re-derives scope server-side from `requireAuth(token)`'s `role`/`branch_id`/`supervisor_id` — never trusts client-passed branch filters for scoped roles:
 
 ```
-requireAuth(token) returns { id, role, branch_id, supervisor_id }
-
-supervisor role:
-  getSalesmen:     WHERE s.supervisor_id = user.supervisor_id
-  getEntries:      WHERE s.supervisor_id = user.supervisor_id
-  report:monthly:  effectiveBranchIds = [user.branch_id]
-                   effectiveSupervisorId = user.supervisor_id
-
-branch_manager role:
-  report:monthly:  effectiveBranchIds = [user.branch_id]
-  teamPerformance: auto-scoped to user.branch_id
-
-executive / admin:
-  no scoping — sees all branches
+sales_sup:           branchIds = [user.branch_id]; supervisorId = user.supervisor_id
+branch_manager:       branchIds = [user.branch_id]
+accountant_officer:   branchIds = [user.branch_id]
+accountant_manager:   no branch scoping (sees all)
+admin / hr / top_manager: no scoping (see all branches)
 ```
-
-**The backend is the real security boundary.** Frontend role checks only hide UI elements — they do not protect data.
-
-### Linking a Supervisor User to a Supervisor Record
-
-A user with `role='supervisor'` has `users.supervisor_id` pointing to a `supervisors` record.  
-This is set automatically during `seedTestData()`.  
-For production: when creating a supervisor user account, set `supervisor_id` via admin user management or a SQL update.
 
 ---
 
 ## 9. KPI Scoring Engine
 
-All scoring lives in `electron/ipc/kpi.ts` → `computeKpiScore(db, metricId, branchId, actual, target, date)`.
+All scoring lives in `electron/ipc/kpi.ts` → `computeKpiScore(db, metricId, branchId, actual, target, date, staffType?)`.
 
-### Metric IDs (fixed)
+### Priority Rule (used for both Jewelry/Bar rates AND Qty tiers)
 
-| id | Name | Scoring Mode |
-|----|------|-------------|
-| 1 | Jewelry Weight | `actual_baht × points_per_unit` (default: × 15) |
-| 2 | Bar Weight | `actual_baht × points_per_unit` (default: × 7.5) |
-| 3 | Quantity | tier lookup → `actual_qty × tier_multiplier` |
+> **branch + this month > branch + standing (no month) > global + this month > global + standing**
 
-### Scoring Logic
+"Standing" = `year_month IS NULL` (Jewelry/Bar rates) or `effective_to IS NULL` (Qty tier configs) — the fallback that applies to any month without a more specific override. **Editing a rate today never rewrites how a past month already scored** — that's the entire reason `year_month`/`effective_from`/`effective_to` exist instead of one eternal value per branch.
 
-```typescript
-// Jewelry / Bar — direct multiplier (points_per_unit > 0)
-score = actual * metric.points_per_unit
-
-// Quantity — find the active tier config for (branch, date)
-// branch-specific config wins over global (branch_id NULL)
-// tiers stored DESC by threshold — find first tier where actual >= threshold
-score = actual_qty * matching_tier.score
+```
+Jewelry / Bar:  score = actual_baht × points_per_unit   (type-rate lookup, falls back to kpi_metrics default)
+Quantity:       find the active tier config for (branch, staffType, date)
+                tiers sorted DESC by threshold_pct — first tier where actual >= threshold wins
+                score = actual_qty × tier.score
 ```
 
-### Branch KPI % Calculation
+### Branch KPI %
 
 ```
 Total KPI Points = jewelry_score + bar_score + qty_score
-
-Branch Point Target priority:
-  1. branch_kpi_monthly_targets (year, month override)
-  2. branches.kpi_point_target  (permanent default)
-
-KPI % = (Total KPI Points / Branch Point Target) * 100
+Branch Point Target priority: branch_kpi_monthly_targets (year+month override) > branches.kpi_point_target (default)
+KPI % = Total KPI Points / Branch Point Target × 100
 ```
 
 ### Supervisor KPI
 
 ```
 team_total_score = sum of all reps' KPI points
-sup_score        = team_total_score * (sup_kpi_pct / 100)    <- default 30%, configurable
-sup_kpi_pct_ach  = (sup_score / branch_target) * 100
+sup_score         = team_total_score × (sup_kpi_pct / 100)   — default 30%, editable in KPI Settings
+sup_kpi_pct_ach   = sup_score / branch_target × 100
 ```
-
-`sup_kpi_pct` is in `app_settings` and editable by admin in KPI Settings.
 
 ### Est. Month End
 
 ```
-eomKpiPct = (current_kpi_pct / day_of_month) * days_in_month
-```
-
-Used in Reports table, Executive view, and Branch KPI Achievement panel.
-
----
-
-## 10. Data Entry Flows
-
-### Manual Entry
-
-```
-User edits table cell
-  -> window.api.saveEntry(token, { salesmanId, branchId, date, ... })
-  -> IPC: entry:save
-  -> DELETE existing + INSERT new row in daily_entries
-  -> persistDb() writes to disk
-```
-
-### XLSX Daily Upload
-
-```
-User drops Excel file on upload panel
-  -> src/utils/xlsx.ts: parse workbook -> raw rows
-  -> src/utils/csv.ts: validateDailyRows() -> DailyRowRaw[]
-  -> window.api.uploadDaily(token, rows, meta)
-  -> IPC: upload:daily
-  -> For each row: SELECT salesman WHERE rep_code = ?
-     found:    DELETE existing + INSERT daily_entry
-     not found: add to skipped[] list
-  -> upload_logs record created (success + skipped count)
-  -> Return { success, count, skipped }
-```
-
-### Roster Upload (Admin Monthly)
-
-```
-Admin uploads roster XLSX (done once per month for new staff cycle)
-  -> validateRosterRows() -> RosterRow[]
-  -> window.api.uploadRoster(token, rows)
-  -> IPC: upload:roster
-  -> For each row:
-       resolve branch by branch_code
-       resolve supervisor_id by name + branch
-       UPDATE salesmen ... WHERE rep_code = ?   (if exists -> update)
-       INSERT INTO salesmen ...                  (if new -> create)
-  -> Return { created, updated, skipped }
-```
-
-### Target Upload
-
-```
-Same flow as Daily Upload but IPC: upload:targets
-  -> For each row: resolve rep_code -> DELETE + INSERT into targets
+eomKpiPct = (current_kpi_pct / day_of_month) × days_in_month
 ```
 
 ---
 
-## 11. Google Sheets Sync
+## 10. Roster — How It Actually Works
 
-### Setup Requirements
+**One table, one Sheet tab.** `roster_monthly` has one row per rep per month it actually changed — columns: `salesman_id, year_month, branch_id, supervisor_id, staff_type, active`.
 
-1. Create Google Cloud project → enable Sheets API
-2. Create Service Account → download JSON key file
-3. Share the target Google Spreadsheet with the service account email (Editor role)
-4. In app Settings: enter Spreadsheet ID + full path to JSON key file
-5. Click "Test Connection" to verify before syncing
+### Reads carry forward automatically
 
-### Push to Cloud (`sheets:syncToCloud`)
+"Roster as of month X" resolves to the **nearest month ≤ X that has any rows** — a month nobody touched simply reads as whatever the last edited month said. No "confirm this month, nothing changed" step exists or is needed.
 
 ```
-1. Check Entries!A1 — if no header: create "Entries" tab + write headers
-2. SELECT daily_entries WHERE synced = 0
-3. Append rows to Entries!A:G
-4. UPDATE daily_entries SET synced = 1
-5. INSERT sync_logs row
+resolveYm(year, month) = SELECT MAX(year_month) FROM roster_monthly WHERE year_month <= target
 ```
 
-**Sheet columns (Entries tab):**  
-`Date | Branch | Rep Code | Salesman Name | Jewelry (Baht) | Bar (Baht) | Qty`
+This is a pure read — it never writes, so viewing a report never triggers a disk persist.
 
-### Pull from Cloud (`sheets:pullFromCloud`)
+### Writes materialize the target month first
+
+Editing/uploading for a month with no existing rows first **copies the nearest earlier month's full row-set forward** into that month (`ensureMonthMaterialized`), then applies the specific change on top. This keeps every "touched" month a complete, self-contained snapshot — no patchwork of "this rep from month X, that rep from month X-2" when reading one month.
+
+### Two states, one cache
+
+- `roster_monthly` — the month-indexed source of truth, used by the Roster screen and `getHeadcountAsOf()` (branch target headcount math).
+- `salesmen.branch_id/staff_type/supervisor_id/active` — a **live "right now" cache**, used everywhere that doesn't care about history (daily-upload rep matching, team listings). Every roster edit updates both.
+
+### Editing a specific month
+
+The Roster screen has a month/year picker; `roster:saveRep`/`deactivate`/`reactivate` now accept an explicit `year`/`month` and target that month specifically (previously a real bug existed where edits always silently wrote to *today's* month regardless of which month was being viewed — fixed as part of the v19 redesign).
+
+### Uploading
+
+`upload:roster`'s `Effective_Date` column is still the only thing that decides which month a row counts for — it threads through to the same `snapshotSalesman(db, salesmanId, effectiveDate)` → `roster_monthly` write path as manual edits.
+
+### `admin:seedTestData` gotcha
+
+`seedTestData()` in `seed.ts` must insert into `roster_monthly` for every rep it creates (May + current month) — without it, seeded reps are invisible on the Roster screen and `getHeadcountAsOf()` returns 0, zeroing out branch point-target math. The `admin:seedTestData` handler also clears `roster_monthly` + `staff_monthly_targets` *before* deleting `salesmen` — both have a foreign key to it and `PRAGMA foreign_keys=ON` means deleting `salesmen` first throws.
+
+---
+
+## 11. Sales Upload — Approval Workflow
+
+Sales data drives KPI and commission, so it's deliberately **not** a simple overwrite-on-reupload anymore.
 
 ```
-1. GET Entries!A:G
-2. Skip header row (detected by A1 not matching YYYY-MM-DD)
-3. For each row: resolve rep_code -> salesman
-4. DELETE + INSERT daily_entry (synced = 1)
+Accountant Officer uploads XLSX (own branch only)
+  → for each row, check daily_entries for an existing (salesman_id, entry_date) row
+      no existing row  → insert, tag with upload_log_id
+      existing row     → REJECT — "ask an Accountant Manager to clear the conflicting
+                          upload batch before re-uploading"
+  → upload_logs row created/updated; audit_logs gets a `sales_upload_submitted` entry
 ```
+
+To fix a mistake, an **Accountant Manager** (or admin) goes to Upload History → "Sales Upload Records — Approval" panel, finds the bad batch, and clicks **Delete & Allow Resubmit** — this deletes every `daily_entries` row tagged with that `upload_log_id` (and only those), logs a `sales_upload_deleted` audit entry, then the Accountant Officer can re-upload corrected data for those exact rep/date slots.
+
+Manual Entry (the old inline-editable table) was **removed entirely** as part of this — Daily Entry is XLSX-upload-only now, for every role.
+
+---
+
+## 12. Google Sheets Sync
+
+### Setup
+
+1. Create a Google Cloud project → enable Sheets API → create a Service Account → download the JSON key.
+2. Share the target Spreadsheet with the service account email (Editor role).
+3. In-app Settings: enter Spreadsheet ID + path to the JSON key, then **Test Connection**.
+
+### Tabs (one push function per tab in `sheets.ts`, all via the shared `writeTab()` helper — clears the whole tab then rewrites, so there's never leftover garbage from a previous format)
+
+`Entries` · `Settings` · `Branches` · `KPIRates` · `QtyTiers` · `Roster` (single tab, `Month` column — see §10) · `CommissionConfig` · `Users` (real password — see §17) · `Supervisors` · `MonthlyBranchTargets`
+
+### Push vs. Pull
+
+- `sheets:syncToCloud` — pushes only `daily_entries WHERE synced = 0`.
+- `sheets:pushConfig` — pushes every config tab (not Entries).
+- `sheets:forceSyncAll` — full reset: clears `Entries` tab, marks every entry unsynced, re-pushes everything (entries + all config tabs). Use this after a schema/format change to wipe any stale-format rows out of the Sheet.
+- `sheets:pullFromCloud` (`pullAllFromCloud` internally) — pulls every tab back into the local DB. Each tab has **exactly one** canonical parser function (e.g. `pullCommissionConfigsFromSheet`, `pullRosterFromSheet`) shared between the dedicated pull buttons and the full pull — there used to be duplicate, subtly-different parsers for the same tab in two files, which silently corrupted data by reading columns in the wrong order. If you add a new push format, **grep for any other reader of that tab before assuming there's only one.**
 
 ### CRITICAL Security Rule
 
-**The service account JSON file must NEVER be committed to git.**  
-`credentials/` is already in `.gitignore`. Never remove that entry.  
-Each machine keeps its own copy of the key locally.
-
----
-
-## 12. Rep Code System
-
-### Why Rep Codes?
-
-Each salesman has a unique company-issued code (e.g., `MM-A-001`). This solves the multi-PC sync problem:  
-- Multiple branch computers use the same Google Sheet
-- Auto-increment integer IDs would collide across machines
-- Rep codes are stable and machine-independent
-
-### Where Rep Codes Are Used
-
-| Location | Usage |
-|----------|-------|
-| `salesmen.rep_code` | Stored in DB with unique index |
-| `upload:daily` | Maps uploaded row to salesman record |
-| `upload:targets` | Maps target row to salesman record |
-| `upload:roster` | Upsert key — update if exists, insert if new |
-| `sheets:syncToCloud` | Written to "Rep Code" column in Google Sheet |
-| `sheets:pullFromCloud` | Matches sheet rows to local salesmen |
-| XLSX templates | Pre-filled in download template |
-
-### Test Data Format
-
-`{BRANCH_CODE}-{TIER_LETTER}-{INDEX}` — e.g., `MM-A-001`  
-Production codes come from the company's HR/payroll system — any unique string works.
+**The service account JSON file must never be committed to git.** `credentials/` is gitignored — never remove that entry. If it's ever accidentally committed: revoke the key in Google Cloud Console immediately, generate a new one, and scrub git history.
 
 ---
 
 ## 13. Screens — What Each Page Does
 
-| Route | Screen | Allowed Roles | Purpose |
-|-------|--------|--------------|---------|
-| `/login` | Login | all | Username + password form |
-| `/dashboard` | Dashboard | all | MTD KPI gauge, top performers, quick stats |
-| `/daily-entry` | DailyEntry | all | Manual entry + XLSX upload + roster upload (admin) |
-| `/reports` | Reports | all | Monthly performance table per rep, branch/supervisor filters; 4 tabs: Performance / Customer Type / Supervisor / Commission; click rep/sup row → individual profile modal with trend chart + history table |
-| `/team-performance` | TeamPerformance | admin, branch_manager, executive | Supervisor KPI%, team assignment UI |
-| `/analytics` | Analytics | admin, branch_manager, executive | Branch charts: pie, line, comparison matrix |
-| `/executive` | Executive | admin, executive | Company-wide KPI, branch comparison, supervisor chart |
-| `/kpi-settings` | KpiSettings | admin only | Unified KPI config per month (Jewelry/Bar/Qty cards), tier tables, branch targets, score simulator |
-| `/upload-history` | UploadHistory | all (Roster tab: admin only) | Upload History tab + Roster tab (admin: view/edit all reps with month/branch/supervisor filters) |
-| `/settings` | Settings | admin, supervisor, branch_manager | Google Sheets config (Force Full Sync), email config, test data loader |
-| `/users` | UserManagement | admin only | User CRUD |
+| Route | Screen | Purpose |
+|-------|--------|---------|
+| `/login` | Login | Username + password |
+| `/dashboard` | Dashboard | MTD KPI gauge, top performers, quick stats |
+| `/entry` | DailyEntry | XLSX upload only (Manual Entry removed) — see §11 for the approval flow |
+| `/reports` | Reports | Monthly performance table per rep; tabs for overview/supervisor/performance/commission/customer-type; rep/sup row → profile modal with trend chart |
+| `/sale-report` | SaleReport | Period comparisons, by-branch/by-type breakdowns, weekly/daily trend charts, weekday %-contribution heatmap |
+| `/executive` | Executive | Company-wide KPI, branch comparison (legacy — most of this overlaps Reports now) |
+| `/kpi-settings` | KpiSettings | Per-branch Jewelry/Bar rates, Qty tiers, branch point targets, commission rates, KPI formula constants, score simulator |
+| `/upload-history` | UploadHistory | Branch coverage matrix, upload log, **Sales Upload Records — Approval** panel (accountant_manager/admin only, §11) |
+| `/roster` | Roster | Month-aware roster CRUD + XLSX upload — see §10 |
+| `/settings` | Settings | Google Sheets config + Force Full Sync, email config |
+| `/users` | UserManagement | User CRUD + per-user permission overrides |
+| `/audit-log` | AuditLog | Login/logout/user-change/sales-upload event log |
+| `/analytics` | — | **Removed** — redirects to `/reports`. Screen file (`src/screens/Analytics/`) still exists but is unreachable dead code. |
 
-### Filter Visibility by Role
-
-| Role | Branch Filter | Supervisor Filter |
-|------|-------------|-----------------|
-| admin | multi-select all branches | all supervisors |
-| executive | multi-select all branches | all supervisors |
-| branch_manager | locked to own branch | supervisors in own branch |
-| supervisor | locked to own branch | hidden (already scoped) |
+Menu visibility per role is `ROLE_DEFAULTS` (§8) — not a hardcoded per-route role list.
 
 ---
 
 ## 14. Frontend State Management
 
-### `auth.store.ts` (Zustand, persisted to localStorage)
+### `auth.store.ts` (Zustand, persisted)
+`{ token, user: AuthUser | null, permissions: string[], isAuthenticated, branches, login()/logout() }` — `permissions` is re-fetched from the backend on every `AppShell` mount (not trusted from a stale persisted value), so a backend `ROLE_DEFAULTS` change takes effect without a manual logout.
 
-```typescript
-{
-  token: string | null
-  user: AuthUser | null   // { id, username, fullName, role, branchId, supervisorId }
-  isAuthenticated: boolean
-  login(token, user) / logout()
-}
-```
-
-### `app.store.ts` (Zustand, persisted to localStorage)
-
-```typescript
-{
-  selectedBranchIds: number[]   // active branch filter ([] = all)
-  dateFrom: string              // YYYY-MM-DD
-  dateTo: string                // YYYY-MM-DD
-  selectedYear: number
-  selectedMonth: number
-  setSelectedBranchIds(ids) / setDateRange(from, to) / ...
-}
-```
-
-Both stores persist filter selections across page refreshes via Zustand persist middleware.
+### `app.store.ts` (Zustand, persisted)
+`{ selectedBranchId(s), selectedYear, selectedMonth, dateFrom, dateTo, ... }` — UI filter state, persisted across refreshes.
 
 ---
 
 ## 15. Build & Deploy
 
-### Development
-
 ```bash
-npm run dev          # hot reload, opens DevTools automatically
-npm run typecheck    # tsc --noEmit (no output = clean)
+npm run dev          # hot reload renderer; restart needed for electron/* changes
+npm run typecheck     # see §18 — currently a near no-op, don't fully trust a clean result
+npm run dist:win      # build + package as Windows installer (NSIS, electron-builder.yml)
 ```
 
-### Production Build
-
-```bash
-npm run dist:win     # build + package as Windows installer
-```
-
-Output: `dist/SalesTrack Pro Setup x.y.z.exe`
-
-Uses NSIS installer (configured in `electron-builder.yml`).
-
-### WASM Dependency
-
-sql.js requires a `sql-wasm.wasm` file. `electron-builder.yml` has `extraResources` to copy it into the packaged app. If missing, app crashes on startup with a WASM loading error.
+sql.js needs `sql-wasm.wasm` — `electron-builder.yml`'s `extraResources` copies it into the packaged app. If missing, the app crashes on startup with a WASM-loading error (caught and shown via the startup error screen in `App.tsx`, with details written to `startup-error.log` in the app's userData folder).
 
 ### Version Bumping Rule
 
-Always bump `version` in `package.json` on every change and include the version in the commit message.  
-Semver: `patch` (bug fix), `minor` (new feature), `major` (breaking change).
+Bump `version` in `package.json` on every change and mention the version in the commit message. Patch for fixes, minor for features, major for breaking changes.
 
 ---
 
 ## 16. Default Credentials
 
+Seeded by `seedDatabase()` on a truly fresh install (empty DB, no `app_settings.schema_version` row):
+
 | Username | Password | Role |
 |----------|----------|------|
-| `admin` | `admin1234` | Admin — full access |
-| `ceo` | `ceo1234` | Executive — read-only |
-| `sup_mm` | `sup1234` | Supervisor — Morning Market (Alpha team) |
-| `sup_vc` | `sup1234` | Supervisor — Vientiane Center (Alpha team) |
-| `sup_it` | `sup1234` | Supervisor — ITecc (Alpha team) |
-| `sup_vt` | `sup1234` | Supervisor — VangThong (Alpha team) |
-| `bm_mm` | `bm1234` | Branch Manager — Morning Market |
-| `bm_vc` | `bm1234` | Branch Manager — Vientiane Center |
-| `bm_it` | `bm1234` | Branch Manager — ITecc |
-| `bm_vt` | `bm1234` | Branch Manager — VangThong |
+| `admin` | `admin1234` | Admin |
+| `sup_mm` / `sup_vc` / `sup_it` / `sup_vt` | `sup1234` | Sales Supervisor, one per branch |
+| `bm_mm` / `bm_vc` / `bm_it` / `bm_vt` | `bm1234` | Branch Manager, one per branch |
+| `acct_off_mm` / `acct_off_vc` / `acct_off_it` / `acct_off_vt` | `acctoff1234` | Accountant Officer, one per branch |
+| `acct_mgr` | `acctmgr1234` | Accountant Manager |
+| `hr` | `hr1234` | HR |
+| `hr_support` | `hrsup1234` | HR Support |
+| `top_manager` | `top1234` | Top Manager |
 
-**Change all passwords on first production deployment** via User Management (admin login required).
+**Change every password before real production use** — via User Management, or directly in the Users Google Sheet tab (see §17, this writes plaintext + gets re-hashed on next pull).
 
 ---
 
 ## 17. Security Notes
 
-### What's Secured
+### What's secured
 
-- Every IPC handler calls `requireAuth(token)` — no unauthenticated backend access possible
-- Passwords stored as bcrypt hash (cost=10) — never plaintext in DB
-- `contextBridge` + `nodeIntegration: false` — renderer cannot access Node.js directly
-- Role checks on sensitive handlers: admin-only use `requireAdmin(token)`
-- Parameterized SQL everywhere via `prepare(db, sql).run(params)` — no SQL injection
+- Every IPC handler calls `requireAuth`/`requireAdmin` — no unauthenticated backend access.
+- `contextBridge` + `nodeIntegration: false` — renderer cannot touch Node.js directly.
+- Parameterized SQL everywhere via `prepare(db, sql).run(...)` — no SQL injection.
+- Sessions expire after 8 hours.
 
-### What to Be Careful About
+### Deliberate tradeoff: plaintext passwords are pushed to the Users Sheet tab
 
-**1. Service account JSON must never be in git.**  
-`credentials/` is gitignored. If accidentally committed:  
-a) Revoke the key in Google Cloud Console immediately  
-b) Generate a new key  
-c) Rewrite git history (BFG Repo Cleaner or `git filter-branch`)
+`users.password_plain` was added in schema v20 **at the explicit request of this app's owner** — they wanted to be able to read a forgotten password directly off the Sheet instead of doing a reset, and accepted the risk that anyone with access to that Sheet (or the local `.db` file) can now read every account's real password.
 
-**2. Session tokens expire after 8 hours.** Expired tokens return `null` from `validateToken()`. Users see "Unauthorized" and are redirected to login.
+- **Login itself still checks `password_hash` (bcrypt)** — `password_plain` is never used to authenticate. This means stealing the local DB file alone doesn't trivially compromise login *unless* the thief also reads `password_plain` directly from the same file, which they can (it's right there in plaintext).
+- Pulling from Sheets re-hashes whatever plaintext it reads (`bcrypt.hashSync`) before writing `password_hash` — so a Sheet edit still produces a working bcrypt hash, it doesn't bypass hashing.
+- **If you ever revert this decision:** drop `password_plain` from `pushUsers()`'s SELECT and the Sheet's column list, stop writing it in `auth:createUser`/`auth:updateUser`, and tell the Sheet's editors to manually clear the existing plaintext history out of Sheets version history too (Google Sheets keeps edit history even after a cell is cleared).
+- **Restrict who can open the Users Sheet tab.** That's now the single point where a leak exposes every account's real password.
 
-**3. No remote network exposure.** All IPC is in-process inside Electron. The only external network calls are to Google Sheets API (when syncing).
+### Other things to be careful about
+
+1. **Service account JSON must never be in git** (see §12).
+2. **No remote network exposure** — all IPC is in-process inside Electron; the only outbound network calls are to the Google Sheets API.
 
 ---
 
-## 18. How to Add a New Feature
+## 18. Known Gaps / Technical Debt
+
+Found while working on this codebase — not fixed because they're outside whatever task surfaced them, flagging so the next person doesn't waste time rediscovering them.
+
+### `npm run typecheck` is close to a no-op
+
+The root `tsconfig.json` uses TypeScript project references with `"files": []`. Plain `tsc --noEmit` on that config does **not** build the referenced projects (`tsconfig.node.json` / `tsconfig.web.json`) — it just sees zero files and exits 0 immediately. A clean `npm run typecheck` does **not** mean the code type-checks.
+
+To actually check, run both referenced projects directly:
+```bash
+npx tsc --noEmit -p tsconfig.web.json
+npx tsc --noEmit -p tsconfig.node.json
+```
+Doing this surfaces ~60 pre-existing errors, mostly:
+- `src/global.d.ts`'s `Window.api` interface is missing roughly half of what `preload.ts` actually exposes (e.g. `getCommissionReport`, `getBranchMetricRates`, `getTeamPerformance`, `checkAppReady`, and more were never typed). Calls to these compile fine at runtime (it's just a type-checking gap), but TS can't catch a typo or signature mismatch on them.
+- Several Recharts `Tooltip`/`Legend` `formatter` callbacks have signatures that don't match the installed Recharts version's types (cosmetic — charts work fine at runtime).
+- `electron/db/query.ts` / `electron/db/schema.ts`: a couple of raw sql.js calls pass a `bigint` or single non-array value where the installed `@types/sql.js` wants `SqlValue[]`.
+- `electron/ipc/sales.ts`: a few `unknown`-typed values passed where `Value` is expected.
+
+None of this is from any change documented above — confirmed by running the per-project check before and after each change in this session and diffing. Worth a dedicated cleanup pass (start with filling in `global.d.ts`, since that's the highest-value fix — it would have caught several real bugs earlier).
+
+### `src/screens/Analytics/` is dead code
+
+Menu/route removed (§13), file left in place. Delete outright if you're sure it won't come back.
+
+### `src/screens/Executive/`, `entries.ts`'s `entry:create/updateSalesman`, `target:*`
+
+Functionally overlapping with newer features (Reports tabs, Roster, KPI Settings + `staff_monthly_targets`) but not removed — still reachable, not actively maintained. Don't build new features on top of them; check whether the newer equivalent already covers your need first.
+
+---
+
+## 19. How to Add a New Feature
 
 ### Add a New IPC Handler
 
-1. Open the relevant file in `electron/ipc/` (or create a new one and add it to `electron/main.ts`)
-2. Inside the `register*Handlers(ipcMain)` function, add:
-   ```typescript
+1. Open the relevant file in `electron/ipc/` (or create one and register it in `electron/ipc/index.ts`).
+2. ```typescript
    ipcMain.handle('domain:action', async (_e, token: string, ...args) => {
-     requireAuth(token)  // or requireAdmin(token)
-     // your logic here
+     const user = requireAuth(token)  // or requireAdmin(token)
+     // your logic — re-derive scope from `user`, never trust client-passed branch/role filters
      return result
    })
    ```
-3. Expose it in `electron/preload.ts` inside `contextBridge.exposeInMainWorld`:
-   ```typescript
-   yourNewMethod: (token: string, ...args) =>
-     ipcRenderer.invoke('domain:action', token, ...args),
-   ```
-4. Add TypeScript signature to `src/global.d.ts`
-5. Call `window.api.yourNewMethod(token, ...)` from React
+3. Expose it in `electron/preload.ts`'s `contextBridge.exposeInMainWorld` block.
+4. Add the signature to `src/global.d.ts` (the file is incomplete — see §18 — but please don't make it more incomplete).
+5. Call `window.api.yourNewMethod(token, ...)` from React.
 
 ### Add a New Screen
 
-1. Create `src/screens/YourScreen/index.tsx`
-2. Add route in `src/App.tsx`
-3. Add nav link in `src/components/layout/Sidebar.tsx` with role filter
-4. Add new types to `src/types/index.ts`
+1. `src/screens/YourScreen/index.tsx`
+2. Route in `src/App.tsx`
+3. Add the screen's menu key to `MENU_KEYS` in `src/types/index.ts`, give it a label in `MENU_LABELS`, and add it to whichever roles' `ROLE_DEFAULTS` should see it — **in both `src/types/index.ts` and `electron/ipc/auth.ts`** (see §8's gotcha).
+4. Add a nav item in `src/components/layout/Sidebar.tsx`.
 
-### Add a Database Column
+### Add a Database Column/Table
 
-1. Add to `BASE_TABLES` in `electron/db/schema.ts` (for fresh installs)
-2. Add a migration block:
+1. Add to `BASE_TABLES` in `electron/db/schema.ts` (fresh installs).
+2. Add a migration block, bump `SCHEMA_VERSION`:
    ```typescript
-   if (currentVersion < 10) {
-     try {
-       db.run(`ALTER TABLE some_table ADD COLUMN new_col TEXT`)
-     } catch { /* already exists on some DBs */ }
-     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '10')`).run()
+   if (currentVersion < 21) {
+     try { db.run(`ALTER TABLE some_table ADD COLUMN new_col TEXT`) } catch { /* already exists */ }
+     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '21')`).run()
    }
    ```
-3. Bump `SCHEMA_VERSION = 10` at the top of the file
-4. Update the TypeScript interface in `src/types/index.ts`
+3. Update the TypeScript interface in `src/types/index.ts`.
 
 ### Change KPI Scoring Rules
 
-- **Jewelry/Bar multiplier:** Use KPI Settings UI — no code change needed
-- **Qty tier thresholds:** Use KPI Settings UI per branch — no code change needed
-- **Add a 4th KPI metric:** Insert row into `kpi_metrics`, set `points_per_unit` or add tier config, update `computeKpiScore()` in `kpi.ts`, update the `report:monthly` SQL to aggregate the new column
+- Jewelry/Bar multiplier or Qty tiers: KPI Settings UI — no code change needed.
+- Add a 4th KPI metric: insert a row into `kpi_metrics`, update `computeKpiScore()` in `kpi.ts`, update whatever report SQL needs to aggregate the new metric.
+
+### Push a New Sheet Tab
+
+Add a `push*`/`pull*From Sheet` pair in `sheets.ts`, both reading/writing the **same column order** — re-read §12's pull-vs-push warning before assuming a quick copy-paste is safe; two independent writers/readers for the same tab is exactly how the Roster and CommissionConfig tabs got corrupted earlier in this project.
 
 ---
 
-*SalesTrack Pro — KPV Gold & Jewelry Sales Performance System*  
-*GuideBook last updated: 2026-06-09 · Schema v10 · App v1.3.7*
+*SalesTrack Pro — KPV Gold & Jewelry Sales Performance System*
+*GuideBook last updated: 2026-06-17 · Schema v20 · App v1.7.39*

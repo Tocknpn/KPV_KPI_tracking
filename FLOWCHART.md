@@ -1,245 +1,171 @@
 # KPV Sales Performance — System Flowcharts
 
-> Version: **v1.3.7** — Update this header + diagram whenever app changes screens, roles, or data flow.
+> Version: **v1.7.41** — schema v20. Update this header + diagrams whenever app changes screens, roles, or data flow.
 
 Paste each diagram block into [mermaid.live](https://mermaid.live) to render.
 
 ---
 
-## Diagram 1 — User Roles & Screen Access Permissions
+## Diagram 1 — Login & Startup Flow
 
 ```mermaid
 flowchart TD
-    START([App Launch]) --> LOGIN["/login — Login Screen"]
+    START([App Launch]) --> INIT["Main process: load SQLite WASM,\nrun schema migrations (45s timeout)"]
+    INIT -->|error| ERRSCREEN["Startup error screen\n+ startup-error.log"]
+    INIT -->|ready| LOGIN["/login screen"]
     LOGIN --> AUTH{"Credentials valid?"}
     AUTH -->|No| LOGIN
-    AUTH -->|Yes| ROLE{"Role?"}
-
-    ROLE -->|admin| ADMIN["Admin"]
-    ROLE -->|branch_manager| BM["Branch Manager"]
-    ROLE -->|supervisor| SUP["Supervisor"]
-    ROLE -->|executive| EXEC["Executive"]
-
-    subgraph SCOPE["Data Scope per Role"]
-        SC_A["Admin — ALL branches · ALL data · full write"]
-        SC_B["Branch Manager — own branch_id only · write"]
-        SC_S["Supervisor — own supervisor_id team only · write"]
-        SC_E["Executive — ALL branches · read-only"]
-    end
-    ADMIN --- SC_A
-    BM    --- SC_B
-    SUP   --- SC_S
-    EXEC  --- SC_E
-
-    subgraph NAV["Screens ( /route — Label )"]
-        DASH["/dashboard — Dashboard"]
-        ENTRY["/daily-entry — Daily Entry"]
-        REPORTS["/reports — Reports\n4 tabs: Performance · Customer Type · Supervisor · Commission\nclick rep/sup row → Individual Profile Modal"]
-        ANAL["/analytics — Analytics"]
-        EXECV["/executive — Executive View"]
-        TEAM["/team-performance — Team Performance"]
-        UPLOAD["/upload-history — Upload History\nUpload History tab + Roster tab (admin only)"]
-        SETT["/settings — Settings\nSheets config · Force Full Sync · Test Data"]
-        USERS["/users — User Management"]
-        KPISET["/kpi-settings — KPI Settings\nUnified KPI config per month · Score simulator"]
-    end
-
-    ADMIN --> DASH & ENTRY & REPORTS & ANAL & EXECV & TEAM & UPLOAD & SETT & USERS & KPISET
-    BM    --> DASH & ENTRY & REPORTS & TEAM & UPLOAD & SETT
-    SUP   --> DASH & ENTRY & REPORTS & UPLOAD & SETT
-    EXEC  --> DASH & ANAL & EXECV & TEAM & REPORTS & UPLOAD & SETT
+    AUTH -->|Yes| SYNC["Loading screen:\n'Connecting to Google Sheets…'\npulls latest data from cloud"]
+    SYNC -->|success| UPTODATE["'Up to date.'"]
+    SYNC -->|fail / offline / not configured| STALE["'Could not sync — using last saved data.'\n(does not block login)"]
+    UPTODATE --> APP["App — role-scoped dashboard"]
+    STALE --> APP
 ```
+
+Every login pulls fresh data first — a device that's been offline, or where someone else made a change on another device, never shows stale numbers without at least trying to catch up.
 
 ---
 
-## Diagram 2 — Full Data Workflow
+## Diagram 2 — User Roles & Screen Access
 
 ```mermaid
 flowchart TD
-    subgraph INPUT["Data Input"]
-        MANUAL["Manual Daily Entry\n/daily-entry screen\nper rep · per day"]
-        XLSUP["XLSX/CSV Upload\n/upload-history\nbulk daily entries"]
-        ROSTERUP["Roster Upload CSV/XLSX\n/daily-entry (admin)\nrep codes + point targets + staff_type"]
-        ROSTERCRUD["Roster Tab CRUD\n/upload-history (admin)\nadd/edit/deactivate reps · set targets"]
-        PULL["Pull from Cloud\nSettings → Pull from Cloud\nGoogle Sheets → SQLite\n(restores Entries + CommissionConfig)"]
+    LOGIN[Login] --> ROLE{Role?}
+
+    ROLE -->|admin| ADMIN["Admin\nAll branches"]
+    ROLE -->|sales_sup| SUP["Sales Supervisor\nOwn team only"]
+    ROLE -->|accountant_officer| AO["Accountant Officer\nOwn branch"]
+    ROLE -->|accountant_manager| AM["Accountant Manager\nAll branches"]
+    ROLE -->|branch_manager| BM["Branch Manager\nOwn branch, all teams"]
+    ROLE -->|hr| HR["HR\nAll branches"]
+    ROLE -->|hr_support| HRS["HR Support\nAll branches, limited"]
+    ROLE -->|top_manager| TM["Top Manager\nAll branches, view-only"]
+
+    subgraph MENUS["Menu keys each role gets (ROLE_DEFAULTS)"]
+        M_ADMIN["dashboard · kpi_report · sale_report ·\nupload_history · upload_status ·\naudit_log · user_management · settings\n— NOT daily_entry / kpi_settings / roster"]
+        M_SUP["dashboard · kpi_report ·\nsale_report · upload_status"]
+        M_AO["daily_entry · sale_report ·\nupload_history · upload_status"]
+        M_AM["sale_report · upload_history ·\nupload_status · audit_log"]
+        M_BM["dashboard · kpi_report ·\nsale_report · upload_status"]
+        M_HR["dashboard · kpi_report · sale_report ·\nupload_history · upload_status ·\nroster · kpi_settings · audit_log · settings\n— NOT user_management / daily_entry"]
+        M_HRS["roster (upload only) · upload_status"]
+        M_TM["dashboard · kpi_report · sale_report ·\nupload_history · roster · kpi_settings ·\naudit_log · settings — view only, no writes"]
     end
 
-    MANUAL   -->|"upload:daily IPC"| DEDB
-    XLSUP    -->|"upload:daily IPC"| DEDB
-    PULL     -->|"sheets.pullFromCloud"| DEDB
-    ROSTERUP -->|"upload:roster IPC"| REPDB
-    ROSTERCRUD -->|"roster:saveRep / deactivate IPC\n→ pushRosterIfConfigured"| REPDB
-
-    REPDB[("salesmen\nstaff_monthly_targets\nsupervisors")]
-    DEDB[("daily_entries\nSQLite\nsynced = 0")]
-
-    DEDB --> KPI
-
-    subgraph KPI["KPI Computation — report:monthly / report:teamPerformance"]
-        direction TB
-        RATES["kpi_metric_type_rates\nB2C: Jewelry × 15  Bar × 7.5\nB2B: Jewelry × 20  Bar × 10"]
-        TIERS["kpi_tier_configs + kpi_tiers\nQty threshold → multiplier\nbranch-specific"]
-        INDVTGT["staff_monthly_targets\nB2C default: 5000 pts\nB2B default: 7000 pts"]
-        SCORESUM["Score = SUM per day\njewelry×rate_j + bar×rate_b + qty×tier_mult"]
-        KPIPCT["KPI% = Score ÷ individual_target × 100"]
-        RATES   --> SCORESUM
-        TIERS   --> SCORESUM
-        SCORESUM --> KPIPCT
-        INDVTGT --> KPIPCT
-    end
-
-    KPI --> RSCREEN
-
-    subgraph RSCREEN["/reports — Reports Screen (4 Tabs)"]
-        PTAB["Performance Tab\nper-rep KPI% · EOM forecast\nB2C / B2B chip filter · supervisor filter"]
-        CTTAB["Customer Type Tab\nB2C vs B2B group stats\nside-by-side totals + detail tables"]
-        SUPTAB["Supervisor Tab\nsup KPI%, team breakdown"]
-        COMMTAB["Commission Tab\nrep + supervisor LAK amounts"]
-        REPMODAL["Rep Profile Modal\ntrend chart Month/Week/Day granularity\nhistory table + Commission ₭ column"]
-        SUPMODAL["Sup Profile Modal\ntrend chart · history table"]
-        PTAB --> REPMODAL
-        SUPTAB --> SUPMODAL
-    end
-
-    subgraph KPISETT["/kpi-settings — KPI Settings (Admin Only)"]
-        KPICFG["Unified KPI Config per month\nJewelry multiplier · Bar multiplier\nQty tier assign"]
-        BTGT["Branch KPI Targets\nkpi_point_target per branch"]
-        COMMR["Commission Rates LAK\nper staff_type per month\n(saves + pushes CommissionConfig tab)"]
-        SUPRATE["Supervisor Score Weight\nsup_kpi_pct — % of team KPI credited to sup score"]
-        SIMUL["Score Simulator\ntest any weight/qty against config"]
-    end
-
-    KPISETT -.->|"config used by"| KPI
-    KPISETT -.->|"commission rates used by"| RSCREEN
-
-    subgraph OUTPUT["Output / Sync"]
-        PUSHDATA["Push to Cloud (incremental)\nSettings → Sync to Cloud\nonly synced=0 entries → marks synced=1"]
-        FORCESYNC["Force Full Sync\nSettings → Force Full Sync\nresets ALL entries synced=0\nclears Entries tab\npushes ALL entries + 6 config tabs"]
-        PUSHCFG["Save Commission Config\ncommission:saveConfig IPC\nwrites CommissionConfig tab in Sheets"]
-        PUSHROSTER["Auto Push Roster\nafter any roster:saveRep / deactivate\npushRosterIfConfigured (fire-and-forget)"]
-        EMAILRPT["Email Report\nnodemailer\n(email_config required)"]
-    end
-
-    DEDB    -->|"synced=0 rows"| PUSHDATA
-    DEDB    -->|"all entries"| FORCESYNC
-    KPISETT -->|"admin saves rates"| PUSHCFG
-    REPDB   -->|"roster change"| PUSHROSTER
-    PULL    -.->|"restores data"| REPDB
-    RSCREEN -->|"admin action"| EMAILRPT
+    ADMIN --- M_ADMIN
+    SUP --- M_SUP
+    AO --- M_AO
+    AM --- M_AM
+    BM --- M_BM
+    HR --- M_HR
+    HRS --- M_HRS
+    TM --- M_TM
 ```
+
+`ROLE_DEFAULTS` lives in **two places that must agree**: `src/types/index.ts` (frontend) and `electron/ipc/auth.ts` (backend — what actually gets enforced). Per-user overrides on top of these live in the `user_permissions` table, settable from User Management.
 
 ---
 
-## Diagram 3 — What This App Does (Executive Overview)
+## Diagram 3 — Daily Sales Upload & Approval Workflow
 
-> One-page brief for top management. Non-technical.
+```mermaid
+flowchart TD
+    AO["Accountant Officer\nfills/collects daily XLSX\nfor their own branch"] --> UP["Daily Entry → XLSX Upload"]
+    UP --> CHECK{"Existing record\nfor this rep + date?"}
+    CHECK -->|No| INSERT["Insert into daily_entries\ntagged with upload_log_id"]
+    CHECK -->|Yes| REJECT["Row REJECTED\n'ask Accountant Manager\nto clear the conflicting batch'"]
+    INSERT --> AUDIT1["audit_logs: sales_upload_submitted"]
+    REJECT --> ERRMODAL["Error modal shows rejected rows\n(officer can fix typos and resubmit,\nbut a true conflict still needs §below)"]
+
+    AUDIT1 --> SHEET1["Auto-push to Google Sheets\n(synced=0 entries)"]
+
+    AM["Accountant Manager"] --> UH["Upload History →\n'Sales Upload Records — Approval'"]
+    UH --> REVIEW["Reviews batches by branch/officer/date"]
+    REVIEW --> DECIDE{"Bad batch needs\nresubmission?"}
+    DECIDE -->|Yes| DELETE["Delete & Allow Resubmit\n→ deletes only THIS batch's daily_entries rows"]
+    DELETE --> AUDIT2["audit_logs: sales_upload_deleted"]
+    AUDIT2 --> AO2["Officer re-uploads\ncorrected rows — now no conflict"]
+    AO2 --> UP
+
+    DECIDE -->|No, batch is fine| DONE["No action needed"]
+```
+
+Manual Entry was removed app-wide — Daily Entry is XLSX-upload-only now, for every role.
+
+---
+
+## Diagram 4 — Roster: One Table, Carry-Forward by Month
+
+```mermaid
+flowchart TD
+    EDIT["HR/Admin edits a rep,\nor uploads roster XLSX\n(Effective_Date decides the month)"] --> ENSURE["ensureMonthMaterialized(year, month)"]
+    ENSURE -->|month already has rows| UPSERT["Upsert this rep's row\nfor that month"]
+    ENSURE -->|month is new| COPY["Copy nearest earlier month's\nfull row-set forward first"]
+    COPY --> UPSERT
+    UPSERT --> TABLE[("roster_monthly\nsalesman_id, year_month,\nbranch_id, supervisor_id,\nstaff_type, active")]
+
+    VIEW["Roster screen / report:monthly\nviewing month X"] --> RESOLVE["resolveYm(X) =\nMAX(year_month) <= X"]
+    RESOLVE --> TABLE
+    TABLE --> SHOW["Shows that resolved month's\nfull snapshot — read-only,\nnever writes"]
+
+    TABLE -.->|push| ROSTERSHEET["Google Sheets: Roster tab\n(one tab, Month column)"]
+    ROSTERSHEET -.->|pull, re-hash/parse| TABLE
+```
+
+A month nobody touched simply reads as whatever the last edited month said — no "confirm this month, nothing changed" step. Deactivating/transferring a rep next month never changes how a past month's report reads (§ Diagram 5).
+
+---
+
+## Diagram 5 — Why Past Reports Stay Stable Over Time
 
 ```mermaid
 flowchart LR
-    subgraph STAFF["Every Working Day"]
-        REP["108 Sales Staff\n4 Branches"]
-        ENTRY["Record Sales\nGold Jewelry · Gold Bar · Quantity"]
-    end
+    SALE["Daily sale entry\n(Jan, 2026)"] --> STAMP["daily_entries row stamps\nbranch_id + staff_type\nAT THE TIME OF SALE"]
+    STAMP --> SCORE["KPI score = always computed\nfrom the entry's OWN stamped values\n— never re-derived from current roster"]
 
-    subgraph SYSTEM["System Automatically"]
-        SCORE["Scores Performance\nB2C & B2B rates apply separately"]
-        RANK["Ranks Each Staff\nKPI% vs monthly target"]
-        CALC["Calculates Commission\nin LAK per staff"]
-    end
+    ROSTERJAN["roster_monthly: Jan snapshot\n(headcount, who's on which branch)"] --> TARGETJAN["Branch point target for Jan\n= headcount(Jan) × per-person rate"]
 
-    subgraph MGMT["Management Gets"]
-        REPORT["Live KPI Reports\nper rep · per team · per branch"]
-        COMMISSION["Commission Payroll\nstaff + supervisor amounts"]
-        CLOUD["Google Sheets Backup\nauto-sync · always accessible"]
-    end
+    TRANSFER["Rep transfers branch in March"] -.->|does NOT touch| STAMP
+    TRANSFER -.->|does NOT touch| ROSTERJAN
 
-    REP --> ENTRY --> SCORE --> RANK --> REPORT
-    RANK --> CALC --> COMMISSION
-    SCORE --> CLOUD
+    SCORE --> REPORT["Dashboard / Executive / Team Performance /\nReports screen — viewing January\n(today, or next year — same numbers)"]
+    TARGETJAN --> REPORT
 ```
 
 ---
 
-## Diagram 4 — Organization & Who Sees What
+## Diagram 6 — KPI Scoring Engine
 
 ```mermaid
 flowchart TD
-    CEO["Executive / CEO\nFull visibility — all 4 branches\nRead-only · no data entry"]
+    SALE["Daily Sale\nper rep, per day"]
+    SALE --> J["Jewelry weight (Baht)"]
+    SALE --> B["Bar weight (Baht)"]
+    SALE --> Q["Quantity (pcs)"]
 
-    CEO --> MM["Morning Market\nBranch Manager"]
-    CEO --> VC["Vientiane Center\nBranch Manager"]
-    CEO --> IT["ITecc\nBranch Manager"]
-    CEO --> VT["VangThong\nBranch Manager"]
+    J -->|"rate lookup:\nbranch+month > branch+standing >\nglobal+month > global+standing"| PJ["Jewelry Score = weight × rate"]
+    B -->|"same priority rule"| PB["Bar Score = weight × rate"]
+    Q -->|"tier lookup, same priority rule,\nfirst tier where qty >= threshold"| PQ["Qty Score = qty × tier multiplier"]
 
-    MM --> MM_A["Alpha Team\nSupervisor · 9 staff · B2C"]
-    MM --> MM_B["Beta Team\nSupervisor · 9 staff · B2C"]
-    MM --> MM_G["Gamma Team\nSupervisor · 9 staff · B2B"]
+    PJ & PB & PQ --> TOTAL["Total KPI Points"]
+    TOTAL --> KPIPCT["KPI % = Total Points ÷ Branch Point Target × 100"]
 
-    VC --> VC_A["Alpha Team · B2C"]
-    VC --> VC_B["Beta Team · B2C"]
-    VC --> VC_G["Gamma Team · B2B"]
-
-    IT --> IT_A["Alpha Team · B2C"]
-    IT --> IT_B["Beta Team · B2C"]
-    IT --> IT_G["Gamma Team · B2B"]
-
-    VT --> VT_A["Alpha Team · B2C"]
-    VT --> VT_B["Beta Team · B2C"]
-    VT --> VT_G["Gamma Team · B2B"]
-
-    subgraph TOTAL["Total: 108 Sales Staff"]
-        T1["4 Branches × 3 Teams × 9 Staff"]
-        T2["B2C Teams — retail customers"]
-        T3["B2B Teams — business customers"]
-    end
+    KPIPCT --> SUP["Supervisor score = team total × sup_kpi_pct%\n(default 30%, editable)"]
+    TOTAL --> COMM["Commission = jewelry×rate + bar×rate + qty×rate\n(LAK, per staff_type per month)"]
 ```
 
----
-
-## Diagram 5 — How KPI Score Becomes Commission
-
-```mermaid
-flowchart TD
-    SALE["Daily Sales\nper staff member"]
-
-    SALE --> J["Gold Jewelry sold\nBaht weight"]
-    SALE --> B["Gold Bar sold\nBaht weight"]
-    SALE --> Q["Quantity sold\npieces"]
-
-    J -->|"B2C × 15\nB2B × 20"| PJ["Jewelry Points"]
-    B -->|"B2C × 7.5\nB2B × 10"| PB["Bar Points"]
-    Q -->|"tier multiplier\nbranch-specific"| PQ["Quantity Points"]
-
-    PJ & PB & PQ --> TOTAL["Total Monthly Score"]
-
-    TOTAL --> KPI["KPI%\nScore ÷ Personal Target × 100"]
-
-    KPI -->|"above 100%"| GREEN["High Performer"]
-    KPI -->|"60–100%"| YELLOW["On Track"]
-    KPI -->|"below 60%"| RED["Needs Support"]
-
-    TOTAL --> COMM["Commission Payout"]
-
-    subgraph COMM_CALC["Commission Formula"]
-        C1["Jewelry Baht × LAK rate\n+ Bar Baht × LAK rate\n+ Qty × LAK rate"]
-        C2["Supervisor gets 30%\nof team total"]
-    end
-
-    COMM --> C1
-    C1 --> C2
-```
+Editing a rate today never rewrites how a past month already scored — that's why rates/tiers are `year_month`/`effective_from`-`effective_to` scoped instead of one eternal value.
 
 ---
 
 ## Change Log
 
-| Version | Date       | Change |
-|---------|------------|--------|
-| v1.3.1  | 2026-06-06 | Initial flowchart — B2C/B2B split, commission screen, customer type report, individual targets |
-| v1.3.1  | 2026-06-06 | Added Diagrams 3–5: executive overview, org hierarchy, KPI-to-commission |
-| v1.3.2  | 2026-06-06 | Bidirectional Sheets sync: Settings/Branches/KPIRates/QtyTiers/Roster tabs; auto-pull on startup |
-| v1.3.3  | 2026-06-07 | Commission integrated as tab 4 in /reports (no longer separate /commission route); Supervisor tab added |
-| v1.3.4  | 2026-06-07 | Schema v9: kpi_metric_type_rates + commission_configs + staff_monthly_targets tables; test data loader in Settings |
-| v1.3.5  | 2026-06-07 | Roster CRUD IPC (roster.ts); Roster tab in Upload History (admin only); Force Full Sync in Settings |
-| v1.3.6  | 2026-06-08 | Roster tab: month filter + supervisor filter; Individual Profile Modals in Reports (rep + supervisor) |
-| v1.3.7  | 2026-06-09 | Modal drill-down granularity (Month/Week/Day); Commission ₭ column in history table; Supervisor Score Weight rename; Unified KPI Config section per month; GitHub Actions manual-only builds |
+| Version | Date | Change |
+|---------|------|--------|
+| v1.3.1–v1.3.7 | 2026-06-06 to 09 | Original 4-role design — superseded, see below |
+| v1.7.x | 2026-06-17 | 8-role redesign (admin/sales_sup/accountant_officer/accountant_manager/branch_manager/hr/hr_support/top_manager); Manual Entry removed; sales-upload approval workflow added |
+| v1.7.x | 2026-06-17 | Roster redesigned to single `roster_monthly` table with carry-forward reads, replacing 3-table event-sourced design |
+| v1.7.40 | 2026-06-17 | `report:monthly` fixed to resolve reps/branch/target as-of the viewed month (was reading live roster — drifted when reps transferred/deactivated) |
+| v1.7.41 | 2026-06-17 | Login now pulls from Google Sheets before entering the app, with a loading screen |
+
+*Diagrams older than v1.7.x described a 4-role system (admin/branch_manager/supervisor/executive) and Manual Entry — fully replaced, kept only in version history above for context.*

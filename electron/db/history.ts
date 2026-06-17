@@ -8,7 +8,7 @@ function ym(year: number, month: number): string {
 // The nearest month <= target that actually has rows — this is the carry-forward read:
 // a month nobody touched simply reads as whatever the last edited month said, with zero
 // extra storage and zero "confirm this month" step required.
-function resolveYm(db: Database, year: number, month: number): string | null {
+export function resolveYm(db: Database, year: number, month: number): string | null {
   const target = ym(year, month)
   const row = prepare(db, `SELECT MAX(year_month) AS ym FROM roster_monthly WHERE year_month <= ?`).get(target) as { ym: string | null } | undefined
   return row?.ym ?? null

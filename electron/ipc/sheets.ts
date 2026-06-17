@@ -573,6 +573,57 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
 
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 export function registerSheetsHandlers(ipcMain: IpcMain): void {
+
+  // ── Pre-login bootstrap — no token, intentionally ─────────────────────────
+  // A brand-new device's local DB only has the seeded default accounts (admin/admin1234,
+  // etc.) until it connects to Sheets and pulls the real Users tab down. These 3 handlers
+  // let that happen from the Login screen, before anyone has signed in.
+  //
+  // Self-gated for safety: bootstrapConnect refuses to run if this device is ALREADY
+  // configured. Once a device has a real sheets_id/service_account_path saved, changing it
+  // requires an authenticated admin via Settings (sheets:saveConfig, unchanged) — otherwise
+  // anyone who can launch the exe could silently repoint an already-live device at a
+  // different spreadsheet and pull in attacker-controlled accounts.
+
+  ipcMain.handle('sheets:isConfigured', async () => {
+    return !!(getSetting('sheets_id') && getSetting('service_account_path'))
+  })
+
+  ipcMain.handle('sheets:browseFileBootstrap', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select Service Account JSON',
+      filters: [{ name: 'JSON Files', extensions: ['json'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    return result.filePaths[0]
+  })
+
+  ipcMain.handle('sheets:bootstrapConnect', async (_e, sheetsId: string, serviceAccountPath: string) => {
+    if (getSetting('sheets_id') && getSetting('service_account_path')) {
+      return { success: false, error: 'This device is already connected. Log in and use Settings to change it.' }
+    }
+    if (!sheetsId) return { success: false, error: 'Spreadsheet ID required.' }
+    if (!serviceAccountPath) return { success: false, error: 'Service account JSON path required.' }
+    if (!existsSync(serviceAccountPath)) return { success: false, error: `File not found: ${serviceAccountPath}` }
+
+    try {
+      const auth   = getServiceAuth(serviceAccountPath)
+      const sheets = google.sheets({ version: 'v4', auth })
+      await sheets.spreadsheets.get({ spreadsheetId: sheetsId, fields: 'properties.title' }) // throws if unreachable/unshared
+
+      const db = getDb()
+      prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('sheets_id', ?)`).run(sheetsId)
+      prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('service_account_path', ?)`).run(serviceAccountPath)
+
+      const result = await pullAllFromCloud(sheetsId, serviceAccountPath)
+      if (!result.success) return { success: false, error: result.error ?? 'Connected, but the initial sync failed.' }
+      const c = result.counts
+      return { success: true, message: `Connected — synced ${c.users} users, ${c.roster} roster rows, ${c.entries} entries.` }
+    } catch (e: unknown) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
   ipcMain.handle('sheets:getConfig', async (_e, token: string) => {
     requireAuth(token)
     return { sheetsId: getSetting('sheets_id'), serviceAccountPath: getSetting('service_account_path'), lastSyncedAt: getSetting('last_synced_at') }

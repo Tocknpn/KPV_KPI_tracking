@@ -1,3 +1,5 @@
+> **OUTDATED — describes the old 3-role / Manual Entry system.** See `GO_LIVE_GUIDEBOOK.md` and `README.md` for the current 8-role system. Left here for historical context only.
+
 # SalesTrack Pro — System Overview
 > Quick reference for management briefing · v1.0.7
 

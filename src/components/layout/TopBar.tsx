@@ -10,6 +10,20 @@ const ZOOM_LEVELS = [
 ]
 const ZOOM_KEY = 'app_ui_zoom'
 
+// Short relative form ("3m ago") for the topbar; the full timestamp is still in the title
+// attribute on hover. Keeps the freshness indicator readable without forcing a tooltip.
+function relativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime()
+  if (diffMs < 0 || isNaN(diffMs)) return 'just now'
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
 interface Props {
   title: string
 }
@@ -19,6 +33,8 @@ export function TopBar({ title }: Props) {
   const { token, user, clearSession, branches } = useAuthStore()
   const { unsyncedCount, isSyncing, setIsSyncing, setUnsyncedCount, sidebarCollapsed } = useAppStore()
   const [syncResult, setSyncResult] = useState<string | null>(null)
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
+  const [, setNowTick] = useState(0) // forces relativeTime() to re-render as time passes
   const [zoom, setZoomState] = useState<number>(() => {
     const saved = localStorage.getItem(ZOOM_KEY)
     return saved ? parseFloat(saved) : 1.0
@@ -27,6 +43,13 @@ export function TopBar({ title }: Props) {
   useEffect(() => {
     document.documentElement.style.zoom = String(zoom)
   }, [zoom])
+
+  useEffect(() => {
+    if (!token) return
+    window.api.getSheetsConfig(token).then(cfg => setLastSyncedAt(cfg.lastSyncedAt || null))
+    const tick = setInterval(() => setNowTick(t => t + 1), 30000) // refresh "Xm ago" text every 30s
+    return () => clearInterval(tick)
+  }, [token])
 
   function handleZoom(value: number) {
     setZoomState(value)
@@ -44,6 +67,8 @@ export function TopBar({ title }: Props) {
         setSyncResult(`Synced ${result.count} records`)
         const count = await window.api.getUnsyncedCount(token)
         setUnsyncedCount(count)
+        const cfg = await window.api.getSheetsConfig(token)
+        setLastSyncedAt(cfg.lastSyncedAt || null)
       } else {
         setSyncResult(result.error ?? 'Sync failed')
       }
@@ -80,6 +105,17 @@ export function TopBar({ title }: Props) {
         {syncResult && (
           <span className="text-body-sm text-on-surface-variant bg-surface-container px-3 py-1 rounded-full animate-slide-in">
             {syncResult}
+          </span>
+        )}
+
+        {/* Data freshness — when this device last synced with Google Sheets */}
+        {lastSyncedAt && (
+          <span
+            className="text-[11px] text-on-surface-variant flex items-center gap-1"
+            title={`Last synced: ${new Date(lastSyncedAt).toLocaleString()}`}
+          >
+            <span className="material-symbols-outlined text-[14px]">cloud_done</span>
+            Updated {relativeTime(lastSyncedAt)}
           </span>
         )}
 
