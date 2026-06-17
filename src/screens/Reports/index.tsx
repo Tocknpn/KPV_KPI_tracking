@@ -263,7 +263,7 @@ export default function Reports() {
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3500) }
 
   // ── Scope helpers ──────────────────────────────────────────────────────
-  const isBranchScoped = user?.role === 'supervisor' || user?.role === 'branch_manager'
+  const isBranchScoped = user?.role === 'sales_sup' || user?.role === 'branch_manager' || user?.role === 'accountant'
   const effectiveBranchIds: number[] = isBranchScoped ? [user.branchId ?? 1] : selectedBranchIds
   const isMultiBranch = effectiveBranchIds.length !== 1
   const showSupFilter = user?.role !== 'supervisor'

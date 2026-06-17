@@ -159,6 +159,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('roster:getAll', token),
   getRosterAllAsOf: (token: string, year: number, month: number) =>
     ipcRenderer.invoke('roster:getAllAsOf', token, year, month),
+  publishRosterMonth: (token: string, year: number, month: number) =>
+    ipcRenderer.invoke('roster:publishMonth', token, year, month),
   saveRosterRep: (token: string, data: unknown) =>
     ipcRenderer.invoke('roster:saveRep', token, data),
   deactivateRosterRep: (token: string, id: number) =>

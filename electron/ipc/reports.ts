@@ -52,7 +52,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
   ) => {
     const user = requireAuth(token)
     let effectiveBranchIds: number[]
-    if (user.role === 'sales_sup' || user.role === 'branch_manager') {
+    if (user.role === 'sales_sup' || user.role === 'branch_manager' || user.role === 'accountant') {
       effectiveBranchIds = [user.branch_id ?? 1]
     } else {
       effectiveBranchIds = branchIds
@@ -169,7 +169,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     if (user.role === 'sales_sup') {
       effectiveBranchIds = [user.branch_id ?? branchIds[0] ?? 1]
       effectiveSupervisorId = user.supervisor_id
-    } else if (user.role === 'branch_manager') {
+    } else if (user.role === 'branch_manager' || user.role === 'accountant') {
       effectiveBranchIds = user.branch_id ? [user.branch_id] : branchIds
     } else {
       effectiveBranchIds = branchIds

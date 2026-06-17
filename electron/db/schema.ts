@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 14
+const SCHEMA_VERSION = 15
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -399,6 +399,29 @@ export function applySchema(db: Database): boolean {
       db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_kmtr_branch ON kpi_metric_type_rates(metric_id, branch_id, staff_type) WHERE branch_id IS NOT NULL`)
     } catch { /* already exists */ }
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '14')`).run()
+  }
+
+  if (currentVersion < 15) {
+    // A month with no explicit roster activity = no roster = no one to map entries/KPI to.
+    // This table is the gate: a month must appear here (via upload, manual edit, or an
+    // explicit "Confirm Roster" click) before its roster is shown as anything but empty.
+    db.run(`
+      CREATE TABLE IF NOT EXISTS roster_months (
+        year_month   TEXT PRIMARY KEY,
+        published_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+    // Backfill: any month that already has real sales activity obviously had a working
+    // roster — don't retroactively blank those out. Also backfill today's month so an
+    // existing install doesn't go blank immediately after this update.
+    db.run(`
+      INSERT OR IGNORE INTO roster_months (year_month)
+      SELECT DISTINCT strftime('%Y%m', entry_date) FROM daily_entries
+    `)
+    const now = new Date()
+    const currentYm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
+    db.prepare(`INSERT OR IGNORE INTO roster_months (year_month) VALUES (?)`).run(currentYm)
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '15')`).run()
   }
 
   return false // Existing DB — no seeding needed

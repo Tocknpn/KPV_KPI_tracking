@@ -250,13 +250,14 @@ export default function Roster() {
 
   const [year, setYear]   = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
-  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1
   const isHr = user?.role === 'hr'
 
   const [roster, setRoster]           = useState<RosterRow[]>([])
+  const [published, setPublished]     = useState(true)
   const [supervisors, setSupervisors] = useState<Supervisor[]>([])
   const [loading, setLoading]         = useState(false)
   const [syncing, setSyncing]         = useState(false)
+  const [publishing, setPublishing]   = useState(false)
   const [repModal, setRepModal]       = useState<'create' | 'edit' | null>(null)
   const [editRep, setEditRep]         = useState<RosterRow | null>(null)
   const [toast, setToast]             = useState('')
@@ -279,16 +280,27 @@ export default function Roster() {
     if (!token) return
     setLoading(true)
     try {
-      const [reps, sups] = await Promise.all([
-        isCurrentMonth ? window.api.getRosterAll(token) : window.api.getRosterAllAsOf(token, year, month),
+      const [snapshot, sups] = await Promise.all([
+        window.api.getRosterAllAsOf(token, year, month) as Promise<{ published: boolean; rows: RosterRow[] }>,
         window.api.getSupervisors(token),
       ])
-      setRoster(reps as RosterRow[])
+      setRoster(snapshot.rows)
+      setPublished(snapshot.published)
       setSupervisors(sups as Supervisor[])
     } finally { setLoading(false) }
   }
 
   useEffect(() => { loadRoster() }, [token, year, month])
+
+  async function handleConfirmNoChanges() {
+    if (!token) return
+    setPublishing(true)
+    try {
+      await window.api.publishRosterMonth(token, year, month)
+      showToast(`Roster confirmed for ${MONTHS[month - 1]} ${year} — no changes.`)
+      loadRoster()
+    } finally { setPublishing(false) }
+  }
 
   async function handleSaveRep(data: {
     id?: number; repCode: string; fullName: string; nickname: string
@@ -420,9 +432,9 @@ export default function Roster() {
         <div>
           <h2 className="font-headline-lg text-headline-lg text-on-surface">Roster</h2>
           <p className="text-on-surface-variant text-body-md mt-1">
-            {isCurrentMonth
-              ? 'Current roster — edit, add, deactivate, or upload reps'
-              : `Roster as it was in ${MONTHS[month - 1]} ${year} — read-only (reconstructed from change history)`}
+            {published
+              ? `Roster for ${MONTHS[month - 1]} ${year} — edit, add, deactivate, or upload reps`
+              : `No roster uploaded for ${MONTHS[month - 1]} ${year} yet`}
             <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold ml-2">{isHr ? 'HR' : 'Admin'}</span>
           </p>
         </div>
@@ -439,12 +451,32 @@ export default function Roster() {
         </div>
       </div>
 
-      {!isCurrentMonth && (
-        <div className="mb-5 flex items-start gap-3 bg-secondary-container/20 border border-secondary/20 rounded-xl px-5 py-3">
-          <span className="material-symbols-outlined text-secondary mt-0.5">history</span>
-          <p className="text-body-sm text-on-surface-variant">
-            Viewing a past month — this is a reconstructed snapshot from the roster change history, not the live roster. Add/Edit/Deactivate/Upload are disabled here; switch to {MONTHS[now.getMonth()]} {now.getFullYear()} to make changes.
-          </p>
+      {!published && (
+        <div className="mb-5 flex items-start gap-3 bg-error-container/20 border border-error/30 rounded-xl px-5 py-4">
+          <span className="material-symbols-outlined text-error mt-0.5">warning</span>
+          <div className="flex-1">
+            <p className="font-label-md text-label-md text-error font-bold uppercase mb-1">No Roster — {MONTHS[month - 1]} {year}</p>
+            <p className="text-body-sm text-on-surface-variant mb-3">
+              No roster was uploaded or confirmed for this month. No people = no mapping = Daily Entry and KPI Report have nothing to show for {MONTHS[month - 1]} {year} until this is resolved.
+            </p>
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={() => setShowUpload(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white font-label-md text-label-md hover:opacity-90 transition-all">
+                <span className="material-symbols-outlined text-sm">upload_file</span>
+                Upload Roster
+              </button>
+              <button onClick={() => { setEditRep(null); setRepModal('create') }}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary transition-all">
+                <span className="material-symbols-outlined text-sm">person_add</span>
+                Add Rep
+              </button>
+              <button onClick={handleConfirmNoChanges} disabled={publishing}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant text-on-surface font-label-md text-label-md hover:bg-surface-container disabled:opacity-60 transition-all">
+                <span className={`material-symbols-outlined text-sm ${publishing ? 'animate-spin-slow' : ''}`}>{publishing ? 'sync' : 'check_circle'}</span>
+                Confirm Roster (No Changes)
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -499,23 +531,21 @@ export default function Roster() {
             <span className="material-symbols-outlined text-sm">file_download</span>
             Export
           </button>
-          {isCurrentMonth && (<>
-            <button onClick={syncToSheets} disabled={syncing}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tertiary text-white font-label-md text-label-md hover:opacity-90 disabled:opacity-60 transition-all">
-              <span className={`material-symbols-outlined text-sm ${syncing ? 'animate-spin-slow' : ''}`}>cloud_upload</span>
-              {syncing ? 'Syncing...' : 'Sync to Sheets'}
-            </button>
-            <button onClick={() => setShowUpload(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white font-label-md text-label-md hover:opacity-90 transition-all">
-              <span className="material-symbols-outlined text-sm">upload_file</span>
-              Upload Roster
-            </button>
-            <button onClick={() => { setEditRep(null); setRepModal('create') }}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary transition-all">
-              <span className="material-symbols-outlined text-sm">person_add</span>
-              Add Rep
-            </button>
-          </>)}
+          <button onClick={syncToSheets} disabled={syncing}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tertiary text-white font-label-md text-label-md hover:opacity-90 disabled:opacity-60 transition-all">
+            <span className={`material-symbols-outlined text-sm ${syncing ? 'animate-spin-slow' : ''}`}>cloud_upload</span>
+            {syncing ? 'Syncing...' : 'Sync to Sheets'}
+          </button>
+          <button onClick={() => setShowUpload(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white font-label-md text-label-md hover:opacity-90 transition-all">
+            <span className="material-symbols-outlined text-sm">upload_file</span>
+            Upload Roster
+          </button>
+          <button onClick={() => { setEditRep(null); setRepModal('create') }}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary transition-all">
+            <span className="material-symbols-outlined text-sm">person_add</span>
+            Add Rep
+          </button>
         </div>
       </div>
 
@@ -577,7 +607,7 @@ export default function Roster() {
                 </td></tr>
               ) : filteredRoster.length === 0 ? (
                 <tr><td colSpan={7} className="py-10 text-center text-on-surface-variant text-body-sm">
-                  No reps match the current filters.
+                  {published ? 'No reps match the current filters.' : `No roster uploaded for ${MONTHS[month - 1]} ${year}.`}
                 </td></tr>
               ) : filteredRoster.map(rep => (
                 <tr key={rep.id} className={`transition-colors group ${rep.active === 0 ? 'opacity-50' : 'hover:bg-surface-container/20'}`}>
@@ -611,25 +641,23 @@ export default function Roster() {
                     <StatusBadge label={rep.active === 1 ? 'Active' : 'Inactive'} variant={rep.active === 1 ? 'success' : 'neutral'} />
                   </td>
                   <td className="px-5 py-3">
-                    {isCurrentMonth && (
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => { setEditRep(rep); setRepModal('edit') }}
-                          className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Edit rep">
-                          <span className="material-symbols-outlined text-sm">edit</span>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => { setEditRep(rep); setRepModal('edit') }}
+                        className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Edit rep">
+                        <span className="material-symbols-outlined text-sm">edit</span>
+                      </button>
+                      {rep.active === 1 ? (
+                        <button onClick={() => handleDeactivate(rep)}
+                          className="p-1.5 text-error hover:bg-error-container/30 rounded-lg transition-colors" title="Deactivate">
+                          <span className="material-symbols-outlined text-sm">person_off</span>
                         </button>
-                        {rep.active === 1 ? (
-                          <button onClick={() => handleDeactivate(rep)}
-                            className="p-1.5 text-error hover:bg-error-container/30 rounded-lg transition-colors" title="Deactivate">
-                            <span className="material-symbols-outlined text-sm">person_off</span>
-                          </button>
-                        ) : (
-                          <button onClick={() => handleReactivate(rep)}
-                            className="p-1.5 text-tertiary hover:bg-tertiary/10 rounded-lg transition-colors" title="Reactivate">
-                            <span className="material-symbols-outlined text-sm">person_check</span>
-                          </button>
-                        )}
-                      </div>
-                    )}
+                      ) : (
+                        <button onClick={() => handleReactivate(rep)}
+                          className="p-1.5 text-tertiary hover:bg-tertiary/10 rounded-lg transition-colors" title="Reactivate">
+                          <span className="material-symbols-outlined text-sm">person_check</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -42,11 +42,11 @@ export default function DailyEntry() {
   const [errorRows, setErrorRows] = useState<ErrorRow[]>([])
   const [showErrorModal, setShowErrorModal] = useState(false)
 
-  const effectiveBranchId = (user?.role === 'supervisor' || user?.role === 'branch_manager')
+  const effectiveBranchId = (user?.role === 'sales_sup' || user?.role === 'branch_manager' || user?.role === 'accountant')
     ? (user.branchId ?? 1)
     : (selectedBranchId ?? branches[0]?.id ?? 1)
 
-  const showSupColumn = user?.role !== 'supervisor'
+  const showSupColumn = user?.role !== 'sales_sup'
 
   const branchName = branches.find(b => b.id === effectiveBranchId)?.name ?? ''
 

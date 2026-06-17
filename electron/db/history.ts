@@ -23,11 +23,32 @@ export function snapshotSalesman(db: Database, salesmanId: number, effectiveDate
   }
 }
 
+// Gate: a month must have an explicit roster action (upload, manual edit, or a plain
+// "Confirm Roster" click) recorded before its roster counts as anything but empty.
+// No roster = no one to map daily entries/KPI to for that month.
+export function isMonthPublished(db: Database, year: number, month: number): boolean {
+  const ym = `${year}${String(month).padStart(2, '0')}`
+  return !!prepare(db, `SELECT 1 FROM roster_months WHERE year_month = ?`).get(ym)
+}
+
+export function publishMonth(db: Database, year: number, month: number): void {
+  const ym = `${year}${String(month).padStart(2, '0')}`
+  prepare(db, `INSERT OR IGNORE INTO roster_months (year_month) VALUES (?)`).run(ym)
+}
+
+// dateStr is YYYY-MM-DD — used when a roster change carries an explicit Effective_Date
+export function publishMonthFromDate(db: Database, dateStr: string): void {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return
+  prepare(db, `INSERT OR IGNORE INTO roster_months (year_month) VALUES (?)`).run(dateStr.slice(0, 4) + dateStr.slice(5, 7))
+}
+
 // Active headcount for a branch AS OF the end of a given month — uses the most recent
 // snapshot at or before that month, not today's roster. New joiners after that month are
 // excluded via created_at (a real, immutable fact already on the salesmen row).
 // staffType, if given, counts only reps of that type as of that month (for B2C/B2B target splits).
+// Returns 0 if the month was never published — no roster = no target, by design.
 export function getHeadcountAsOf(db: Database, branchId: number, year: number, month: number, staffType?: string): number {
+  if (!isMonthPublished(db, year, month)) return 0
   const daysInMonth = new Date(year, month, 0).getDate()
   // Space separator (not 'T') — matches SQLite's own datetime('now') format used as the
   // changed_at default, so string comparison sorts correctly down to the second.

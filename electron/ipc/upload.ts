@@ -3,7 +3,7 @@ import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin } from './auth'
 import { pushAllConfigIfConfigured, syncEntriesToCloudIfConfigured } from './sheets'
-import { snapshotSalesman } from '../db/history'
+import { snapshotSalesman, publishMonth, publishMonthFromDate } from '../db/history'
 
 export interface UploadRowResult {
   row: number
@@ -195,6 +195,8 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           }
           // KPI point target is always resolved from HR KPI Setting — roster upload no longer carries per-rep targets
           snapshotSalesman(db, salesmanId, r.effectiveDate)
+          if (r.effectiveDate) publishMonthFromDate(db, r.effectiveDate)
+          else { const n = new Date(); publishMonth(db, n.getFullYear(), n.getMonth() + 1) }
         }
       })
       pushAllConfigIfConfigured(db).catch(() => {})

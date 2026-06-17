@@ -13,7 +13,7 @@ interface Props {
 }
 
 export function AppShell({ children, title, allowedRoles }: Props) {
-  const { token, user, permissions, setPermissions, clearSession, setBranches } = useAuthStore()
+  const { token, user, setPermissions, clearSession, setBranches } = useAuthStore()
   const { setUnsyncedCount, sidebarCollapsed } = useAppStore()
 
   if (!token || !user) return <Navigate to="/login" replace />
@@ -25,12 +25,12 @@ export function AppShell({ children, title, allowedRoles }: Props) {
     if (!token) return
     window.api.getBranches(token).then(setBranches).catch(console.error)
     window.api.getUnsyncedCount(token).then(setUnsyncedCount).catch(console.error)
-    // Re-fetch permissions for stale sessions (e.g. page reload after version update)
-    if (permissions.length === 0) {
-      window.api.getMyPermissions(token)
-        .then((p: string[]) => setPermissions(p))
-        .catch(() => clearSession())
-    }
+    // Always re-fetch permissions on app load — permissions is persisted to localStorage,
+    // so after a version update changes role defaults (e.g. a new menu added), a stale
+    // cached array would otherwise hide the new menu until the user manually logs out/in.
+    window.api.getMyPermissions(token)
+      .then((p: string[]) => setPermissions(p))
+      .catch(() => clearSession())
   }, [token])
 
   return (
