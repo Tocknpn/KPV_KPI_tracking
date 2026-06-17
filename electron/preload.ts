@@ -183,6 +183,8 @@ contextBridge.exposeInMainWorld('api', {
   // ── Sales Report ──────────────────────────────────────────────────────
   getSalesReport: (token: string, branchIds: number[], year: number, month: number, dateFrom: string, dateTo: string, staffType?: string) =>
     ipcRenderer.invoke('sales:getReport', token, branchIds, year, month, dateFrom, dateTo, staffType),
+  getSalesTrendDetail: (token: string, branchIds: number[], dateFrom: string, dateTo: string, staffType?: string) =>
+    ipcRenderer.invoke('sales:getTrendDetail', token, branchIds, dateFrom, dateTo, staffType),
 
   // ── Permissions ───────────────────────────────────────────────────────
   getMyPermissions: (token: string) =>

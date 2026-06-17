@@ -178,8 +178,9 @@ function RosterUploadModal({ token, onDone, onClose }: {
           </button>
         </div>
         <p className="text-body-sm text-on-surface-variant mb-3">
-          Matches by Rep Code — existing reps update, new codes create new reps. Columns: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type, Effective_Date.
+          Matches by Rep Code — existing reps update, new codes create new reps. Columns: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type, Effective_Date, Sup_Code (optional).
           <strong> Effective_Date is required (YYYY-MM-DD)</strong> — it's the only thing that decides which month a row counts for, there is no month picker in the app.
+          <strong> Sup_Code</strong>, if filled in, is matched before Team_Sup_Name — safer than name matching since codes don't collide across Lao text/typos/duplicate names.
           KPI point target is not part of the roster — it is configured in KPI Settings.
         </p>
 
@@ -330,7 +331,7 @@ export default function Roster() {
     setDlTemplate(true)
     try {
       const rows = await window.api.getRosterTemplate(token) as Array<Record<string, unknown>>
-      const header = ['rep_code','full_name','nickname','branch_code','supervisor_name','staff_type','effective_date']
+      const header = ['rep_code','full_name','nickname','branch_code','supervisor_name','staff_type','effective_date','supervisor_code']
       const csvRows = [header.join(',')]
       for (const r of rows) {
         csvRows.push(header.map(k => {
@@ -383,7 +384,7 @@ export default function Roster() {
   }
 
   return (
-    <AppShell title="Roster" allowedRoles={['admin', 'hr']}>
+    <AppShell title="Roster" allowedRoles={['admin', 'hr', 'top_manager', 'hr_support']}>
       {toast && (
         <div className="fixed top-20 right-6 z-50 bg-inverse-surface text-inverse-on-surface px-5 py-3 rounded-xl shadow-lg animate-slide-in font-body-sm">
           {toast}

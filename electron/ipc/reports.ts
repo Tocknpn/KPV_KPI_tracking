@@ -3,7 +3,7 @@ import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
 import { requireAuth } from './auth'
 import { computeKpiScore } from './kpi'
-import { getHeadcountAsOf, resolveYm } from '../db/history'
+import { getHeadcountAsOf, resolveYm, getRosterMapAsOf } from '../db/history'
 
 function buildBranchFilter(ids: number[]): { sql: string; params: number[] } {
   if (ids.length === 0) return { sql: '', params: [] }
@@ -334,11 +334,13 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       ORDER BY sv.branch_id, sv.full_name
     `).all(...bParams) as Array<{ id: number; full_name: string; nickname: string; branch_id: number; staff_type: string; branch_name: string }>
 
+    // Team membership AS OF this month — not today's roster — so a rep who later
+    // transfers off this team or deactivates doesn't change a past month's headcount.
+    // Scoring still uses each entry's own stamped branch_id/staff_type below.
+    const rosterMap = getRosterMapAsOf(db, year, month)
+
     return supervisors.map(sup => {
-      // Team membership (who's on the team, headcount) is current org assignment.
-      // Scoring uses each entry's own stamped branch_id/staff_type, not the rep's
-      // current values, so a transfer/type-change never re-prices past entries.
-      const repIds = (prepare(db, `SELECT id FROM salesmen WHERE supervisor_id = ? AND active = 1`).all(sup.id) as Array<{ id: number }>).map(r => r.id)
+      const repIds = [...rosterMap.entries()].filter(([, v]) => v.supervisor_id === sup.id && v.active === 1).map(([id]) => id)
 
       const entryGroups = repIds.length ? prepare(db, `
         SELECT salesman_id, branch_id, staff_type,
@@ -412,20 +414,29 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const history = months.map(m => {
       const dateFrom = `${m.year}-${String(m.month).padStart(2,'0')}-01`
       const dateTo   = `${m.year}-${String(m.month).padStart(2,'0')}-${new Date(m.year, m.month, 0).getDate()}`
-      const act = prepare(db, `
-        SELECT COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b,
-               COALESCE(SUM(quantity),0) AS q, COUNT(DISTINCT entry_date) AS days
+      // Group by the entry's OWN stamped branch_id/staff_type — not the rep's current
+      // values — so a mid-trend transfer or B2C/B2B change never re-rates past months.
+      const groups = prepare(db, `
+        SELECT branch_id, staff_type,
+          COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q
         FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ?
-      `).get(salesmanId, dateFrom, dateTo) as { j: number; b: number; q: number; days: number }
+        GROUP BY branch_id, staff_type
+      `).all(salesmanId, dateFrom, dateTo) as Array<{ branch_id: number; staff_type: string; j: number; b: number; q: number }>
+      const daysRow = prepare(db, `SELECT COUNT(DISTINCT entry_date) AS days FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ?`).get(salesmanId, dateFrom, dateTo) as { days: number }
+
+      let j = 0, bar = 0, qty = 0, js = 0, bs = 0, qs = 0, commission_lak = 0
+      for (const g of groups) {
+        j += g.j; bar += g.b; qty += g.q
+        js += computeKpiScore(db, 1, g.branch_id, g.j, 0, dateTo, g.staff_type).score
+        bs += computeKpiScore(db, 2, g.branch_id, g.b, 0, dateTo, g.staff_type).score
+        qs += computeKpiScore(db, 3, g.branch_id, g.q, 0, dateTo, g.staff_type).score
+        const commCfg = prepare(db, `SELECT jewelry_rate_lak, bar_rate_lak, qty_rate_lak FROM commission_configs WHERE staff_type=? AND year_month=?`).get(g.staff_type, m.ym) as { jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number } | undefined
+        if (commCfg) commission_lak += g.j * commCfg.jewelry_rate_lak + g.b * commCfg.bar_rate_lak + g.q * commCfg.qty_rate_lak
+      }
       const targetRow = prepare(db, `SELECT point_target FROM staff_monthly_targets WHERE salesman_id=? AND year_month=?`).get(salesmanId, m.ym) as { point_target: number } | undefined
-      const j = act?.j ?? 0; const bar = act?.b ?? 0; const qty = act?.q ?? 0; const pt = targetRow?.point_target ?? 0
-      const js = computeKpiScore(db, 1, rep.branch_id, j, 0, dateTo, rep.staff_type).score
-      const bs = computeKpiScore(db, 2, rep.branch_id, bar, 0, dateTo, rep.staff_type).score
-      const qs = computeKpiScore(db, 3, rep.branch_id, qty, 0, dateTo, rep.staff_type).score
+      const pt = targetRow?.point_target ?? 0
       const total = js + bs + qs
-      const commCfg = prepare(db, `SELECT jewelry_rate_lak, bar_rate_lak, qty_rate_lak FROM commission_configs WHERE staff_type=? AND year_month=?`).get(rep.staff_type, m.ym) as { jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number } | undefined
-      const commission_lak = commCfg ? j * commCfg.jewelry_rate_lak + bar * commCfg.bar_rate_lak + qty * commCfg.qty_rate_lak : 0
-      return { year: m.year, month: m.month, year_month: m.ym, actual_jewelry: j, actual_bar: bar, actual_qty: qty, kpi_score_jewelry: js, kpi_score_bar: bs, kpi_score_qty: qs, kpi_total_score: total, kpi_pct: pt > 0 ? (total / pt) * 100 : 0, point_target: pt, days_with_entries: act?.days ?? 0, commission_lak }
+      return { year: m.year, month: m.month, year_month: m.ym, actual_jewelry: j, actual_bar: bar, actual_qty: qty, kpi_score_jewelry: js, kpi_score_bar: bs, kpi_score_qty: qs, kpi_total_score: total, kpi_pct: pt > 0 ? (total / pt) * 100 : 0, point_target: pt, days_with_entries: daysRow?.days ?? 0, commission_lak }
     })
     return { ...rep, history }
   })
@@ -449,8 +460,6 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     `).get(supId) as { id: number; full_name: string; nickname: string; branch_id: number; branch_name: string; branch_code: string; staff_type: string; active: number } | undefined
     if (!sup) return null
 
-    const reps = prepare(db, `SELECT id, branch_id, staff_type FROM salesmen WHERE supervisor_id=? AND active=1`).all(supId) as Array<{ id: number; branch_id: number; staff_type: string }>
-
     const months: Array<{ year: number; month: number; ym: string }> = []
     const now = new Date()
     for (let i = numMonths - 1; i >= 0; i--) {
@@ -461,17 +470,33 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const history = months.map(m => {
       const dateFrom = `${m.year}-${String(m.month).padStart(2,'0')}-01`
       const dateTo   = `${m.year}-${String(m.month).padStart(2,'0')}-${new Date(m.year, m.month, 0).getDate()}`
+
+      // Team membership AS OF this month — not today's roster — so a rep who later
+      // transfers off this team or deactivates doesn't change a past month's headcount.
+      const rosterMap = getRosterMapAsOf(db, m.year, m.month)
+      const repIds = [...rosterMap.entries()].filter(([, v]) => v.supervisor_id === supId && v.active === 1).map(([id]) => id)
+
       let teamScore = 0; let teamTarget = 0; let teamJ = 0; let teamBar = 0; let teamQty = 0
-      for (const r of reps) {
-        const act = prepare(db, `SELECT COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ?`).get(r.id, dateFrom, dateTo) as { j: number; b: number; q: number }
-        const tRow = prepare(db, `SELECT point_target FROM staff_monthly_targets WHERE salesman_id=? AND year_month=?`).get(r.id, m.ym) as { point_target: number } | undefined
-        const j = act?.j ?? 0; const bar = act?.b ?? 0; const qty = act?.q ?? 0; const pt = tRow?.point_target ?? 0
-        teamJ += j; teamBar += bar; teamQty += qty; teamTarget += pt
-        teamScore += computeKpiScore(db, 1, r.branch_id, j, 0, dateTo, r.staff_type).score + computeKpiScore(db, 2, r.branch_id, bar, 0, dateTo, r.staff_type).score + computeKpiScore(db, 3, r.branch_id, qty, 0, dateTo, r.staff_type).score
+      for (const repId of repIds) {
+        // Score from the entry's OWN stamped branch_id/staff_type — not the rep's current
+        // values — so a mid-trend transfer/type-change never re-rates past months.
+        const groups = prepare(db, `
+          SELECT branch_id, staff_type, COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q
+          FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ? GROUP BY branch_id, staff_type
+        `).all(repId, dateFrom, dateTo) as Array<{ branch_id: number; staff_type: string; j: number; b: number; q: number }>
+        const tRow = prepare(db, `SELECT point_target FROM staff_monthly_targets WHERE salesman_id=? AND year_month=?`).get(repId, m.ym) as { point_target: number } | undefined
+        teamTarget += tRow?.point_target ?? 0
+        for (const g of groups) {
+          teamJ += g.j; teamBar += g.b; teamQty += g.q
+          teamScore += computeKpiScore(db, 1, g.branch_id, g.j, 0, dateTo, g.staff_type).score
+                     + computeKpiScore(db, 2, g.branch_id, g.b, 0, dateTo, g.staff_type).score
+                     + computeKpiScore(db, 3, g.branch_id, g.q, 0, dateTo, g.staff_type).score
+        }
       }
-      return { year: m.year, month: m.month, year_month: m.ym, actual_jewelry: teamJ, actual_bar: teamBar, actual_qty: teamQty, team_total_score: teamScore, team_kpi_pct: teamTarget > 0 ? (teamScore / teamTarget) * 100 : 0, team_point_target: teamTarget, rep_count: reps.length }
+      return { year: m.year, month: m.month, year_month: m.ym, actual_jewelry: teamJ, actual_bar: teamBar, actual_qty: teamQty, team_total_score: teamScore, team_kpi_pct: teamTarget > 0 ? (teamScore / teamTarget) * 100 : 0, team_point_target: teamTarget, rep_count: repIds.length }
     })
-    return { ...sup, rep_count: reps.length, history }
+    const currentRepCount = (prepare(db, `SELECT COUNT(*) AS cnt FROM salesmen WHERE supervisor_id=? AND active=1`).get(supId) as { cnt: number }).cnt
+    return { ...sup, rep_count: currentRepCount, history }
   })
 
   ipcMain.handle('report:branchAnalytics', async (_e,

@@ -181,6 +181,7 @@ export interface ExecutiveBranchRow {
 
 export interface Supervisor {
   id: number
+  sup_code?: string | null
   full_name: string
   nickname: string
   branch_id: number

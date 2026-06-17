@@ -86,7 +86,7 @@ export function normaliseRow(row: Record<string, string>): Record<string, string
 // ── Validate & convert daily rows (rep_code based) ────────────────────────
 export interface DailyRowRaw { date: string; repCode: string; jewelryWeightG: number; barWeightG: number; quantity: number }
 export interface TargetRowRaw { repCode: string; year: number; month: number; jewelryWeightG: number; barWeightG: number; quantity: number }
-export interface RosterRowRaw { repCode: string; fullName: string; nickname: string; branchCode: string; supervisorName: string; staffType: 'b2c' | 'b2b'; effectiveDate: string }
+export interface RosterRowRaw { repCode: string; fullName: string; nickname: string; branchCode: string; supervisorName: string; supervisorCode?: string; staffType: 'b2c' | 'b2b'; effectiveDate: string }
 
 // Column positions for daily template: Date, Rep_Code, Full_Name, Branch_Code, Supervisor_Name, KPI_1, KPI_2, KPI_3
 export function validateDailyRows(parsed: ParseResult): { rows: DailyRowRaw[]; errors: string[] } {
@@ -149,7 +149,8 @@ export function validateTargetRows(parsed: ParseResult): { rows: TargetRowRaw[];
 }
 
 // Column positions for roster template: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name,
-// Staff_Type, Effective_Date (REQUIRED, YYYY-MM-DD).
+// Staff_Type, Effective_Date (REQUIRED, YYYY-MM-DD), Sup_Code (optional, trailing — preferred
+// match over Team_Sup_Name when present, since names collide/typo across Lao text and code doesn't).
 // KPI point target is not part of the roster — it is always looked up from HR KPI Setting.
 // Effective_Date is the month this roster row counts for — there is no app-level month picker;
 // the file is the single source of truth for which month each row belongs to.
@@ -182,6 +183,7 @@ export function validateRosterRows(parsed: ParseResult): { rows: RosterRowRaw[];
       nickname:       (pos[2] ?? '').trim(),
       branchCode,
       supervisorName: (pos[4] ?? '').trim(),
+      supervisorCode: (pos[7] ?? '').trim() || undefined, // optional trailing column — sup_code, preferred match over name when present
       staffType,
       effectiveDate,
     })

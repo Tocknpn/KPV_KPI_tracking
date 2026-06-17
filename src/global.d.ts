@@ -6,6 +6,10 @@ interface Window {
   api: {
     // Auth
     login(username: string, password: string): Promise<{ success: boolean; token: string; user: import('./types').AuthUser; permissions: string[]; error?: string }>
+    getSalesTrendDetail(token: string, branchIds: number[], dateFrom: string, dateTo: string, staffType?: string): Promise<{
+      weeklyDetail: Array<{ week_start: string; label: string; days: number; total: number; qty: number; avg_per_day: number; partial: boolean; wow_pct: number | null; is_base: boolean }>
+      monthlyDetail: Array<{ year_month: string; label: string; days: number; total: number; qty: number; avg_per_day: number; partial: boolean; mom_pct: number | null; is_base: boolean }>
+    }>
     isSheetsConfigured(): Promise<boolean>
     bootstrapConnect(sheetsId: string, serviceAccountPath: string): Promise<{ success: boolean; message?: string; error?: string }>
     browseFileBootstrap(): Promise<string | null>

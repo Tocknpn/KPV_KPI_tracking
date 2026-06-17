@@ -36,6 +36,7 @@ export interface RosterRow {
   nickname: string
   branchCode: string
   supervisorName: string
+  supervisorCode?: string
   staffType?: 'b2c' | 'b2b'
   pointTarget?: number
   yearMonth?: string
@@ -88,6 +89,16 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           if (!salesman) {
             results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason: 'Rep code not found in roster' })
             errorRows.push({ row: i + 1, data: r, reason: 'Rep code not found in roster' })
+            continue
+          }
+
+          // An Accountant Officer is scoped to their own branch — verify the resolved rep
+          // actually belongs to it server-side, don't just trust the role check. Without
+          // this, a file containing another branch's rep codes would insert fine.
+          if (user.branch_id && salesman.branch_id !== user.branch_id) {
+            const reason = 'Rep code belongs to a different branch — you can only upload for your own branch.'
+            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason })
+            errorRows.push({ row: i + 1, data: r, reason })
             continue
           }
 
@@ -228,9 +239,14 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(r.branchCode) as { id: number } | undefined
           if (!branch) { skipped.push(`${r.repCode}(bad branch:${r.branchCode})`); continue }
 
-          // Resolve supervisor by name + branch (optional)
+          // Resolve supervisor — sup_code first (stable, unique, unlike a name), fall back
+          // to name/nickname match for files that don't carry a code yet.
           let supId: number | null = null
-          if (r.supervisorName) {
+          if (r.supervisorCode) {
+            const sup = prepare(db, `SELECT id FROM supervisors WHERE sup_code = ?`).get(r.supervisorCode) as { id: number } | undefined
+            supId = sup?.id ?? null
+          }
+          if (!supId && r.supervisorName) {
             const sup = prepare(db, `SELECT id FROM supervisors WHERE branch_id = ? AND (full_name = ? OR nickname = ?)`).get(branch.id, r.supervisorName, r.supervisorName) as { id: number } | undefined
             supId = sup?.id ?? null
           }
@@ -268,7 +284,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     requireAuth(token)
     return prepare(db, `
       SELECT s.rep_code, s.full_name, s.nickname, b.code AS branch_code,
-        sv.full_name AS supervisor_name, s.staff_type,
+        sv.full_name AS supervisor_name, sv.sup_code AS supervisor_code, s.staff_type,
         smt.point_target, smt.year_month
       FROM salesmen s
       JOIN branches b ON b.id = s.branch_id

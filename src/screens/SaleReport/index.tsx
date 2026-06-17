@@ -36,6 +36,9 @@ interface CalWeekRow { week_start: string; week_end: string; label: string; week
 interface WowMetric { cur: number; prev: number; diff: number; pct: number | null }
 interface BranchWeekRow { label: string; week_start: string; isCurrent: boolean; [branchCode: string]: number | string | boolean }
 interface BranchWowRow { branch_id: number; branch_name: string; branch_code: string; cur: number; prev: number; diff: number; pct: number | null }
+interface WeeklyDetailRow { week_start: string; label: string; days: number; total: number; qty: number; avg_per_day: number; partial: boolean; wow_pct: number | null; is_base: boolean }
+interface MonthlyDetailRow { year_month: string; label: string; days: number; total: number; qty: number; avg_per_day: number; partial: boolean; mom_pct: number | null; is_base: boolean }
+interface TrendDetailData { weeklyDetail: WeeklyDetailRow[]; monthlyDetail: MonthlyDetailRow[] }
 interface ReportData {
   current: SalesPeriod; prevPeriod: SalesPeriod
   sameLastMonth: SalesPeriod; fullLastMonth: SalesPeriod; estMonthEnd: SalesPeriod
@@ -54,6 +57,12 @@ type SaleTab = 'overview' | 'branch' | 'type' | 'trends'
 
 // ── Utils ─────────────────────────────────────────────────────────────────
 function fmt(n: number, d = 1) { return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) }
+function addDaysLocal(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
 function fmtInt(n: number)     { return n.toLocaleString('en-US', { maximumFractionDigits: 0 }) }
 function fmtPct(n: number)     { return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%` }
 
@@ -113,6 +122,96 @@ function WeekdayHeatmap({ rows }: { rows: DayRow[] }) {
         ))}
       </div>
     </GlassCard>
+  )
+}
+
+// ── Weekly & Monthly Detail — WoW/MoM % change, partial-period aware ──────
+function WeeklyMonthlyDetail({ data, loading, trendTo }: { data: TrendDetailData | null; loading: boolean; trendTo: string }) {
+  if (loading) {
+    return <div className="flex items-center justify-center h-32 text-on-surface-variant text-body-sm">
+      <span className="material-symbols-outlined animate-spin-slow mr-2">sync</span>Loading…
+    </div>
+  }
+  if (!data || (data.weeklyDetail.length === 0 && data.monthlyDetail.length === 0)) {
+    return <div className="flex items-center justify-center h-32 text-on-surface-variant text-body-sm">No entry data for this range.</div>
+  }
+
+  const lastMonthly = data.monthlyDetail[data.monthlyDetail.length - 1]
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      {/* Weekly */}
+      <div>
+        <p className="font-bold text-body-md text-on-surface mb-0.5">Weekly Detail — WoW % Change</p>
+        <p className="text-[11px] text-on-surface-variant mb-3">First and last weeks are partial (fewer than 6 trading days)</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-outline-variant/20">
+                {['Week Of','Days','Total','Avg/Day','WoW'].map(h => (
+                  <th key={h} className="py-2 px-2 text-[10px] font-bold uppercase text-on-surface-variant whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-outline-variant/10">
+              {data.weeklyDetail.map(w => (
+                <tr key={w.week_start}>
+                  <td className="py-2 px-2 text-body-sm tabular-nums">{w.week_start}{w.partial && <span className="text-[10px] text-on-surface-variant ml-1.5">(partial)</span>}</td>
+                  <td className="py-2 px-2 text-body-sm tabular-nums">{w.days}</td>
+                  <td className="py-2 px-2 text-body-sm font-bold tabular-nums">{fmt(w.total)}</td>
+                  <td className="py-2 px-2 text-body-sm tabular-nums text-on-surface-variant">{fmt(w.avg_per_day)}</td>
+                  <td className="py-2 px-2 text-right">
+                    {w.is_base
+                      ? <span className="text-[10px] font-bold uppercase text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">base</span>
+                      : <VarChip pct={w.wow_pct} compact />}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Monthly */}
+      <div>
+        <p className="font-bold text-body-md text-on-surface mb-0.5">Monthly Detail — MoM % Change</p>
+        <p className="text-[11px] text-on-surface-variant mb-3">
+          {lastMonthly?.partial ? `${MONTHS[parseInt(lastMonthly.year_month.slice(5,7),10)-1]} reflects data through ${trendTo} only` : ' '}
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-outline-variant/20">
+                {['Month','Days','Total','Avg/Day','MoM'].map(h => (
+                  <th key={h} className="py-2 px-2 text-[10px] font-bold uppercase text-on-surface-variant whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-outline-variant/10">
+              {data.monthlyDetail.map(m => (
+                <tr key={m.year_month}>
+                  <td className="py-2 px-2 text-body-sm tabular-nums">{m.year_month}{m.partial && <span className="text-[10px] text-on-surface-variant ml-1.5">(partial)</span>}</td>
+                  <td className="py-2 px-2 text-body-sm tabular-nums">{m.days}</td>
+                  <td className="py-2 px-2 text-body-sm font-bold tabular-nums">{fmt(m.total)}</td>
+                  <td className="py-2 px-2 text-body-sm tabular-nums text-on-surface-variant">{fmt(m.avg_per_day)}</td>
+                  <td className="py-2 px-2 text-right">
+                    {m.is_base
+                      ? <span className="text-[10px] font-bold uppercase text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">base</span>
+                      : <VarChip pct={m.mom_pct} compact />}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {lastMonthly?.partial && (
+          <div className="mt-3 bg-secondary-container/20 border border-secondary/20 rounded-xl px-3 py-2.5 text-[11px] text-on-surface-variant">
+            {lastMonthly.label}'s total looks lower simply because the month is only {lastMonthly.days} trading days in — its avg/day
+            ({fmt(lastMonthly.avg_per_day)}) is the fairer comparison to the prior month's avg/day.
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -326,6 +425,14 @@ export default function SaleReport() {
   const [data, setData]   = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Weekly/Monthly Detail — its own free date range, NOT locked to the Month picker above,
+  // so it can cross month/year boundaries (the rest of this screen's "vs same period last
+  // month" math needs a single anchor month; this widget doesn't, so it gets its own range).
+  const [trendFrom, setTrendFrom] = useState(() => addDaysLocal(initRange.dateTo, -60))
+  const [trendTo, setTrendTo]     = useState(initRange.dateTo)
+  const [trendData, setTrendData] = useState<TrendDetailData | null>(null)
+  const [trendLoading, setTrendLoading] = useState(false)
+
   const isBranchScoped = user?.role === 'sales_sup' || user?.role === 'branch_manager' || user?.role === 'accountant_officer'
   const effectiveBranchIds: number[] = isBranchScoped ? [user.branchId ?? 1] : selectedBranchIds
 
@@ -343,6 +450,15 @@ export default function SaleReport() {
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [token, JSON.stringify(effectiveBranchIds), year, month, dateFrom, dateTo, staffType])
+
+  useEffect(() => {
+    if (!token || activeTab !== 'trends') return
+    setTrendLoading(true)
+    window.api.getSalesTrendDetail(token, effectiveBranchIds, trendFrom, trendTo, staffType || undefined)
+      .then(setTrendData)
+      .catch(console.error)
+      .finally(() => setTrendLoading(false))
+  }, [token, JSON.stringify(effectiveBranchIds), trendFrom, trendTo, staffType, activeTab])
 
   const d = data
 
@@ -712,6 +828,27 @@ export default function SaleReport() {
           ═════════════════════════════════════════════════════════════ */}
           {activeTab === 'trends' && (
             <div className="space-y-6">
+              {/* Weekly/Monthly Detail — free date range, can cross months/years */}
+              <GlassCard elevated className="p-5">
+                <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
+                  <p className="font-headline-md text-headline-md text-on-surface">Weekly & Monthly Detail</p>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container border border-white/20">
+                    <span className="material-symbols-outlined text-sm text-primary">date_range</span>
+                    <input type="date" value={trendFrom} max={trendTo}
+                      onChange={e => setTrendFrom(e.target.value)}
+                      className="text-body-sm bg-transparent border-none outline-none text-on-surface w-[118px]" />
+                    <span className="text-on-surface-variant text-xs">→</span>
+                    <input type="date" value={trendTo} min={trendFrom} max={maxDate}
+                      onChange={e => setTrendTo(e.target.value)}
+                      className="text-body-sm bg-transparent border-none outline-none text-on-surface w-[118px]" />
+                  </div>
+                </div>
+                <p className="text-body-sm text-on-surface-variant mb-4">
+                  Independent of the Month filter above — pick any range, even across multiple months or years.
+                </p>
+                <WeeklyMonthlyDetail data={trendData} loading={trendLoading} trendTo={trendTo} />
+              </GlassCard>
+
               {/* Daily area chart */}
               {d.dailyTrend.length > 0 && (
                 <GlassCard elevated className="p-6">

@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 20
+const SCHEMA_VERSION = 21
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -127,6 +127,7 @@ const BASE_TABLES = `
   );
   CREATE TABLE IF NOT EXISTS supervisors (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    sup_code   TEXT    UNIQUE,
     full_name  TEXT    NOT NULL,
     nickname   TEXT    NOT NULL DEFAULT '',
     branch_id  INTEGER NOT NULL REFERENCES branches(id),
@@ -510,6 +511,16 @@ export function applySchema(db: Database): boolean {
     // Known value for the one account this session reset directly in the DB file.
     db.run(`UPDATE users SET password_plain = 'admin1234' WHERE username = 'admin' AND password_plain IS NULL`)
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '20')`).run()
+  }
+
+  if (currentVersion < 21) {
+    // Supervisors were only ever matched by full_name/nickname text — fragile across Lao
+    // text, renames, and duplicate names. sup_code gives them the same stable, unique
+    // identifier rep_code already gives salesmen. Nullable/unique so existing supervisors
+    // keep working unmatched-by-code until someone assigns them one.
+    try { db.run(`ALTER TABLE supervisors ADD COLUMN sup_code TEXT`) } catch { /* already exists */ }
+    try { db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_supervisors_sup_code ON supervisors(sup_code) WHERE sup_code IS NOT NULL`) } catch { /* already exists */ }
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '21')`).run()
   }
 
   return false // Existing DB — no seeding needed

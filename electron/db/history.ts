@@ -96,6 +96,19 @@ export function getHeadcountAsOf(db: Database, branchId: number, year: number, m
   return row.cnt
 }
 
+// Per-salesman roster facts AS OF a given month — who was active, on which team, as of
+// that month. Used to answer "who's on this team for this past month" without drifting
+// when a rep later transfers/deactivates (see report:teamPerformance, commission:getReport).
+export function getRosterMapAsOf(db: Database, year: number, month: number): Map<number, { branch_id: number; supervisor_id: number | null; staff_type: string; active: number }> {
+  const map = new Map<number, { branch_id: number; supervisor_id: number | null; staff_type: string; active: number }>()
+  const resolved = resolveYm(db, year, month)
+  if (!resolved) return map
+  const rows = prepare(db, `SELECT salesman_id, branch_id, supervisor_id, staff_type, active FROM roster_monthly WHERE year_month = ?`).all(resolved) as
+    Array<{ salesman_id: number; branch_id: number; supervisor_id: number | null; staff_type: string; active: number }>
+  for (const r of rows) map.set(r.salesman_id, { branch_id: r.branch_id, supervisor_id: r.supervisor_id, staff_type: r.staff_type, active: r.active })
+  return map
+}
+
 // Full roster snapshot AS OF a given month — used by the Roster screen. published=false
 // means there is no month, past or present, with any roster data at all.
 export function getRosterSnapshotAsOf(db: Database, year: number, month: number) {

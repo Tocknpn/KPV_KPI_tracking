@@ -341,4 +341,86 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
       meta: { daysInMonth: daysInM, dayOfMonth: dayOfM, daysRemaining: daysRem },
     }
   })
+
+  // Week-by-week and month-by-month breakdown over an ARBITRARY date range (can cross
+  // month/year boundaries freely — unlike sales:getReport, this has no single anchor month).
+  // "Days" counts trading days (Sun excluded, matches the rest of the app's closed-Sunday
+  // convention) overlapping the selected range, not just days that happen to have entries —
+  // that's what makes a partial first/last week or month detectable and comparable.
+  ipcMain.handle('sales:getTrendDetail', async (_e,
+    token: string, branchIds: number[], dateFrom: string, dateTo: string, staffType?: string,
+  ) => {
+    const user = requireAuth(token)
+    const scopedRoles = ['sales_sup', 'branch_manager', 'accountant_officer']
+    if (scopedRoles.includes(user.role) && user.branch_id) branchIds = [user.branch_id]
+    const db = getDb()
+
+    const { branchSql, typeSql, params } = buildFilters(branchIds, staffType)
+    const dailyRows = prepare(db, `
+      SELECT de.entry_date AS date,
+        COALESCE(SUM(de.jewelry_weight_g),0) + COALESCE(SUM(de.bar_weight_g),0) AS total,
+        COALESCE(SUM(de.quantity),0) AS qty
+      FROM daily_entries de
+      JOIN salesmen s ON s.id = de.salesman_id
+      WHERE de.entry_date >= ? AND de.entry_date <= ? ${branchSql} ${typeSql}
+      GROUP BY de.entry_date
+    `).all(dateFrom, dateTo, ...params) as Array<{ date: string; total: number; qty: number }>
+    const byDate = new Map(dailyRows.map(r => [r.date, r]))
+
+    // Walk every calendar day in the range once, bucketing into weeks and months —
+    // guarantees trading-day counts are correct even for days with zero entries.
+    type Bucket = { total: number; qty: number; days: number }
+    const weekBuckets = new Map<string, Bucket>()
+    const monthBuckets = new Map<string, Bucket>()
+
+    let cursor = dateFrom
+    while (cursor <= dateTo) {
+      const dow = new Date(cursor + 'T00:00:00').getDay()
+      const row = byDate.get(cursor)
+      const wKey = startOfWeekSun(cursor)
+      const mKey = cursor.slice(0, 7) // YYYY-MM
+
+      const w = weekBuckets.get(wKey) ?? { total: 0, qty: 0, days: 0 }
+      const m = monthBuckets.get(mKey) ?? { total: 0, qty: 0, days: 0 }
+      if (row) { w.total += row.total; w.qty += row.qty; m.total += row.total; m.qty += row.qty }
+      if (dow !== 0) { w.days++; m.days++ } // Sunday = closed, not a trading day
+      weekBuckets.set(wKey, w)
+      monthBuckets.set(mKey, m)
+
+      cursor = addDays(cursor, 1)
+    }
+
+    const weeklyDetail = [...weekBuckets.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([wKey, b], i, arr) => {
+      const prev = i > 0 ? arr[i - 1][1] : null
+      return {
+        week_start: wKey, label: weekLabel(wKey),
+        days: b.days, total: b.total, qty: b.qty,
+        avg_per_day: b.days > 0 ? b.total / b.days : 0,
+        partial: b.days < 6,
+        wow_pct: prev ? (prev.total > 0 ? ((b.total - prev.total) / prev.total) * 100 : null) : null,
+        is_base: i === 0,
+      }
+    })
+
+    const monthlyDetail = [...monthBuckets.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([mKey, b], i, arr) => {
+      const prev = i > 0 ? arr[i - 1][1] : null
+      const [y, m] = mKey.split('-').map(Number)
+      const sundaysInMonth = (() => {
+        let n = 0
+        for (let d = 1; d <= daysInMonthOf(y, m); d++) if (new Date(y, m - 1, d).getDay() === 0) n++
+        return n
+      })()
+      const fullTradingDays = daysInMonthOf(y, m) - sundaysInMonth
+      return {
+        year_month: mKey, label: mKey,
+        days: b.days, total: b.total, qty: b.qty,
+        avg_per_day: b.days > 0 ? b.total / b.days : 0,
+        partial: b.days < fullTradingDays,
+        mom_pct: prev ? (prev.total > 0 ? ((b.total - prev.total) / prev.total) * 100 : null) : null,
+        is_base: i === 0,
+      }
+    })
+
+    return { weeklyDetail, monthlyDetail }
+  })
 }

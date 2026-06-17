@@ -112,22 +112,22 @@ async function pushQtyTiers(db: Database, sheets: ReturnType<typeof google.sheet
 async function pushRoster(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
   const rows = (prepare(db, `
     SELECT rm.year_month, s.rep_code, s.full_name, s.nickname, b.code AS branch_code,
-           sup.full_name AS supervisor_name, rm.staff_type, rm.active
+           sup.full_name AS supervisor_name, rm.staff_type, rm.active, sup.sup_code
     FROM roster_monthly rm
     JOIN salesmen s ON s.id = rm.salesman_id
     JOIN branches b ON b.id = rm.branch_id
     LEFT JOIN supervisors sup ON sup.id = rm.supervisor_id
     ORDER BY rm.year_month, b.code, s.rep_code
-  `).all() as Array<{ year_month: string; rep_code: string; full_name: string; nickname: string | null; branch_code: string; supervisor_name: string | null; staff_type: string; active: number }>)
-    .map(r => [readableYearMonth(r.year_month), r.rep_code, r.full_name, r.nickname ?? '', r.branch_code, r.supervisor_name ?? '', r.staff_type, r.active])
+  `).all() as Array<{ year_month: string; rep_code: string; full_name: string; nickname: string | null; branch_code: string; supervisor_name: string | null; staff_type: string; active: number; sup_code: string | null }>)
+    .map(r => [readableYearMonth(r.year_month), r.rep_code, r.full_name, r.nickname ?? '', r.branch_code, r.supervisor_name ?? '', r.staff_type, r.active, r.sup_code ?? ''])
   await writeTab(sheets, spreadsheetId, TABS.ROSTER,
-    ['Month', 'rep_code', 'full_name', 'nickname', 'branch_code', 'supervisor_name', 'staff_type', 'active'], rows)
+    ['Month', 'rep_code', 'full_name', 'nickname', 'branch_code', 'supervisor_name', 'staff_type', 'active', 'supervisor_code'], rows)
 }
 
 // Single source of truth for reading the Roster tab back into the DB — column order must
 // stay in lockstep with pushRoster above (same lesson as CommissionConfig's earlier bug).
 export async function pullRosterFromSheet(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<number> {
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Roster!A:H' })
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Roster!A:I' })
   const allRows = res.data.values ?? []
   const dataRows = allRows.length > 0 && String(allRows[0][0]).toLowerCase().includes('month') ? allRows.slice(1) : allRows
 
@@ -135,13 +135,18 @@ export async function pullRosterFromSheet(db: Database, sheets: ReturnType<typeo
   const latestBySalesman = new Map<number, { branch_id: number; supervisor_id: number | null; staff_type: string; active: number; year_month: string }>()
 
   for (const row of dataRows as string[][]) {
-    const [monthLabel, repCode, fullName, nickname, branchCode, supervisorName, staffTypeRaw, activeStr] = row
+    const [monthLabel, repCode, fullName, nickname, branchCode, supervisorName, staffTypeRaw, activeStr, supervisorCode] = row
     const yearMonth = parseReadableYearMonth(monthLabel)
     if (!yearMonth || !repCode || !fullName || !branchCode) continue
     const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
     if (!branch) continue
+    // sup_code first (stable), fall back to name+branch match for rows without one
     let supId: number | null = null
-    if (supervisorName) {
+    if (supervisorCode?.trim()) {
+      const sup = prepare(db, `SELECT id FROM supervisors WHERE sup_code = ?`).get(supervisorCode.trim()) as { id: number } | undefined
+      supId = sup?.id ?? null
+    }
+    if (!supId && supervisorName) {
       const sup = prepare(db, `SELECT id FROM supervisors WHERE branch_id = ? AND (full_name = ? OR nickname = ?)`).get(branch.id, supervisorName, supervisorName) as { id: number } | undefined
       supId = sup?.id ?? null
     }
@@ -250,13 +255,13 @@ async function pushUsers(db: Database, sheets: ReturnType<typeof google.sheets>,
 
 async function pushSupervisors(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
   const rows = (prepare(db, `
-    SELECT sv.full_name, sv.nickname, b.code AS branch_code, sv.staff_type, sv.active
+    SELECT sv.full_name, sv.nickname, b.code AS branch_code, sv.staff_type, sv.active, sv.sup_code
     FROM supervisors sv
     JOIN branches b ON b.id = sv.branch_id
     ORDER BY b.code, sv.full_name
-  `).all() as Array<{ full_name: string; nickname: string; branch_code: string; staff_type: string; active: number }>)
-    .map(r => [r.full_name, r.nickname, r.branch_code, r.staff_type, r.active])
-  await writeTab(sheets, spreadsheetId, TABS.SUPERVISORS, ['full_name', 'nickname', 'branch_code', 'staff_type', 'active'], rows)
+  `).all() as Array<{ full_name: string; nickname: string; branch_code: string; staff_type: string; active: number; sup_code: string | null }>)
+    .map(r => [r.full_name, r.nickname, r.branch_code, r.staff_type, r.active, r.sup_code ?? ''])
+  await writeTab(sheets, spreadsheetId, TABS.SUPERVISORS, ['full_name', 'nickname', 'branch_code', 'staff_type', 'active', 'sup_code'], rows)
 }
 
 async function pushMonthlyBranchTargets(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
@@ -462,22 +467,25 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     }
 
     // ── Supervisors (must run before Roster so supervisor links resolve) ─
-    const supRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Supervisors!A:E' }).catch(() => null)
+    const supRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Supervisors!A:F' }).catch(() => null)
     if (supRes) {
       const all = supRes.data.values ?? []
       const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'full_name' ? all.slice(1) : all
       for (const row of data) {
-        const [fullName, nickname, branchCode, staffTypeRaw, activeStr] = row as string[]
+        const [fullName, nickname, branchCode, staffTypeRaw, activeStr, supCodeRaw] = row as string[]
         if (!fullName || !branchCode) continue
         const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
         if (!branch) continue
         const staffType = staffTypeRaw === 'b2b' ? 'b2b' : 'b2c'
         const active = activeStr === '0' ? 0 : 1
-        const existing = prepare(db, `SELECT id FROM supervisors WHERE full_name = ? AND branch_id = ?`).get(fullName, branch.id) as { id: number } | undefined
+        const supCode = supCodeRaw?.trim() || null
+        // sup_code first (stable across renames), fall back to name+branch match
+        const existing = (supCode ? prepare(db, `SELECT id FROM supervisors WHERE sup_code = ?`).get(supCode) as { id: number } | undefined : undefined)
+          ?? prepare(db, `SELECT id FROM supervisors WHERE full_name = ? AND branch_id = ?`).get(fullName, branch.id) as { id: number } | undefined
         if (existing) {
-          prepare(db, `UPDATE supervisors SET nickname=?, staff_type=?, active=? WHERE id=?`).run(nickname ?? '', staffType, active, existing.id)
+          prepare(db, `UPDATE supervisors SET nickname=?, staff_type=?, active=?, sup_code=? WHERE id=?`).run(nickname ?? '', staffType, active, supCode, existing.id)
         } else {
-          prepare(db, `INSERT INTO supervisors (full_name, nickname, branch_id, staff_type, active) VALUES (?,?,?,?,?)`).run(fullName, nickname ?? '', branch.id, staffType, active)
+          prepare(db, `INSERT INTO supervisors (full_name, nickname, branch_id, staff_type, active, sup_code) VALUES (?,?,?,?,?,?)`).run(fullName, nickname ?? '', branch.id, staffType, active, supCode)
         }
         counts.supervisors++
       }

@@ -26,9 +26,9 @@ function kpiBg(pct: number) {
 // ── Supervisor form modal ─────────────────────────────────────────────────
 interface SupModalProps {
   mode: 'create' | 'edit'
-  initial: { id?: number; full_name: string; nickname: string; branch_id: number }
+  initial: { id?: number; full_name: string; nickname: string; branch_id: number; sup_code?: string | null }
   branches: Array<{ id: number; name: string; code: string }>
-  onSave: (data: { id?: number; fullName: string; nickname: string; branchId: number }) => void
+  onSave: (data: { id?: number; fullName: string; nickname: string; branchId: number; supCode: string | null }) => void
   onClose: () => void
 }
 
@@ -36,6 +36,7 @@ function SupModal({ mode, initial, branches, onSave, onClose }: SupModalProps) {
   const [name, setName]   = useState(initial.full_name)
   const [nick, setNick]   = useState(initial.nickname)
   const [branchId, setBranchId] = useState(initial.branch_id)
+  const [supCode, setSupCode] = useState(initial.sup_code ?? '')
 
   return (
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -69,13 +70,20 @@ function SupModal({ mode, initial, branches, onSave, onClose }: SupModalProps) {
               {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </div>
+          <div>
+            <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Sup Code</label>
+            <input value={supCode} onChange={e => setSupCode(e.target.value)}
+              className="w-full bg-surface-container-low border-b-2 border-outline-variant px-3 py-2 text-body-sm outline-none font-mono"
+              placeholder="e.g. MM-SUP-01 (optional, but recommended)" />
+            <p className="text-[10px] text-on-surface-variant/60 mt-1">Stable ID for roster uploads — avoids name-matching issues (typos, duplicate names, Lao text).</p>
+          </div>
         </div>
         <div className="flex gap-3 mt-6">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border border-outline-variant text-on-surface-variant font-label-md hover:bg-surface-container transition-colors">
             Cancel
           </button>
           <button
-            onClick={() => { if (name.trim() && branchId > 0) onSave({ id: initial.id, fullName: name.trim(), nickname: nick.trim(), branchId }) }}
+            onClick={() => { if (name.trim() && branchId > 0) onSave({ id: initial.id, fullName: name.trim(), nickname: nick.trim(), branchId, supCode: supCode.trim() || null }) }}
             disabled={!name.trim() || branchId === 0}
             className="flex-1 py-2.5 rounded-lg bg-primary text-white font-label-md flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 shadow-primary"
           >
@@ -209,7 +217,7 @@ export default function TeamPerformance() {
   useEffect(() => { loadPerformance() }, [token, year, month, dateFrom, dateTo])
   useEffect(() => { loadSupervisors() }, [token])
 
-  async function handleSaveSup(data: { id?: number; fullName: string; nickname: string; branchId: number }) {
+  async function handleSaveSup(data: { id?: number; fullName: string; nickname: string; branchId: number; supCode: string | null }) {
     if (!token) return
     await window.api.saveSupervisor(token, data)
     showToast(data.id ? 'Supervisor updated.' : 'Supervisor created.')
@@ -416,7 +424,10 @@ export default function TeamPerformance() {
                           </div>
                           <div>
                             <p className="font-bold text-body-sm">{sup.full_name}</p>
-                            {sup.nickname && <p className="text-[10px] text-on-surface-variant">{sup.nickname}</p>}
+                            <p className="text-[10px] text-on-surface-variant">
+                              {sup.nickname}{sup.nickname && sup.sup_code ? ' · ' : ''}
+                              {sup.sup_code && <span className="font-mono">{sup.sup_code}</span>}
+                            </p>
                           </div>
                         </div>
                       </td>

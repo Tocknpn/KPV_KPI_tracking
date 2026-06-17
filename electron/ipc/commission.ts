@@ -4,6 +4,7 @@ import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
 import { requireAuth, requireAdmin } from './auth'
 import { getServiceAuth, getSetting, pushCommission, pullCommissionConfigsFromSheet } from './sheets'
+import { getRosterMapAsOf } from '../db/history'
 
 interface CommissionConfig {
   staff_type: string
@@ -101,34 +102,38 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
     if (user.role === 'sales_sup') {
       effectiveBranchIds = [user.branch_id ?? 1]
       supervisorFilter   = user.supervisor_id
-    } else if (user.role === 'branch_manager') {
+    } else if (user.role === 'branch_manager' || user.role === 'accountant_officer') {
       effectiveBranchIds = user.branch_id ? [user.branch_id] : branchIds
     }
 
-    const branchSql    = effectiveBranchIds.length > 0 ? `AND s.branch_id IN (${effectiveBranchIds.map(() => '?').join(',')})` : ''
-    const branchParams = effectiveBranchIds
-    const supSql       = supervisorFilter != null ? `AND s.supervisor_id = ?` : ''
-    const supParams    = supervisorFilter != null ? [supervisorFilter] : []
+    // Who counts as "on the team" and which staff_type/branch rate applies must reflect
+    // what was true AS OF this month — not today's roster — so a transfer or B2C/B2B
+    // change after the fact never changes a past month's commission payout.
+    const rosterMap = getRosterMapAsOf(db, year, month)
+    const branchById = new Map((prepare(db, `SELECT id, name, code FROM branches`).all() as Array<{ id: number; name: string; code: string }>).map(b => [b.id, b]))
+    const supNameById = new Map((prepare(db, `SELECT id, full_name FROM supervisors`).all() as Array<{ id: number; full_name: string }>).map(s => [s.id, s.full_name]))
+    const identityById = new Map((prepare(db, `SELECT id, full_name, nickname FROM salesmen`).all() as Array<{ id: number; full_name: string; nickname: string }>).map(s => [s.id, s]))
 
-    const reps = prepare(db, `
-      SELECT s.id, s.full_name, s.nickname, s.staff_type, s.branch_id, s.supervisor_id,
-        b.name AS branch_name, b.code AS branch_code,
-        sv.full_name AS supervisor_name,
-        COALESCE(SUM(de.jewelry_weight_g), 0) AS actual_jewelry,
-        COALESCE(SUM(de.bar_weight_g),     0) AS actual_bar,
-        COALESCE(SUM(de.quantity),          0) AS actual_qty
-      FROM salesmen s
-      JOIN branches b ON b.id = s.branch_id
-      LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
-      LEFT JOIN daily_entries de ON de.salesman_id = s.id
-        AND de.entry_date >= ? AND de.entry_date <= ?
-      WHERE s.active = 1 ${branchSql} ${supSql}
-      GROUP BY s.id ORDER BY s.branch_id, sv.full_name, s.full_name
-    `).all(dateFrom, dateTo, ...branchParams, ...supParams) as Array<{
-      id: number; full_name: string; nickname: string; staff_type: string; branch_id: number
-      supervisor_id: number | null; branch_name: string; branch_code: string; supervisor_name: string | null
-      actual_jewelry: number; actual_bar: number; actual_qty: number
-    }>
+    const reps = [...rosterMap.entries()]
+      .filter(([, v]) => v.active === 1)
+      .filter(([, v]) => effectiveBranchIds.length === 0 || effectiveBranchIds.includes(v.branch_id))
+      .filter(([, v]) => supervisorFilter == null || v.supervisor_id === supervisorFilter)
+      .map(([salesmanId, v]) => {
+        const idn = identityById.get(salesmanId)
+        const branch = branchById.get(v.branch_id)
+        const act = prepare(db, `
+          SELECT COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q
+          FROM daily_entries WHERE salesman_id = ? AND entry_date >= ? AND entry_date <= ?
+        `).get(salesmanId, dateFrom, dateTo) as { j: number; b: number; q: number }
+        return {
+          id: salesmanId, full_name: idn?.full_name ?? '—', nickname: idn?.nickname ?? '',
+          staff_type: v.staff_type, branch_id: v.branch_id, supervisor_id: v.supervisor_id,
+          branch_name: branch?.name ?? '', branch_code: branch?.code ?? '',
+          supervisor_name: v.supervisor_id ? (supNameById.get(v.supervisor_id) ?? null) : null,
+          actual_jewelry: act.j, actual_bar: act.b, actual_qty: act.q,
+        }
+      })
+      .sort((a, b) => (a.branch_id - b.branch_id) || a.full_name.localeCompare(b.full_name))
 
     // Cache config per staff_type
     const configCache = new Map<string, CommissionConfig | null>()

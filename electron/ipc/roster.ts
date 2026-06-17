@@ -11,6 +11,15 @@ function requireRosterManager(token: string) {
   return u
 }
 
+// Top Manager (view-only) and HR Support (upload-only, but still needs to see the current
+// roster to do that) both have the 'roster' menu key per ROLE_DEFAULTS without full CRUD —
+// reads use this, writes (saveRep/deactivate/reactivate) stay on requireRosterManager above.
+function requireRosterViewer(token: string) {
+  const u = requireAuth(token)
+  if (!['admin', 'hr', 'top_manager', 'hr_support'].includes(u.role)) throw new Error('Forbidden')
+  return u
+}
+
 function nowYearMonth(): { year: number; month: number } {
   const now = new Date()
   return { year: now.getFullYear(), month: now.getMonth() + 1 }
@@ -22,7 +31,7 @@ function effectiveDateFor(year: number, month: number): string {
 
 export function registerRosterHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('roster:getAll', async (_e, token: string) => {
-    requireRosterManager(token)
+    requireRosterViewer(token)
     const { year, month } = nowYearMonth()
     return getRosterSnapshotAsOf(getDb(), year, month)
   })
@@ -31,7 +40,7 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
   // past or present, has ever had any roster data. Otherwise carries forward from the
   // nearest earlier edited month automatically — no "confirm no changes" step needed.
   ipcMain.handle('roster:getAllAsOf', async (_e, token: string, year: number, month: number) => {
-    requireRosterManager(token)
+    requireRosterViewer(token)
     return getRosterSnapshotAsOf(getDb(), year, month)
   })
 
