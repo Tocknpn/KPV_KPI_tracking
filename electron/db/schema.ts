@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 18
+const SCHEMA_VERSION = 19
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -464,6 +464,40 @@ export function applySchema(db: Database): boolean {
     // as a "batch", which is fine since they were never part of one.
     try { db.run(`ALTER TABLE daily_entries ADD COLUMN upload_log_id INTEGER REFERENCES upload_logs(id)`) } catch { /* already exists */ }
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '18')`).run()
+  }
+
+  if (currentVersion < 19) {
+    // Collapses the old 3-table design (salesmen-history event log + roster_months gate,
+    // reconstructed via correlated subqueries) into one flat table: one row per rep per
+    // month it actually changed. Reading "roster as of month X" is now a plain
+    // WHERE year_month = (nearest one <= X) — no per-field subquery walk needed, and it
+    // maps 1:1 onto a single human-readable Sheet tab instead of three.
+    db.run(`
+      CREATE TABLE IF NOT EXISTS roster_monthly (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        salesman_id   INTEGER NOT NULL REFERENCES salesmen(id),
+        year_month    TEXT    NOT NULL,
+        branch_id     INTEGER NOT NULL REFERENCES branches(id),
+        supervisor_id INTEGER REFERENCES supervisors(id),
+        staff_type    TEXT    NOT NULL,
+        active        INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(salesman_id, year_month)
+      )
+    `)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_roster_monthly_ym ON roster_monthly(year_month)`)
+
+    // Baseline every existing rep into the current real month so upgrading installs don't
+    // go blank — same "accurate from this point forward" limit the old history table had.
+    const now = new Date()
+    const currentYm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
+    db.run(`
+      INSERT OR IGNORE INTO roster_monthly (salesman_id, year_month, branch_id, supervisor_id, staff_type, active)
+      SELECT id, '${currentYm}', branch_id, supervisor_id, staff_type, active FROM salesmen
+    `)
+
+    db.run(`DROP TABLE IF EXISTS salesman_history`)
+    db.run(`DROP TABLE IF EXISTS roster_months`)
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '19')`).run()
   }
 
   return false // Existing DB — no seeding needed

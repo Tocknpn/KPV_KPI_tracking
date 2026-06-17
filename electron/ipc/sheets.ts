@@ -4,7 +4,6 @@ import { readFileSync, existsSync } from 'fs'
 import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
 import { requireAuth } from './auth'
-import { snapshotSalesman } from '../db/history'
 import type { Database } from 'sql.js'
 
 // ── Tab name registry ─────────────────────────────────────────────────────────
@@ -15,8 +14,6 @@ const TABS = {
   KPI_RATES:       'KPIRates',
   QTY_TIERS:       'QtyTiers',
   ROSTER:          'Roster',
-  ROSTER_HISTORY:  'RosterHistory',
-  ROSTER_MONTHS:   'RosterMonths',
   COMMISSION:      'CommissionConfig',
   USERS:           'Users',
   SUPERVISORS:     'Supervisors',
@@ -107,38 +104,82 @@ async function pushQtyTiers(db: Database, sheets: ReturnType<typeof google.sheet
   await writeTab(sheets, spreadsheetId, TABS.QTY_TIERS, ['Branch', 'Applies To', 'If Qty Is', 'Score Multiplier', 'Tier Order'], rows)
 }
 
+// One row per rep per month it actually changed — reps with no change in a given month
+// simply have no row for it; the app resolves "roster as of month X" to the nearest
+// earlier month with rows. Replaces the old Roster + RosterHistory + RosterMonths 3-tab
+// design with a single sheet a human can filter by Month and read directly.
 async function pushRoster(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
-  // KPI point target is not part of the roster — always resolved from HR KPI Setting
   const rows = (prepare(db, `
-    SELECT s.rep_code, s.full_name, s.nickname, b.code AS branch_code,
-           sup.full_name AS supervisor_name, s.staff_type, s.active
-    FROM salesmen s
-    JOIN branches b ON b.id = s.branch_id
-    LEFT JOIN supervisors sup ON sup.id = s.supervisor_id
-    ORDER BY s.active DESC, b.code, s.rep_code
-  `).all() as Array<{ rep_code: string; full_name: string; nickname: string | null; branch_code: string; supervisor_name: string | null; staff_type: string; active: number }>)
-    .map(r => [r.rep_code, r.full_name, r.nickname ?? '', r.branch_code, r.supervisor_name ?? '', r.staff_type, r.active])
-  await writeTab(sheets, spreadsheetId, TABS.ROSTER, ['rep_code', 'full_name', 'nickname', 'branch_code', 'supervisor_name', 'staff_type', 'active'], rows)
+    SELECT rm.year_month, s.rep_code, s.full_name, s.nickname, b.code AS branch_code,
+           sup.full_name AS supervisor_name, rm.staff_type, rm.active
+    FROM roster_monthly rm
+    JOIN salesmen s ON s.id = rm.salesman_id
+    JOIN branches b ON b.id = rm.branch_id
+    LEFT JOIN supervisors sup ON sup.id = rm.supervisor_id
+    ORDER BY rm.year_month, b.code, s.rep_code
+  `).all() as Array<{ year_month: string; rep_code: string; full_name: string; nickname: string | null; branch_code: string; supervisor_name: string | null; staff_type: string; active: number }>)
+    .map(r => [readableYearMonth(r.year_month), r.rep_code, r.full_name, r.nickname ?? '', r.branch_code, r.supervisor_name ?? '', r.staff_type, r.active])
+  await writeTab(sheets, spreadsheetId, TABS.ROSTER,
+    ['Month', 'rep_code', 'full_name', 'nickname', 'branch_code', 'supervisor_name', 'staff_type', 'active'], rows)
+}
 
-  // Append-only audit trail of every branch/type/supervisor/active change — this is the
-  // "master datetime record" for who-was-where-when, used to reconstruct historical headcount.
-  const historyRows = (prepare(db, `
-    SELECT s.rep_code, h.branch_id, b.code AS branch_code, h.staff_type, h.supervisor_id,
-           sup.full_name AS supervisor_name, h.active, h.changed_at
-    FROM salesman_history h
-    JOIN salesmen s ON s.id = h.salesman_id
-    JOIN branches b ON b.id = h.branch_id
-    LEFT JOIN supervisors sup ON sup.id = h.supervisor_id
-    ORDER BY h.changed_at, s.rep_code
-  `).all() as Array<{ rep_code: string; branch_code: string; staff_type: string; supervisor_name: string | null; active: number; changed_at: string }>)
-    .map(r => [r.rep_code, r.branch_code, r.staff_type, r.supervisor_name ?? '', r.active, r.changed_at])
-  await writeTab(sheets, spreadsheetId, TABS.ROSTER_HISTORY, ['rep_code', 'branch_code', 'staff_type', 'supervisor_name', 'active', 'changed_at'], historyRows)
+// Single source of truth for reading the Roster tab back into the DB — column order must
+// stay in lockstep with pushRoster above (same lesson as CommissionConfig's earlier bug).
+export async function pullRosterFromSheet(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<number> {
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Roster!A:H' })
+  const allRows = res.data.values ?? []
+  const dataRows = allRows.length > 0 && String(allRows[0][0]).toLowerCase().includes('month') ? allRows.slice(1) : allRows
 
-  // Which months have an explicit roster (upload/edit/confirm) — the gate behind "no
-  // roster = no people = no KPI for that month". Months not listed here are empty in-app.
-  const monthRows = (prepare(db, `SELECT year_month, published_at FROM roster_months ORDER BY year_month`).all() as Array<{ year_month: string; published_at: string }>)
-    .map(r => [readableYearMonth(r.year_month), r.published_at])
-  await writeTab(sheets, spreadsheetId, TABS.ROSTER_MONTHS, ['Month', 'Published At'], monthRows)
+  let imported = 0
+  const latestBySalesman = new Map<number, { branch_id: number; supervisor_id: number | null; staff_type: string; active: number; year_month: string }>()
+
+  for (const row of dataRows as string[][]) {
+    const [monthLabel, repCode, fullName, nickname, branchCode, supervisorName, staffTypeRaw, activeStr] = row
+    const yearMonth = parseReadableYearMonth(monthLabel)
+    if (!yearMonth || !repCode || !fullName || !branchCode) continue
+    const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
+    if (!branch) continue
+    let supId: number | null = null
+    if (supervisorName) {
+      const sup = prepare(db, `SELECT id FROM supervisors WHERE branch_id = ? AND (full_name = ? OR nickname = ?)`).get(branch.id, supervisorName, supervisorName) as { id: number } | undefined
+      supId = sup?.id ?? null
+    }
+    const staffType = staffTypeRaw === 'b2b' ? 'b2b' : 'b2c'
+    const active = activeStr === '0' ? 0 : 1
+
+    const existing = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(repCode) as { id: number } | undefined
+    let salesmanId: number
+    if (existing) {
+      salesmanId = existing.id
+    } else {
+      const ins = prepare(db, `INSERT INTO salesmen (rep_code, full_name, nickname, branch_id, staff_type, position, department, active, supervisor_id) VALUES (?,?,?,?,?,'Sales Representative','Sales',1,?)`)
+        .run(repCode, fullName, nickname ?? '', branch.id, staffType, supId)
+      salesmanId = Number(ins.lastInsertRowid)
+    }
+    // Identity fields can drift between Roster rows of different months (name fix etc.) — keep current
+    prepare(db, `UPDATE salesmen SET full_name=?, nickname=? WHERE id=?`).run(fullName, nickname ?? '', salesmanId)
+
+    prepare(db, `
+      INSERT INTO roster_monthly (salesman_id, year_month, branch_id, supervisor_id, staff_type, active) VALUES (?,?,?,?,?,?)
+      ON CONFLICT(salesman_id, year_month) DO UPDATE SET branch_id=excluded.branch_id, supervisor_id=excluded.supervisor_id, staff_type=excluded.staff_type, active=excluded.active
+    `).run(salesmanId, yearMonth, branch.id, supId, staffType, active)
+    imported++
+
+    const prevLatest = latestBySalesman.get(salesmanId)
+    if (!prevLatest || yearMonth > prevLatest.year_month) {
+      latestBySalesman.set(salesmanId, { branch_id: branch.id, supervisor_id: supId, staff_type: staffType, active, year_month: yearMonth })
+    }
+  }
+
+  // salesmen.branch_id/staff_type/supervisor_id/active is the "live now" cache used
+  // everywhere outside month-aware roster views (daily upload matching, team listings) —
+  // keep it pointed at each rep's latest imported month.
+  for (const [salesmanId, latest] of latestBySalesman) {
+    prepare(db, `UPDATE salesmen SET branch_id=?, supervisor_id=?, staff_type=?, active=? WHERE id=?`)
+      .run(latest.branch_id, latest.supervisor_id, latest.staff_type, latest.active, salesmanId)
+  }
+
+  return imported
 }
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -333,7 +374,7 @@ export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
 // ── Pull all config + entries from Sheets (standalone, callable from main.ts) ─
 export async function pullAllFromCloud(sheetsId: string, saPath: string): Promise<{
   success: boolean
-  counts: { entries: number; configs: number; settings: number; branches: number; kpiRates: number; roster: number; qtyTiers: number }
+  counts: { entries: number; configs: number; settings: number; branches: number; kpiRates: number; roster: number; qtyTiers: number; users: number; supervisors: number; monthlyTargets: number }
   error?: string
 }> {
   const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, qtyTiers: 0, users: 0, supervisors: 0, monthlyTargets: 0 }
@@ -441,38 +482,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     }
 
     // ── Roster ─────────────────────────────────────────────────────────
-    const rosterRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Roster!A:H' }).catch(() => null)
-    if (rosterRes) {
-      const all = rosterRes.data.values ?? []
-      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'rep_code' ? all.slice(1) : all
-      for (const row of data) {
-        const [repCode, fullName, nickname, branchCode, supervisorName, staffTypeRaw, yearMonth, ptStr] = row as string[]
-        if (!repCode || !fullName || !branchCode) continue
-        const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
-        if (!branch) continue
-        let supId: number | null = null
-        if (supervisorName) {
-          const sup = prepare(db, `SELECT id FROM supervisors WHERE branch_id = ? AND (full_name = ? OR nickname = ?)`).get(branch.id, supervisorName, supervisorName) as { id: number } | undefined
-          supId = sup?.id ?? null
-        }
-        const staffType = staffTypeRaw === 'b2b' ? 'b2b' : 'b2c'
-        const existing = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(repCode) as { id: number } | undefined
-        let salesmanId: number
-        if (existing) {
-          prepare(db, `UPDATE salesmen SET full_name=?, nickname=?, branch_id=?, supervisor_id=?, staff_type=?, active=1 WHERE rep_code=?`).run(fullName, nickname ?? '', branch.id, supId, staffType, repCode)
-          salesmanId = existing.id
-        } else {
-          const ins = prepare(db, `INSERT INTO salesmen (rep_code, full_name, nickname, branch_id, staff_type, position, department, active, supervisor_id) VALUES (?,?,?,?,?,'Sales Representative','Sales',1,?)`).run(repCode, fullName, nickname ?? '', branch.id, staffType, supId)
-          salesmanId = Number(ins.lastInsertRowid)
-        }
-        snapshotSalesman(db, salesmanId)
-        const pointTarget = parseFloat(ptStr)
-        if (!isNaN(pointTarget) && yearMonth && /^\d{6}$/.test(yearMonth)) {
-          prepare(db, `INSERT INTO staff_monthly_targets (salesman_id, year_month, point_target) VALUES (?,?,?) ON CONFLICT(salesman_id, year_month) DO UPDATE SET point_target = excluded.point_target`).run(salesmanId, yearMonth, pointTarget)
-        }
-        counts.roster++
-      }
-    }
+    counts.roster += await pullRosterFromSheet(db, sheets, sheetsId).catch(() => 0)
 
     // ── Daily Entries ─────────────────────────────────────────────────
     const entryRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A:G' }).catch(() => ({ data: { values: [] } }))

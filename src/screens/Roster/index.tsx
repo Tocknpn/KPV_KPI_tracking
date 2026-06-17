@@ -251,7 +251,6 @@ export default function Roster() {
   const [supervisors, setSupervisors] = useState<Supervisor[]>([])
   const [loading, setLoading]         = useState(false)
   const [syncing, setSyncing]         = useState(false)
-  const [publishing, setPublishing]   = useState(false)
   const [repModal, setRepModal]       = useState<'create' | 'edit' | null>(null)
   const [editRep, setEditRep]         = useState<RosterRow | null>(null)
   const [toast, setToast]             = useState('')
@@ -286,24 +285,14 @@ export default function Roster() {
 
   useEffect(() => { loadRoster() }, [token, year, month])
 
-  async function handleConfirmNoChanges() {
-    if (!token) return
-    setPublishing(true)
-    try {
-      await window.api.publishRosterMonth(token, year, month)
-      showToast(`Roster confirmed for ${MONTHS[month - 1]} ${year} — no changes.`)
-      loadRoster()
-    } finally { setPublishing(false) }
-  }
-
   async function handleSaveRep(data: {
     id?: number; repCode: string; fullName: string; nickname: string
     branchId: number; supervisorId: number | null; staffType: string
   }) {
     if (!token) return
-    const res = await window.api.saveRosterRep(token, data)
+    const res = await window.api.saveRosterRep(token, data, year, month)
     if (res?.success) {
-      showToast(data.id ? `"${data.fullName}" updated.` : `"${data.fullName}" added to roster.`)
+      showToast(data.id ? `"${data.fullName}" updated for ${MONTHS[month - 1]} ${year}.` : `"${data.fullName}" added to ${MONTHS[month - 1]} ${year}.`)
       setRepModal(null); setEditRep(null)
       loadRoster()
     }
@@ -311,15 +300,15 @@ export default function Roster() {
 
   async function handleDeactivate(rep: RosterRow) {
     if (!token) return
-    if (!confirm(`Deactivate "${rep.full_name}"? They will be hidden from entry screens.`)) return
-    await window.api.deactivateRosterRep(token, rep.id)
+    if (!confirm(`Deactivate "${rep.full_name}" starting ${MONTHS[month - 1]} ${year}? They will be hidden from entry screens from this month on.`)) return
+    await window.api.deactivateRosterRep(token, rep.id, year, month)
     showToast(`"${rep.full_name}" deactivated.`)
     loadRoster()
   }
 
   async function handleReactivate(rep: RosterRow) {
     if (!token) return
-    await window.api.reactivateRosterRep(token, rep.id)
+    await window.api.reactivateRosterRep(token, rep.id, year, month)
     showToast(`"${rep.full_name}" reactivated.`)
     loadRoster()
   }
@@ -427,7 +416,7 @@ export default function Roster() {
           <p className="text-on-surface-variant text-body-md mt-1">
             {published
               ? `Roster for ${MONTHS[month - 1]} ${year} — edit, add, deactivate, or upload reps`
-              : `No roster uploaded for ${MONTHS[month - 1]} ${year} yet`}
+              : `No roster yet for ${MONTHS[month - 1]} ${year}`}
             <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold ml-2">{isHr ? 'HR' : 'Admin'}</span>
           </p>
         </div>
@@ -446,11 +435,12 @@ export default function Roster() {
 
       {!published && (
         <div className="mb-5 flex items-start gap-3 bg-error-container/20 border border-error/30 rounded-xl px-5 py-4">
-          <span className="material-symbols-outlined text-error mt-0.5">warning</span>
+          <span className="material-symbols-outlined text-error mt-0.5">info</span>
           <div className="flex-1">
-            <p className="font-label-md text-label-md text-error font-bold uppercase mb-1">No Roster — {MONTHS[month - 1]} {year}</p>
+            <p className="font-label-md text-label-md text-error font-bold uppercase mb-1">No Roster Yet</p>
             <p className="text-body-sm text-on-surface-variant mb-3">
-              No roster was uploaded or confirmed for this month. No people = no mapping = Daily Entry and KPI Report have nothing to show for {MONTHS[month - 1]} {year} until this is resolved.
+              No roster exists for {MONTHS[month - 1]} {year} or any earlier month. Add your first rep or upload a roster file to get started —
+              every following month automatically carries forward from the last one edited, no monthly confirmation needed.
             </p>
             <div className="flex gap-2 flex-wrap">
               {canUpload && (
@@ -465,13 +455,6 @@ export default function Roster() {
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary transition-all">
                   <span className="material-symbols-outlined text-sm">person_add</span>
                   Add Rep
-                </button>
-              )}
-              {canEdit && (
-                <button onClick={handleConfirmNoChanges} disabled={publishing}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant text-on-surface font-label-md text-label-md hover:bg-surface-container disabled:opacity-60 transition-all">
-                  <span className={`material-symbols-outlined text-sm ${publishing ? 'animate-spin-slow' : ''}`}>{publishing ? 'sync' : 'check_circle'}</span>
-                  Confirm Roster (No Changes)
                 </button>
               )}
             </div>

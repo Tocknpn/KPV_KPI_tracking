@@ -20,12 +20,14 @@ const NAV_ITEMS: Array<{ to: string; icon: string; label: string; key: MenuKey; 
 ]
 
 const ROLE_COLOR: Record<UserRole, string> = {
-  admin:          'bg-error',
-  sales_sup:      'bg-secondary',
-  accountant:     'bg-tertiary',
-  branch_manager: 'bg-primary',
-  top_manager:    'bg-primary',
-  hr:             'bg-secondary',
+  admin:              'bg-error',
+  sales_sup:          'bg-secondary',
+  accountant_officer: 'bg-tertiary',
+  accountant_manager: 'bg-tertiary',
+  branch_manager:     'bg-primary',
+  top_manager:        'bg-primary',
+  hr:                 'bg-secondary',
+  hr_support:         'bg-secondary',
 }
 
 export function Sidebar() {

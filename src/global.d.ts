@@ -87,5 +87,16 @@ interface Window {
     getEmailConfig(token: string): Promise<import('./types').EmailConfig>
     saveEmailConfig(token: string, config: unknown): Promise<{ success: boolean }>
     sendTestEmail(token: string): Promise<{ success: boolean; error?: string }>
+
+    // Roster
+    getSupervisors(token: string, branchId?: number): Promise<import('./types').Supervisor[]>
+    getRosterAll(token: string): Promise<{ published: boolean; rows: import('./types').RosterRow[] }>
+    getRosterAllAsOf(token: string, year: number, month: number): Promise<{ published: boolean; rows: import('./types').RosterRow[] }>
+    saveRosterRep(token: string, data: unknown, year?: number, month?: number): Promise<{ success: boolean; id?: number }>
+    deactivateRosterRep(token: string, id: number, year?: number, month?: number): Promise<{ success: boolean }>
+    reactivateRosterRep(token: string, id: number, year?: number, month?: number): Promise<{ success: boolean }>
+    uploadRoster(token: string, rows: unknown[]): Promise<{ success: boolean; created?: number; updated?: number; skipped?: number; skippedCodes?: string[]; error?: string }>
+    getRosterTemplate(token: string): Promise<Array<Record<string, unknown>>>
+    forceSyncAll(token: string): Promise<{ success: boolean; count?: number; message?: string; error?: string }>
   }
 }

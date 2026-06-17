@@ -163,14 +163,12 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('roster:getAll', token),
   getRosterAllAsOf: (token: string, year: number, month: number) =>
     ipcRenderer.invoke('roster:getAllAsOf', token, year, month),
-  publishRosterMonth: (token: string, year: number, month: number) =>
-    ipcRenderer.invoke('roster:publishMonth', token, year, month),
-  saveRosterRep: (token: string, data: unknown) =>
-    ipcRenderer.invoke('roster:saveRep', token, data),
-  deactivateRosterRep: (token: string, id: number) =>
-    ipcRenderer.invoke('roster:deactivate', token, id),
-  reactivateRosterRep: (token: string, id: number) =>
-    ipcRenderer.invoke('roster:reactivate', token, id),
+  saveRosterRep: (token: string, data: unknown, year?: number, month?: number) =>
+    ipcRenderer.invoke('roster:saveRep', token, data, year, month),
+  deactivateRosterRep: (token: string, id: number, year?: number, month?: number) =>
+    ipcRenderer.invoke('roster:deactivate', token, id, year, month),
+  reactivateRosterRep: (token: string, id: number, year?: number, month?: number) =>
+    ipcRenderer.invoke('roster:reactivate', token, id, year, month),
 
   // Force full sync to Sheets (all entries + all config tabs)
   forceSyncAll: (token: string) =>
