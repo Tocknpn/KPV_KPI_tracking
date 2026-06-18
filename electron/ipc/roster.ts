@@ -3,7 +3,9 @@ import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth } from './auth'
 import { pushRosterIfConfigured } from './sheets'
-import { snapshotSalesman, snapshotSupervisor, getRosterExactMonth } from '../db/history'
+import { snapshotSalesman, snapshotSupervisor, getRosterExactMonth, getSupervisorRosterExactMonth } from '../db/history'
+import { getBranchPointTarget, getIndividualPointTarget } from './reports'
+import type { Database } from 'sql.js'
 
 function requireRosterManager(token: string) {
   const u = requireAuth(token)
@@ -29,11 +31,38 @@ function effectiveDateFor(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, '0')}-01`
 }
 
+// Attach each rep's monthly KPI point target — individual override (staff_monthly_targets)
+// if HR set one, else the branch+staffType target from KPI Settings. Lets HR eyeball on the
+// Roster screen itself whether everyone has a sane target, without hopping to KPI Report.
+function attachRepTargets(
+  db: Database, snapshot: { published: boolean; rows: Record<string, unknown>[] }, year: number, month: number,
+) {
+  const yearMonth = `${year}${String(month).padStart(2, '0')}`
+  const rows = snapshot.rows.map(r => ({
+    ...r,
+    point_target: getIndividualPointTarget(db, r.id as number, yearMonth) ?? getBranchPointTarget(db, r.branch_id as number, year, month, r.staff_type as string),
+  }))
+  return { ...snapshot, rows }
+}
+
+// Supervisors have no individual override table — their monthly target is always the same
+// branch+staffType figure their team is held to (matches report:teamPerformance's math).
+function attachSupTargets(
+  db: Database, snapshot: { published: boolean; rows: Record<string, unknown>[] }, year: number, month: number,
+) {
+  const rows = snapshot.rows.map(r => ({
+    ...r,
+    point_target: getBranchPointTarget(db, r.branch_id as number, year, month, r.staff_type as string),
+  }))
+  return { ...snapshot, rows }
+}
+
 export function registerRosterHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('roster:getAll', async (_e, token: string) => {
     requireRosterViewer(token)
     const { year, month } = nowYearMonth()
-    return getRosterExactMonth(getDb(), year, month)
+    const db = getDb()
+    return attachRepTargets(db, getRosterExactMonth(db, year, month), year, month)
   })
 
   // Roster for the EXACT month requested — no carry-forward. published:false means HR
@@ -42,7 +71,17 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
   // this only changes what HR sees on the Roster management screen itself.)
   ipcMain.handle('roster:getAllAsOf', async (_e, token: string, year: number, month: number) => {
     requireRosterViewer(token)
-    return getRosterExactMonth(getDb(), year, month)
+    const db = getDb()
+    return attachRepTargets(db, getRosterExactMonth(db, year, month), year, month)
+  })
+
+  // Supervisor side of the same screen — exact month, with each supervisor's monthly point
+  // target and live headcount for that month, so HR can check both reps and supervisors are
+  // accounted for in one place.
+  ipcMain.handle('roster:getSupervisorsAsOf', async (_e, token: string, year: number, month: number) => {
+    requireRosterViewer(token)
+    const db = getDb()
+    return attachSupTargets(db, getSupervisorRosterExactMonth(db, year, month), year, month)
   })
 
   ipcMain.handle('roster:saveRep', async (_e, token: string, data: {

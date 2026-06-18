@@ -63,6 +63,7 @@ interface Window {
         totalValue: number; totalQty: number
       }>
       daysInMonth: number
+      published?: boolean
     }>
     getExecutiveReport(token: string, year: number, month: number): Promise<import('./types').ExecutiveBranchRow[]>
     getBranchAnalytics(token: string, year: number, month: number): Promise<{ dailyTotals: unknown[]; branchContrib: unknown[] }>
@@ -110,6 +111,7 @@ interface Window {
     getSupervisors(token: string, branchId?: number): Promise<import('./types').Supervisor[]>
     getRosterAll(token: string): Promise<{ published: boolean; rows: import('./types').RosterRow[] }>
     getRosterAllAsOf(token: string, year: number, month: number): Promise<{ published: boolean; rows: import('./types').RosterRow[] }>
+    getRosterSupervisorsAsOf(token: string, year: number, month: number): Promise<{ published: boolean; rows: import('./types').SupervisorRosterRow[] }>
     saveRosterRep(token: string, data: unknown, year?: number, month?: number): Promise<{ success: boolean; id?: number }>
     deactivateRosterRep(token: string, id: number, year?: number, month?: number): Promise<{ success: boolean }>
     reactivateRosterRep(token: string, id: number, year?: number, month?: number): Promise<{ success: boolean }>

@@ -23,7 +23,7 @@ function buildSalesmenBranchFilter(ids: number[]): { sql: string; params: number
 
 // staffType, if given, prefers the B2C/B2B override saved in KPI Settings — falls back to
 // the overall branch target when no type-specific override is set for that month.
-function getBranchPointTarget(db: import('sql.js').Database, branchId: number, year: number, month: number, staffType?: string): number {
+export function getBranchPointTarget(db: import('sql.js').Database, branchId: number, year: number, month: number, staffType?: string): number {
   const monthly = prepare(db, `
     SELECT kpi_point_target, target_b2c, target_b2b FROM branch_kpi_monthly_targets WHERE branch_id=? AND year=? AND month=?
   `).get(branchId, year, month) as { kpi_point_target: number; target_b2c: number | null; target_b2b: number | null } | undefined
@@ -39,7 +39,7 @@ function getBranchPointTarget(db: import('sql.js').Database, branchId: number, y
   return branch?.kpi_point_target ?? 0
 }
 
-function getIndividualPointTarget(db: import('sql.js').Database, salesmanId: number, yearMonth: string): number | null {
+export function getIndividualPointTarget(db: import('sql.js').Database, salesmanId: number, yearMonth: string): number | null {
   const row = prepare(db, `
     SELECT point_target FROM staff_monthly_targets WHERE salesman_id = ? AND year_month = ?
   `).get(salesmanId, yearMonth) as { point_target: number } | undefined
@@ -278,13 +278,16 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
     const monthEnd   = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
 
-    const resolvedYm = resolveYm(db, year, month)
+    // Reconciliation report — must reflect the EXACT month's own roster, not a carried-forward
+    // one, or it'd grid a rep who already left against a month they were never on (defeats
+    // the report's purpose: checking whether what got uploaded for THIS month looks right).
+    const targetYm = `${year}${String(month).padStart(2, '0')}`
     const rmBranchSql = effectiveBranchIds.length > 0 ? `AND rm.branch_id IN (${effectiveBranchIds.map(() => '?').join(',')})` : ''
     const rmBranchParams = effectiveBranchIds.length > 0 ? effectiveBranchIds : []
     const rmSupSql    = effectiveSupervisorId ? `AND rm.supervisor_id = ?` : ''
     const rmSupParams = effectiveSupervisorId ? [effectiveSupervisorId] : []
 
-    const reps = resolvedYm ? prepare(db, `
+    const reps = prepare(db, `
       SELECT s.id, s.rep_code, s.full_name, s.nickname, b.name AS branch_name, sv.full_name AS supervisor_name
       FROM roster_monthly rm
       JOIN salesmen s ON s.id = rm.salesman_id
@@ -292,11 +295,11 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       LEFT JOIN supervisors sv ON sv.id = rm.supervisor_id
       WHERE rm.year_month = ? AND rm.active = 1 ${rmBranchSql} ${rmSupSql}
       ORDER BY b.name, sv.full_name, s.full_name
-    `).all(resolvedYm, ...rmBranchParams, ...rmSupParams) as Array<{
+    `).all(targetYm, ...rmBranchParams, ...rmSupParams) as Array<{
       id: number; rep_code: string | null; full_name: string; nickname: string; branch_name: string; supervisor_name: string | null
-    }> : []
+    }>
 
-    if (!reps.length) return { reps: [], daysInMonth }
+    if (!reps.length) return { reps: [], daysInMonth, published: false }
 
     const repIds = reps.map(r => r.id)
     const entryRows = prepare(db, `
@@ -330,7 +333,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       }
     })
 
-    return { reps: result, daysInMonth }
+    return { reps: result, daysInMonth, published: true }
   })
 
   ipcMain.handle('report:executive', async (_e,

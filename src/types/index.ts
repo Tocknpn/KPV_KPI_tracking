@@ -296,6 +296,20 @@ export interface SupHistoryProfile {
   history: SupHistoryPoint[]
 }
 
+export interface SupervisorRosterRow {
+  id: number
+  sup_code: string | null
+  full_name: string
+  nickname: string
+  branch_id: number
+  branch_name: string
+  branch_code: string
+  staff_type: 'b2c' | 'b2b'
+  active: number
+  rep_count: number
+  point_target: number
+}
+
 export interface RosterRow {
   id: number
   rep_code: string

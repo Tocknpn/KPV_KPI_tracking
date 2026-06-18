@@ -3,11 +3,13 @@ import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useAuthStore } from '../../store/auth.store'
-import type { RosterRow, Supervisor } from '../../types'
+import type { RosterRow, Supervisor, SupervisorRosterRow } from '../../types'
 import { validateRosterRows, downloadCSV } from '../../utils/csv'
 import { parseXLSX, readFileAsArrayBuffer, generateRosterTemplateXLSX, downloadXLSX } from '../../utils/xlsx'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function fmtPts(n: number) { return n.toLocaleString('en-US', { maximumFractionDigits: 0 }) }
 
 function toCSV(rows: Array<Record<string, string | number>>): string {
   if (!rows.length) return ''
@@ -247,9 +249,12 @@ export default function Roster() {
   const canEdit = user?.role === 'admin' || user?.role === 'hr'
   const canUpload = canEdit || user?.role === 'hr_support'
 
+  const [view, setView]               = useState<'reps' | 'sup'>('reps')
   const [roster, setRoster]           = useState<RosterRow[]>([])
   const [published, setPublished]     = useState(true)
   const [supervisors, setSupervisors] = useState<Supervisor[]>([])
+  const [supRoster, setSupRoster]     = useState<SupervisorRosterRow[]>([])
+  const [supPublished, setSupPublished] = useState(true)
   const [loading, setLoading]         = useState(false)
   const [repModal, setRepModal]       = useState<'create' | 'edit' | null>(null)
   const [editRep, setEditRep]         = useState<RosterRow | null>(null)
@@ -272,13 +277,16 @@ export default function Roster() {
     if (!token) return
     setLoading(true)
     try {
-      const [snapshot, sups] = await Promise.all([
+      const [snapshot, sups, supSnapshot] = await Promise.all([
         window.api.getRosterAllAsOf(token, year, month) as Promise<{ published: boolean; rows: RosterRow[] }>,
         window.api.getSupervisors(token),
+        window.api.getRosterSupervisorsAsOf(token, year, month),
       ])
       setRoster(snapshot.rows)
       setPublished(snapshot.published)
       setSupervisors(sups as Supervisor[])
+      setSupRoster(supSnapshot.rows)
+      setSupPublished(supSnapshot.published)
     } finally { setLoading(false) }
   }
 
@@ -347,6 +355,17 @@ export default function Roster() {
     return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va)
   })
 
+  const filteredSup = supRoster.filter(s => {
+    if (s.active === 0) return false
+    if (filterBranch !== 'all' && s.branch_id !== filterBranch) return false
+    if (filterType !== 'all' && s.staff_type !== filterType) return false
+    if (search) {
+      const q = search.toLowerCase()
+      return s.full_name.toLowerCase().includes(q) || (s.sup_code ?? '').toLowerCase().includes(q)
+    }
+    return true
+  })
+
   function exportRoster() {
     const rows = filteredRoster.map(r => ({
       Month: `${MONTHS[month - 1]} ${year}`,
@@ -393,9 +412,13 @@ export default function Roster() {
         <div>
           <h2 className="font-headline-lg text-headline-lg text-on-surface">Roster</h2>
           <p className="text-on-surface-variant text-body-md mt-1">
-            {published
-              ? `Roster for ${MONTHS[month - 1]} ${year} — edit, add, deactivate, or upload reps`
-              : `No roster yet for ${MONTHS[month - 1]} ${year}`}
+            {view === 'reps'
+              ? (published
+                  ? `Roster for ${MONTHS[month - 1]} ${year} — edit, add, deactivate, or upload reps`
+                  : `No roster yet for ${MONTHS[month - 1]} ${year}`)
+              : (supPublished
+                  ? `Supervisors for ${MONTHS[month - 1]} ${year} — check team coverage and monthly targets`
+                  : `No supervisor roster yet for ${MONTHS[month - 1]} ${year}`)}
             <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold ml-2">{isHr ? 'HR' : 'Admin'}</span>
           </p>
         </div>
@@ -412,7 +435,21 @@ export default function Roster() {
         </div>
       </div>
 
-      {!published && (
+      {/* Reps / Sup tabs */}
+      <div className="flex bg-surface-container rounded-lg p-0.5 mb-5 w-fit">
+        {([
+          { key: 'reps' as const, label: 'Reps', icon: 'badge' },
+          { key: 'sup' as const, label: 'Sup', icon: 'supervisor_account' },
+        ]).map(t => (
+          <button key={t.key} onClick={() => setView(t.key)}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-md font-label-md text-label-md transition-all ${view === t.key ? 'bg-white shadow-sm text-primary font-bold' : 'text-on-surface-variant hover:text-primary'}`}>
+            <span className="material-symbols-outlined text-sm">{t.icon}</span>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'reps' && !published && (
         <div className="mb-5 flex items-start gap-3 bg-error-container/20 border border-error/30 rounded-xl px-5 py-4">
           <span className="material-symbols-outlined text-error mt-0.5">info</span>
           <div className="flex-1">
@@ -441,6 +478,18 @@ export default function Roster() {
         </div>
       )}
 
+      {view === 'sup' && !supPublished && (
+        <div className="mb-5 flex items-start gap-3 bg-error-container/20 border border-error/30 rounded-xl px-5 py-4">
+          <span className="material-symbols-outlined text-error mt-0.5">info</span>
+          <div className="flex-1">
+            <p className="font-label-md text-label-md text-error font-bold uppercase mb-1">No Supervisor Roster Yet</p>
+            <p className="text-body-sm text-on-surface-variant">
+              No supervisor roster exists for {MONTHS[month - 1]} {year} or any earlier month. Supervisors get added when a rep on the Reps tab is assigned to a new supervisor name, or via Team Performance.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Action bar */}
       <div className="flex flex-wrap gap-3 mb-5 items-center">
         <select value={filterBranch} onChange={e => { setFilterBranch(e.target.value === 'all' ? 'all' : Number(e.target.value)); setFilterSup('all') }}
@@ -449,13 +498,15 @@ export default function Roster() {
           {branches.map(b => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
         </select>
 
-        <select value={filterSup} onChange={e => setFilterSup(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-          className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none">
-          <option value="all">All Supervisors</option>
-          {(filterBranch !== 'all' ? supervisors.filter(s => s.branch_id === filterBranch) : supervisors).map(s => (
-            <option key={s.id} value={s.id}>{s.full_name}</option>
-          ))}
-        </select>
+        {view === 'reps' && (
+          <select value={filterSup} onChange={e => setFilterSup(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+            className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none">
+            <option value="all">All Supervisors</option>
+            {(filterBranch !== 'all' ? supervisors.filter(s => s.branch_id === filterBranch) : supervisors).map(s => (
+              <option key={s.id} value={s.id}>{s.full_name}</option>
+            ))}
+          </select>
+        )}
 
         <div className="flex bg-surface-container rounded-lg p-0.5">
           {(['all','b2c','b2b'] as const).map(t => (
@@ -469,39 +520,42 @@ export default function Roster() {
         <div className="flex-1 min-w-[200px] max-w-xs relative">
           <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search name or rep code..."
+            placeholder={view === 'reps' ? 'Search name or rep code...' : 'Search name or sup code...'}
             className="w-full bg-surface-container rounded-lg pl-8 pr-3 py-2 text-body-sm outline-none border-none" />
         </div>
 
-        <div className="ml-auto flex gap-2">
-          <button onClick={downloadTemplate} disabled={dlTemplate}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high disabled:opacity-60 transition-all" title="Download CSV template">
-            <span className={`material-symbols-outlined text-sm ${dlTemplate ? 'animate-spin-slow' : ''}`}>{dlTemplate ? 'sync' : 'download'}</span>
-            Template
-          </button>
-          <button onClick={exportRoster}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high transition-all" title="Export current view to CSV">
-            <span className="material-symbols-outlined text-sm">file_download</span>
-            Export
-          </button>
-          {canUpload && (
-            <button onClick={() => setShowUpload(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white font-label-md text-label-md hover:opacity-90 transition-all">
-              <span className="material-symbols-outlined text-sm">upload_file</span>
-              Upload Roster
+        {view === 'reps' && (
+          <div className="ml-auto flex gap-2">
+            <button onClick={downloadTemplate} disabled={dlTemplate}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high disabled:opacity-60 transition-all" title="Download CSV template">
+              <span className={`material-symbols-outlined text-sm ${dlTemplate ? 'animate-spin-slow' : ''}`}>{dlTemplate ? 'sync' : 'download'}</span>
+              Template
             </button>
-          )}
-          {canEdit && (
-            <button onClick={() => { setEditRep(null); setRepModal('create') }}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary transition-all">
-              <span className="material-symbols-outlined text-sm">person_add</span>
-              Add Rep
+            <button onClick={exportRoster}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high transition-all" title="Export current view to CSV">
+              <span className="material-symbols-outlined text-sm">file_download</span>
+              Export
             </button>
-          )}
-        </div>
+            {canUpload && (
+              <button onClick={() => setShowUpload(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white font-label-md text-label-md hover:opacity-90 transition-all">
+                <span className="material-symbols-outlined text-sm">upload_file</span>
+                Upload Roster
+              </button>
+            )}
+            {canEdit && (
+              <button onClick={() => { setEditRep(null); setRepModal('create') }}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary transition-all">
+                <span className="material-symbols-outlined text-sm">person_add</span>
+                Add Rep
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Stats strip */}
+      {view === 'reps' ? (
       <div className="grid grid-cols-4 gap-3 mb-5">
         {[
           { label: 'Total Active', value: roster.filter(r => r.active === 1).length, color: 'text-primary', bg: 'bg-primary/10', icon: 'badge' },
@@ -520,8 +574,29 @@ export default function Roster() {
           </GlassCard>
         ))}
       </div>
+      ) : (
+      <div className="grid grid-cols-4 gap-3 mb-5">
+        {[
+          { label: 'Total Active', value: supRoster.filter(s => s.active === 1).length, color: 'text-primary', bg: 'bg-primary/10', icon: 'supervisor_account' },
+          { label: 'Inactive', value: supRoster.filter(s => s.active === 0).length, color: 'text-on-surface-variant', bg: 'bg-surface-container-highest', icon: 'person_off' },
+          { label: 'B2C Sups', value: supRoster.filter(s => s.active === 1 && s.staff_type === 'b2c').length, color: 'text-secondary', bg: 'bg-secondary/10', icon: 'storefront' },
+          { label: 'B2B Sups', value: supRoster.filter(s => s.active === 1 && s.staff_type === 'b2b').length, color: 'text-tertiary', bg: 'bg-tertiary/10', icon: 'business' },
+        ].map(s => (
+          <GlassCard key={s.label} className="px-4 py-3 flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl ${s.bg} flex items-center justify-center`}>
+              <span className={`material-symbols-outlined ${s.color}`}>{s.icon}</span>
+            </div>
+            <div>
+              <p className="font-bold text-on-surface text-xl tabular-nums">{s.value}</p>
+              <p className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">{s.label}</p>
+            </div>
+          </GlassCard>
+        ))}
+      </div>
+      )}
 
       {/* Roster table */}
+      {view === 'reps' ? (
       <GlassCard elevated className="overflow-hidden">
         <div className="px-5 py-3 border-b border-outline-variant/10 flex items-center justify-between">
           <h3 className="font-headline-md text-headline-md text-on-surface">Roster — {MONTHS[month - 1]} {year}</h3>
@@ -547,18 +622,18 @@ export default function Roster() {
                     </span>
                   </th>
                 ))}
-                {['Status','Actions'].map(h => (
+                {['Target','Status','Actions'].map(h => (
                   <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/10">
               {loading ? (
-                <tr><td colSpan={7} className="py-10 text-center text-on-surface-variant">
+                <tr><td colSpan={8} className="py-10 text-center text-on-surface-variant">
                   <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>Loading roster...
                 </td></tr>
               ) : filteredRoster.length === 0 ? (
-                <tr><td colSpan={7} className="py-10 text-center text-on-surface-variant text-body-sm">
+                <tr><td colSpan={8} className="py-10 text-center text-on-surface-variant text-body-sm">
                   {published ? 'No reps match the current filters.' : `No roster uploaded for ${MONTHS[month - 1]} ${year}.`}
                 </td></tr>
               ) : filteredRoster.map(rep => (
@@ -589,6 +664,7 @@ export default function Roster() {
                       {rep.staff_type.toUpperCase()}
                     </span>
                   </td>
+                  <td className="px-5 py-3 text-body-sm font-bold tabular-nums">{fmtPts(rep.point_target ?? 0)} pts</td>
                   <td className="px-5 py-3">
                     <StatusBadge label={rep.active === 1 ? 'Active' : 'Inactive'} variant={rep.active === 1 ? 'success' : 'neutral'} />
                   </td>
@@ -626,6 +702,74 @@ export default function Roster() {
           <p className="text-[10px] text-on-surface-variant/60 italic">Changes auto-push to Google Sheets Roster tab</p>
         </div>
       </GlassCard>
+      ) : (
+      <GlassCard elevated className="overflow-hidden">
+        <div className="px-5 py-3 border-b border-outline-variant/10 flex items-center justify-between">
+          <h3 className="font-headline-md text-headline-md text-on-surface">Supervisors — {MONTHS[month - 1]} {year}</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-surface-container-low/50">
+                {['Sup Code','Name','Branch','Type','Reps','Target','Status'].map(h => (
+                  <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-outline-variant/10">
+              {loading ? (
+                <tr><td colSpan={7} className="py-10 text-center text-on-surface-variant">
+                  <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>Loading supervisors...
+                </td></tr>
+              ) : filteredSup.length === 0 ? (
+                <tr><td colSpan={7} className="py-10 text-center text-on-surface-variant text-body-sm">
+                  {supPublished ? 'No supervisors match the current filters.' : `No supervisor roster uploaded for ${MONTHS[month - 1]} ${year}.`}
+                </td></tr>
+              ) : filteredSup.map(sup => (
+                <tr key={sup.id} className={`transition-colors ${sup.active === 0 ? 'opacity-50' : 'hover:bg-surface-container/20'}`}>
+                  <td className="px-5 py-3">
+                    <span className="font-mono text-body-sm font-bold text-on-surface">{sup.sup_code || '—'}</span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-tertiary/10 flex items-center justify-center text-tertiary text-xs font-bold uppercase flex-shrink-0">
+                        {sup.full_name.slice(0, 1)}
+                      </div>
+                      <div>
+                        <p className="font-bold text-body-sm text-on-surface">{sup.full_name}</p>
+                        {sup.nickname && <p className="text-[10px] text-on-surface-variant">{sup.nickname}</p>}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center">{sup.branch_code}</span>
+                      <span className="text-body-sm">{sup.branch_name}</span>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ${sup.staff_type === 'b2c' ? 'bg-secondary/10 text-secondary' : 'bg-tertiary/10 text-tertiary'}`}>
+                      {sup.staff_type.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-body-sm tabular-nums">{sup.rep_count}</td>
+                  <td className="px-5 py-3 text-body-sm font-bold tabular-nums">{fmtPts(sup.point_target)} pts</td>
+                  <td className="px-5 py-3">
+                    <StatusBadge label={sup.active === 1 ? 'Active' : 'Inactive'} variant={sup.active === 1 ? 'success' : 'neutral'} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-5 py-3 bg-surface-container-low/20 border-t border-outline-variant/10 flex items-center justify-between">
+          <p className="text-[11px] text-on-surface-variant">
+            Showing {filteredSup.length} of {supRoster.length} supervisors
+          </p>
+          <p className="text-[10px] text-on-surface-variant/60 italic">Target = branch KPI Settings target for that supervisor's team type</p>
+        </div>
+      </GlassCard>
+      )}
     </AppShell>
   )
 }

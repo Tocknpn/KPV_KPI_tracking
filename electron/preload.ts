@@ -191,6 +191,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('roster:getAll', token),
   getRosterAllAsOf: (token: string, year: number, month: number) =>
     ipcRenderer.invoke('roster:getAllAsOf', token, year, month),
+  getRosterSupervisorsAsOf: (token: string, year: number, month: number) =>
+    ipcRenderer.invoke('roster:getSupervisorsAsOf', token, year, month),
   saveRosterRep: (token: string, data: unknown, year?: number, month?: number) =>
     ipcRenderer.invoke('roster:saveRep', token, data, year, month),
   deactivateRosterRep: (token: string, id: number, year?: number, month?: number) =>

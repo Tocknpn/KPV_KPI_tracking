@@ -179,6 +179,25 @@ export function getRosterExactMonth(db: Database, year: number, month: number) {
   return { published: rows.length > 0, rows }
 }
 
+// Supervisor roster for the EXACT month requested — no carry-forward, same rule as
+// getRosterExactMonth above. rep_count is also pinned to that exact month's roster_monthly
+// rows, not today's live team, so it matches whatever the Roster screen's Reps tab shows.
+export function getSupervisorRosterExactMonth(db: Database, year: number, month: number) {
+  const target = ym(year, month)
+  const rows = prepare(db, `
+    SELECT sup.id, sup.sup_code, sup.full_name, sup.nickname,
+      srm.branch_id, b.name AS branch_name, b.code AS branch_code,
+      srm.staff_type, srm.active,
+      (SELECT COUNT(*) FROM roster_monthly rm WHERE rm.supervisor_id = sup.id AND rm.year_month = ? AND rm.active = 1) AS rep_count
+    FROM supervisor_roster_monthly srm
+    JOIN supervisors sup ON sup.id = srm.supervisor_id
+    JOIN branches b ON b.id = srm.branch_id
+    WHERE srm.year_month = ?
+    ORDER BY srm.active DESC, b.code, sup.full_name
+  `).all(target, target)
+  return { published: rows.length > 0, rows }
+}
+
 // Full roster snapshot AS OF a given month — used by report:teamPerformance and similar
 // calculations that need a sensible value even for a month HR forgot to re-upload.
 // published=false means there is no month, past or present, with any roster data at all.

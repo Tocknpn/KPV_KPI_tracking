@@ -13,13 +13,16 @@ interface CommissionConfig {
   qty_rate_lak: number
 }
 
+// Exact month, or the Admin Defaults sentinel row — NOT a carry-forward from whatever older
+// real month happens to be the most recent. A rate set in January and never touched again must
+// not silently keep pricing every later month off January's number with no signal anywhere.
 function getEffectiveConfig(db: import('sql.js').Database, staffType: string, yearMonth: string): CommissionConfig | undefined {
   return prepare(db, `
     SELECT staff_type, jewelry_rate_lak, bar_rate_lak, qty_rate_lak
     FROM commission_configs
-    WHERE staff_type = ? AND year_month <= ?
+    WHERE staff_type = ? AND year_month IN (?, ?)
     ORDER BY year_month DESC LIMIT 1
-  `).get(staffType, yearMonth) as CommissionConfig | undefined
+  `).get(staffType, yearMonth, DEFAULTS_YM) as CommissionConfig | undefined
 }
 
 // Admin's Defaults row — sorts as the OLDEST possible year_month, so the existing "most

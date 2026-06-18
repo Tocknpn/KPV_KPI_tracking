@@ -327,6 +327,7 @@ export default function Reports() {
     days: Array<{ value: number; qty: number } | null>
     totalValue: number; totalQty: number
   }>>([])
+  const [trackingPublished, setTrackingPublished] = useState(true)
   const [trackingDaysInMonth, setTrackingDaysInMonth] = useState(30)
   const [trackingLoading, setTrackingLoading] = useState(false)
 
@@ -373,7 +374,7 @@ export default function Reports() {
 
     setTrackingLoading(true)
     window.api.getDailyTracking(token, effectiveBranchIds, year, month)
-      .then(data => { setTrackingReps(data.reps); setTrackingDaysInMonth(data.daysInMonth) })
+      .then(data => { setTrackingReps(data.reps); setTrackingDaysInMonth(data.daysInMonth); setTrackingPublished(data.published ?? true) })
       .catch(console.error)
       .finally(() => setTrackingLoading(false))
   }, [token, JSON.stringify(effectiveBranchIds), year, month, dateFrom, dateTo])
@@ -1202,6 +1203,10 @@ export default function Reports() {
               <tbody className="divide-y divide-outline-variant/10">
                 {trackingLoading ? (
                   <tr><td colSpan={trackingDaysInMonth + 2} className="py-8 text-center text-on-surface-variant text-body-sm">Loading...</td></tr>
+                ) : !trackingPublished ? (
+                  <tr><td colSpan={trackingDaysInMonth + 2} className="py-8 text-center text-on-surface-variant text-body-sm">
+                    {MONTHS[month - 1]} {year} roster not uploaded yet — nothing to reconcile until HR uploads it.
+                  </td></tr>
                 ) : trackingFiltered.length === 0 ? (
                   <tr><td colSpan={trackingDaysInMonth + 2} className="py-8 text-center text-on-surface-variant text-body-sm">No reps found for this filter.</td></tr>
                 ) : trackingFiltered.map(r => (
