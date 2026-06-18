@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 24
+const SCHEMA_VERSION = 25
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -202,7 +202,10 @@ const BASE_TABLES = `
 const BASE_INDEXES = `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_salesmen_rep_code ON salesmen(rep_code) WHERE rep_code IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_supervisors_sup_code ON supervisors(sup_code) WHERE sup_code IS NOT NULL;
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_kmtr_branch ON kpi_metric_type_rates(metric_id, branch_id, staff_type) WHERE branch_id IS NOT NULL;
+  -- No unique constraint on kpi_metric_type_rates: month-scoped rows mean the same
+  -- metric+branch+staff_type legitimately repeats once per month. App-level delete-then-
+  -- insert (saveBranchMetricRates/saveDefaultMetricRates) already prevents real duplicates.
+  CREATE INDEX IF NOT EXISTS idx_kmtr_lookup ON kpi_metric_type_rates(metric_id, staff_type, branch_id, year_month);
   CREATE INDEX IF NOT EXISTS idx_roster_monthly_ym ON roster_monthly(year_month);
   CREATE INDEX IF NOT EXISTS idx_daily_entries_date ON daily_entries(entry_date);
   CREATE INDEX IF NOT EXISTS idx_daily_entries_branch_date ON daily_entries(branch_id, entry_date);
@@ -613,6 +616,35 @@ export function applySchema(db: Database): boolean {
     db.run(`UPDATE branches SET target_b2c_default = kpi_point_target WHERE target_b2c_default IS NULL`)
     db.run(`UPDATE branches SET target_b2b_default = kpi_point_target WHERE target_b2b_default IS NULL`)
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '24')`).run()
+  }
+
+  if (currentVersion < 25) {
+    // kpi_metric_type_rates was originally created (v10) with UNIQUE(metric_id, staff_type)
+    // baked into the table. branch_id and year_month were added afterward via ALTER TABLE —
+    // but SQLite can't drop/rewrite a constraint from the original CREATE TABLE, so that
+    // narrow constraint silently kept blocking the very thing branch/month scoping was
+    // built for: a branch-specific row for a metric+type that already has a global row.
+    // Every branch-specific Jewelry/Bar rate save has likely been failing with a UNIQUE
+    // constraint error since branch scoping was introduced — global-only setups never
+    // noticed because there's only ever one row per metric+type at the global level.
+    // Rebuild the table without that constraint; saveBranchMetricRates/saveDefaultMetricRates
+    // already do an exact-match DELETE before every INSERT, so app-level dedup is already
+    // in place and no DB-level UNIQUE is actually needed here.
+    db.run(`
+      CREATE TABLE kpi_metric_type_rates_v25 (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        metric_id       INTEGER NOT NULL REFERENCES kpi_metrics(id),
+        staff_type      TEXT    NOT NULL,
+        points_per_unit REAL    NOT NULL DEFAULT 0,
+        branch_id       INTEGER REFERENCES branches(id),
+        year_month      TEXT
+      )
+    `)
+    db.run(`INSERT INTO kpi_metric_type_rates_v25 SELECT id, metric_id, staff_type, points_per_unit, branch_id, year_month FROM kpi_metric_type_rates`)
+    db.run(`DROP TABLE kpi_metric_type_rates`)
+    db.run(`ALTER TABLE kpi_metric_type_rates_v25 RENAME TO kpi_metric_type_rates`)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_kmtr_lookup ON kpi_metric_type_rates(metric_id, staff_type, branch_id, year_month)`)
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '25')`).run()
   }
 
   return false // Existing DB — no seeding needed
