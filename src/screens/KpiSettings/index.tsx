@@ -154,18 +154,46 @@ export default function KpiSettings() {
     window.api.isMonthSubmitted(token, globalYear, globalMonth).then(r => setMonthSubmitted(r.submitted))
   }, [token, globalYear, globalMonth])
 
-  // Commission Rate Defaults — Admin only, loaded once (not month-scoped).
+  // Commission — Admin edits Defaults (not month-scoped); HR records this exact month,
+  // same as rates/tiers/targets. Both write the same commission_configs table, just at a
+  // different year_month (Admin's is the '000000' sentinel every month falls back to).
   useEffect(() => {
-    if (!token || !isAdmin) return
-    window.api.getCommissionDefaults(token).then(d => {
-      setCommEdits({
-        b2c: { jewelry: String(d.b2c.jewelry), bar: String(d.b2c.bar), qty: String(d.b2c.qty) },
-        b2b: { jewelry: String(d.b2b.jewelry), bar: String(d.b2b.bar), qty: String(d.b2b.qty) },
-      })
-      setSupShareB2cEdit(String(d.supB2cPct))
-      setSupShareB2bEdit(String(d.supB2bPct))
-    }).catch(console.error)
-  }, [token, isAdmin])
+    if (!token) return
+    if (isAdmin) {
+      window.api.getCommissionDefaults(token).then(d => {
+        setCommEdits({
+          b2c: { jewelry: String(d.b2c.jewelry), bar: String(d.b2c.bar), qty: String(d.b2c.qty) },
+          b2b: { jewelry: String(d.b2b.jewelry), bar: String(d.b2b.bar), qty: String(d.b2b.qty) },
+        })
+        setSupShareB2cEdit(String(d.supB2cPct))
+        setSupShareB2bEdit(String(d.supB2bPct))
+      }).catch(console.error)
+    } else {
+      const yearMonth = `${globalYear}${String(globalMonth).padStart(2, '0')}`
+      window.api.getCommissionConfigs(token, yearMonth).then((cfgs: Array<{
+        staff_type: string; jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number
+      }>) => {
+        const next = {
+          b2c: { jewelry: '0', bar: '0', qty: '0' },
+          b2b: { jewelry: '0', bar: '0', qty: '0' },
+        }
+        let supB2c = '30'; let supB2b = '30'
+        cfgs.forEach(c => {
+          if (c.staff_type === 'supervisor_b2c') supB2c = String(c.jewelry_rate_lak)
+          else if (c.staff_type === 'supervisor_b2b') supB2b = String(c.jewelry_rate_lak)
+          // Legacy single 'supervisor' row (from before the B2C/B2B split) — apply to both
+          // until this month gets its own split values saved.
+          else if (c.staff_type === 'supervisor') { supB2c = String(c.jewelry_rate_lak); supB2b = String(c.jewelry_rate_lak) }
+          else if (c.staff_type === 'b2c' || c.staff_type === 'b2b') {
+            next[c.staff_type] = { jewelry: String(c.jewelry_rate_lak), bar: String(c.bar_rate_lak), qty: String(c.qty_rate_lak) }
+          }
+        })
+        setCommEdits(next)
+        setSupShareB2cEdit(supB2c)
+        setSupShareB2bEdit(supB2b)
+      }).catch(console.error)
+    }
+  }, [token, isAdmin, globalYear, globalMonth])
 
   // Load monthly targets whenever global month/year changes
   useEffect(() => {
@@ -245,8 +273,21 @@ export default function KpiSettings() {
         if (key in tiersB2bDrafts) await window.api.saveBranchQtyTiers(token, b.id, globalYear, globalMonth, tiersB2bDrafts[key].map(t => ({ thresholdPct: t.threshold_pct, score: t.score })), 'b2b')
       }
 
-      // Monthly branch KPI point targets — Commission is Admin/Defaults-only now (backend
-      // already required admin for commission saves; this matches that, not a new restriction)
+      // Commission rates — B2C, B2B, and per-type supervisor share, scoped to this month
+      const ym = `${globalYear}${String(globalMonth).padStart(2, '0')}`
+      for (const t of ['b2c', 'b2b'] as const) {
+        const e = commEdits[t]; if (!e) continue
+        await window.api.saveCommissionConfig(token, { staffType: t, yearMonth: ym, jewelryRateLak: parseFloat(e.jewelry) || 0, barRateLak: parseFloat(e.bar) || 0, qtyRateLak: parseFloat(e.qty) || 0 })
+      }
+      const supB2c = parseFloat(supShareB2cEdit); const supB2b = parseFloat(supShareB2bEdit)
+      if (!isNaN(supB2c) && supB2c > 0 && supB2c <= 100) {
+        await window.api.saveCommissionConfig(token, { staffType: 'supervisor_b2c', yearMonth: ym, jewelryRateLak: supB2c, barRateLak: 0, qtyRateLak: 0 })
+      }
+      if (!isNaN(supB2b) && supB2b > 0 && supB2b <= 100) {
+        await window.api.saveCommissionConfig(token, { staffType: 'supervisor_b2b', yearMonth: ym, jewelryRateLak: supB2b, barRateLak: 0, qtyRateLak: 0 })
+      }
+
+      // Monthly branch KPI point targets
       await saveMonthlyTargets()
 
       // Marks this month as confirmed regardless of whether anything actually changed —
@@ -389,18 +430,19 @@ export default function KpiSettings() {
         )}
       </GlassCard>}
 
-      {/* Commission Rate Defaults — Admin only, not month-scoped. Backend already required
-          admin for any commission save (requireAdmin in commission:saveConfig) — this just
-          makes the UI match a permission that already existed. */}
-      {isAdmin && (
+      {/* Commission — Admin edits Defaults (Standing, no month concept); HR records this
+          exact month, same as rates/tiers/targets. Both roles share this card, the
+          load/save effects just point at a different scope underneath. */}
+      {(
         <GlassCard elevated className="p-5 mb-6">
           <h4 className="font-headline-md text-on-surface flex items-center gap-2 mb-1">
             <span className="material-symbols-outlined text-tertiary">payments</span>
-            Commission Rate Defaults
+            {isAdmin ? 'Commission Rate Defaults' : `Commission Rates — ${MONTH_NAMES[globalMonth - 1]} ${globalYear}`}
             {(dirtyComm || dirtySupShare) && <span className="text-secondary font-bold text-sm">*</span>}
           </h4>
           <p className="text-body-sm text-on-surface-variant mb-4">
-            Rep commission = (Jewelry Baht × rate) + (Bar Baht × rate) + (Qty × rate). Applies to any month that's never had its own override.
+            Rep commission = (Jewelry Baht × rate) + (Bar Baht × rate) + (Qty × rate).
+            {isAdmin ? ' Applies to any month that\'s never had its own override.' : ' Saved for this month only — use Save All below.'}
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {(['b2c', 'b2b'] as const).map(type => (

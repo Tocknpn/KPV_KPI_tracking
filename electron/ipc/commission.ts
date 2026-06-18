@@ -55,7 +55,8 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
     staffType: string; yearMonth: string
     jewelryRateLak: number; barRateLak: number; qtyRateLak: number
   }) => {
-    requireAdmin(token)
+    const u = requireAuth(token)
+    if (!['admin','hr'].includes(u.role)) throw new Error('Forbidden')
     const db = getDb()
 
     prepare(db, `
