@@ -6,6 +6,7 @@ import type { KpiMetric } from '../../types'
 
 interface EditableTier { id?: number; threshold_pct: number; score: number }
 interface BranchRates { jewelry: { b2c: number; b2b: number }; bar: { b2c: number; b2b: number } }
+const EMPTY_RATES: BranchRates = { jewelry: { b2c: 0, b2b: 0 }, bar: { b2c: 0, b2b: 0 } }
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DEFAULT_TIERS: EditableTier[] = [
@@ -21,11 +22,6 @@ export default function KpiSettings() {
   const [selectedMetric, setSelectedMetric] = useState<number>(3)
   // KPI Score Config is branch-scoped only — no Global option
   const [selectedBranch, setSelectedBranch] = useState<number | null>(null)
-  // Qty Tiers — split B2C/B2B, same as rates/targets/commission. Two independent tables
-  // per branch instead of one shared one.
-  const [tiersB2c, setTiersB2c] = useState<EditableTier[]>([])
-  const [tiersB2b, setTiersB2b] = useState<EditableTier[]>([])
-  const [branchRates, setBranchRates] = useState<BranchRates>({ jewelry: { b2c: 0, b2b: 0 }, bar: { b2c: 0, b2b: 0 } })
   const [toast, setToast] = useState('')
   // Global month filter — controls all sections
   const [globalYear, setGlobalYear]   = useState(new Date().getFullYear())
@@ -35,6 +31,19 @@ export default function KpiSettings() {
   // Admin sets up Defaults only; HR submits Monthly KPI only — not a toggle, a fixed split
   // by role. Admin never sees Commission/Monthly Targets; HR never sees the raw Defaults editor.
   const isAdmin = user?.role === 'admin'
+
+  // Per-branch draft cache for rates/tiers — keyed by branch + (Defaults vs this exact
+  // month), so switching branch tabs never loses an unsaved edit by re-fetching over it.
+  // Previously this was flat single state: switching MM -> IT -> MM re-fetched MM fresh
+  // and silently discarded whatever was typed, and Save only ever persisted whichever
+  // branch happened to be selected at click time — every other branch's edits were lost
+  // before Save was even pressed.
+  function draftKey(branchId: number): string {
+    return isAdmin ? `def:${branchId}` : `${globalYear}-${globalMonth}:${branchId}`
+  }
+  const [ratesDrafts, setRatesDrafts] = useState<Record<string, BranchRates>>({})
+  const [tiersB2cDrafts, setTiersB2cDrafts] = useState<Record<string, EditableTier[]>>({})
+  const [tiersB2bDrafts, setTiersB2bDrafts] = useState<Record<string, EditableTier[]>>({})
   const [monthSubmitted, setMonthSubmitted] = useState(true) // assume fine until checked, avoids a flash of the warning on every load
   // Branch Point Target Defaults — required B2C + B2B per branch, no combined number anymore.
   // Backed by branches.target_b2c_default/target_b2b_default — flat columns, no month concept.
@@ -72,6 +81,30 @@ export default function KpiSettings() {
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3500) }
 
+  // What the currently-selected branch's tab shows — reads from the draft cache, never
+  // straight from a fetch, so it reflects whatever was last typed for this branch.
+  const currentKey   = selectedBranch !== null ? draftKey(selectedBranch) : null
+  const branchRates  = currentKey ? (ratesDrafts[currentKey] ?? EMPTY_RATES) : EMPTY_RATES
+  const tiersB2c     = currentKey ? (tiersB2cDrafts[currentKey] ?? []) : []
+  const tiersB2b     = currentKey ? (tiersB2bDrafts[currentKey] ?? []) : []
+
+  function setBranchRates(updater: BranchRates | ((prev: BranchRates) => BranchRates)) {
+    if (selectedBranch === null) return
+    const key = draftKey(selectedBranch)
+    setRatesDrafts(prev => {
+      const current = prev[key] ?? EMPTY_RATES
+      const next = typeof updater === 'function' ? (updater as (p: BranchRates) => BranchRates)(current) : updater
+      return { ...prev, [key]: next }
+    })
+  }
+
+  function setTiersForType(type: 'b2c' | 'b2b', updater: (prev: EditableTier[]) => EditableTier[]) {
+    if (selectedBranch === null) return
+    const key = draftKey(selectedBranch)
+    const setDrafts = type === 'b2c' ? setTiersB2cDrafts : setTiersB2bDrafts
+    setDrafts(prev => ({ ...prev, [key]: updater(prev[key] ?? []) }))
+  }
+
   useEffect(() => {
     if (!token) return
     window.api.getKpiMetrics(token).then(setMetrics)
@@ -82,22 +115,22 @@ export default function KpiSettings() {
     if (selectedBranch === null && branches.length > 0) setSelectedBranch(branches[0].id)
   }, [branches, selectedBranch])
 
-  // Load this branch's jewelry/bar rates + qty tiers AS OF the selected month — editing and
-  // saving here only ever affects that month, never rewrites earlier months' scoring. In
-  // Edit Defaults mode, load/save the standing values instead (year_month/effective_to NULL
-  // — the same rows every month already falls back to when nothing's set for it).
+  // Load this branch's jewelry/bar rates + qty tiers — once per branch per draft key. Only
+  // fetches if this branch isn't already in the draft cache, so revisiting a branch tab
+  // shows whatever was last edited, not a fresh overwrite from the backend.
   useEffect(() => {
     if (!token || selectedBranch === null) return
+    const key = draftKey(selectedBranch)
     const toTiers = (r: { tiers: Array<{ id: number; threshold_pct: number; score: number }> }) =>
       r.tiers.length ? r.tiers.map(t => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS
     if (isAdmin) {
-      window.api.getDefaultMetricRates(token, selectedBranch).then((r: BranchRates) => { setBranchRates(r); setDirtyMult(false) })
-      window.api.getDefaultQtyTiers(token, selectedBranch, 'b2c').then(r => setTiersB2c(toTiers(r)))
-      window.api.getDefaultQtyTiers(token, selectedBranch, 'b2b').then(r => setTiersB2b(toTiers(r)))
+      if (!(key in ratesDrafts)) window.api.getDefaultMetricRates(token, selectedBranch).then((r: BranchRates) => setRatesDrafts(prev => ({ ...prev, [key]: r })))
+      if (!(key in tiersB2cDrafts)) window.api.getDefaultQtyTiers(token, selectedBranch, 'b2c').then(r => setTiersB2cDrafts(prev => ({ ...prev, [key]: toTiers(r) })))
+      if (!(key in tiersB2bDrafts)) window.api.getDefaultQtyTiers(token, selectedBranch, 'b2b').then(r => setTiersB2bDrafts(prev => ({ ...prev, [key]: toTiers(r) })))
     } else {
-      window.api.getBranchMetricRates(token, selectedBranch, globalYear, globalMonth).then((r: BranchRates) => { setBranchRates(r); setDirtyMult(false) })
-      window.api.getBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, 'b2c').then(r => setTiersB2c(toTiers(r)))
-      window.api.getBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, 'b2b').then(r => setTiersB2b(toTiers(r)))
+      if (!(key in ratesDrafts)) window.api.getBranchMetricRates(token, selectedBranch, globalYear, globalMonth).then((r: BranchRates) => setRatesDrafts(prev => ({ ...prev, [key]: r })))
+      if (!(key in tiersB2cDrafts)) window.api.getBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, 'b2c').then(r => setTiersB2cDrafts(prev => ({ ...prev, [key]: toTiers(r) })))
+      if (!(key in tiersB2bDrafts)) window.api.getBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, 'b2b').then(r => setTiersB2bDrafts(prev => ({ ...prev, [key]: toTiers(r) })))
     }
   }, [token, selectedBranch, globalYear, globalMonth, isAdmin])
 
@@ -171,10 +204,13 @@ export default function KpiSettings() {
       if (isAdmin) {
         // Defaults aren't tied to a month — the standing rates/tiers/targets/commission
         // Admin maintains. All four KPI-setup tables now have a "standing" concept.
-        if (selectedBranch !== null) {
-          await window.api.saveDefaultMetricRates(token, selectedBranch, branchRates)
-          await window.api.saveDefaultQtyTiers(token, selectedBranch, tiersB2c.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })), 'b2c')
-          await window.api.saveDefaultQtyTiers(token, selectedBranch, tiersB2b.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })), 'b2b')
+        // Saves EVERY branch that has a draft in the cache, not just the one currently
+        // selected — switching branch tabs before clicking Save must not lose anything.
+        for (const b of branches) {
+          const key = draftKey(b.id)
+          if (key in ratesDrafts) await window.api.saveDefaultMetricRates(token, b.id, ratesDrafts[key])
+          if (key in tiersB2cDrafts) await window.api.saveDefaultQtyTiers(token, b.id, tiersB2cDrafts[key].map(t => ({ thresholdPct: t.threshold_pct, score: t.score })), 'b2c')
+          if (key in tiersB2bDrafts) await window.api.saveDefaultQtyTiers(token, b.id, tiersB2bDrafts[key].map(t => ({ thresholdPct: t.threshold_pct, score: t.score })), 'b2b')
         }
         for (const b of branches) {
           const valB2c = parseFloat(branchTargetB2cDefaults[b.id] ?? '')
@@ -196,11 +232,12 @@ export default function KpiSettings() {
         return
       }
 
-      // Jewelry/Bar rates + Qty tiers for the selected branch — scoped to this exact month
-      if (selectedBranch !== null) {
-        await window.api.saveBranchMetricRates(token, selectedBranch, globalYear, globalMonth, branchRates)
-        await window.api.saveBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, tiersB2c.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })), 'b2c')
-        await window.api.saveBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, tiersB2b.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })), 'b2b')
+      // Jewelry/Bar rates + Qty tiers — scoped to this exact month, every branch with a draft
+      for (const b of branches) {
+        const key = draftKey(b.id)
+        if (key in ratesDrafts) await window.api.saveBranchMetricRates(token, b.id, globalYear, globalMonth, ratesDrafts[key])
+        if (key in tiersB2cDrafts) await window.api.saveBranchQtyTiers(token, b.id, globalYear, globalMonth, tiersB2cDrafts[key].map(t => ({ thresholdPct: t.threshold_pct, score: t.score })), 'b2c')
+        if (key in tiersB2bDrafts) await window.api.saveBranchQtyTiers(token, b.id, globalYear, globalMonth, tiersB2bDrafts[key].map(t => ({ thresholdPct: t.threshold_pct, score: t.score })), 'b2b')
       }
 
       // Monthly branch KPI point targets — Commission is Admin/Defaults-only now (backend
@@ -215,6 +252,8 @@ export default function KpiSettings() {
 
       setDirtyMult(false); setDirtyComm(false); setDirtySupShare(false); setDirtyTargets(false)
       showToast(`All KPI settings saved for ${MONTH_NAMES[globalMonth - 1]} ${globalYear}.`)
+    } catch (e) {
+      showToast(`Save failed: ${e instanceof Error ? e.message : String(e)}`)
     } finally { setSavingAll(false) }
   }
 
@@ -235,8 +274,8 @@ export default function KpiSettings() {
         window.api.getDefaultQtyTiers(token, selectedBranch, 'b2b'),
       ])
       setBranchRates(rates)
-      setTiersB2c(toTiers(tierB2c))
-      setTiersB2b(toTiers(tierB2b))
+      setTiersForType('b2c', () => toTiers(tierB2c))
+      setTiersForType('b2b', () => toTiers(tierB2b))
       setDirtyMult(true)
     }
   }
@@ -249,20 +288,16 @@ export default function KpiSettings() {
     setSimResult(null)
   }
 
-  function tierSetter(type: 'b2c' | 'b2b') {
-    return type === 'b2c' ? setTiersB2c : setTiersB2b
-  }
-
   function addTier(type: 'b2c' | 'b2b') {
-    tierSetter(type)(prev => [...prev, { threshold_pct: 0, score: 0 }].sort((a, b) => b.threshold_pct - a.threshold_pct))
+    setTiersForType(type, prev => [...prev, { threshold_pct: 0, score: 0 }].sort((a, b) => b.threshold_pct - a.threshold_pct))
   }
 
   function removeTier(type: 'b2c' | 'b2b', i: number) {
-    tierSetter(type)(prev => prev.filter((_, idx) => idx !== i))
+    setTiersForType(type, prev => prev.filter((_, idx) => idx !== i))
   }
 
   function updateTier(type: 'b2c' | 'b2b', i: number, field: 'threshold_pct' | 'score', val: string) {
-    tierSetter(type)(prev => {
+    setTiersForType(type, prev => {
       const next = [...prev]
       next[i] = { ...next[i], [field]: parseFloat(val) || 0 }
       return next
@@ -270,7 +305,7 @@ export default function KpiSettings() {
   }
 
   function sortTiers(type: 'b2c' | 'b2b') {
-    tierSetter(type)(prev => [...prev].sort((a, b) => b.threshold_pct - a.threshold_pct))
+    setTiersForType(type, prev => [...prev].sort((a, b) => b.threshold_pct - a.threshold_pct))
   }
 
   async function simulate() {
