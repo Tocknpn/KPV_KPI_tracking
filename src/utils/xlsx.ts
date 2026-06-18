@@ -158,6 +158,69 @@ export function generateRosterTemplateXLSX(salesmen: RosterStub[]): Uint8Array {
   return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as Uint8Array
 }
 
+// ── Sample Sheet generator ──────────────────────────────────────────────────
+// One worksheet per Google Sheets tab the app pushes, exact same headers as
+// electron/ipc/sheets.ts's writeTab() calls, with a couple of example rows — for pasting
+// into a brand-new Google Sheet before connecting the app to it. Pure static placeholder
+// data, no DB read — replaces the old "Force Full Sync" admin button, which pushed
+// whatever was currently in the local DB (including leftover test/seed data) straight over
+// the connected Sheet with no guardrail distinguishing real data from sample data.
+export function generateSampleWorkbook(): Uint8Array {
+  const wb = XLSX.utils.book_new()
+  const addTab = (name: string, rows: (string | number)[][]) => {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name)
+  }
+
+  addTab('Entries', [
+    ['Date', 'Branch', 'Rep Code', 'Salesman Name', 'Jewelry (Baht)', 'Bar (Baht)', 'Qty'],
+    ['2026-01-01', 'Morning Market', 'MM-A-001', 'Somchai Phommachan', 45.5, 12.0, 2],
+  ])
+  addTab('Settings', [
+    ['Setting', 'Value'],
+    ['Default Supervisor Commission Share (%)', '30'],
+  ])
+  addTab('Branches', [
+    ['code', 'name', 'kpi_point_target'],
+    ['MM', 'Morning Market', 8000],
+    ['VC', 'Vientiane Center', 5500],
+    ['IT', 'ITecc', 6000],
+    ['VT', 'VangThong', 7000],
+  ])
+  addTab('KPIRates', [
+    ['Metric', 'Branch', 'Staff Type', 'Applies To', 'Points per Unit'],
+    ['Jewelry', 'MM', 'B2C', 'Standing (all months)', 15],
+    ['Bar', 'MM', 'B2C', 'Standing (all months)', 7.5],
+  ])
+  addTab('QtyTiers', [
+    ['Branch', 'Applies To', 'If Qty Is', 'Score Multiplier', 'Tier Order'],
+    ['MM', 'B2C', '>= 50', 2, 1],
+    ['MM', 'B2C', '>= 200', 3, 2],
+  ])
+  addTab('Roster', [
+    ['Month', 'rep_code', 'full_name', 'nickname', 'branch_code', 'supervisor_name', 'staff_type', 'active', 'supervisor_code'],
+    ['Jan 2026', 'MM-A-001', 'Somchai Phommachan', 'Som', 'MM', 'Somvang Phongsavanh', 'b2c', 1, 'MM-SUP-01'],
+  ])
+  addTab('CommissionConfig', [
+    ['Month', 'Staff Type', 'Jewelry Rate (₭/Baht)', 'Bar Rate (₭/Baht)', 'Qty Rate (₭/pc)'],
+    ['Jan 2026', 'B2C', 5000, 3000, 500],
+    ['Jan 2026', 'B2B', 8000, 5000, 800],
+  ])
+  addTab('Users', [
+    ['username', 'full_name', 'role', 'branch_code', 'supervisor_name', 'active', 'password'],
+    ['sup_mm', 'Supervisor Morning Market', 'sales_sup', 'MM', '', 1, 'changeMe123'],
+  ])
+  addTab('Supervisors', [
+    ['full_name', 'nickname', 'branch_code', 'staff_type', 'active', 'sup_code'],
+    ['Somvang Phongsavanh', 'Somvang', 'MM', 'b2c', 1, 'MM-SUP-01'],
+  ])
+  addTab('MonthlyBranchTargets', [
+    ['Branch', 'Month', 'Target (pts/person)', 'B2C Target Override', 'B2B Target Override'],
+    ['MM', 'Jan 2026', 8000, '', ''],
+  ])
+
+  return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as Uint8Array
+}
+
 // ── Download XLSX blob ─────────────────────────────────────────────────────
 export function downloadXLSX(filename: string, data: Uint8Array): void {
   const blob = new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })

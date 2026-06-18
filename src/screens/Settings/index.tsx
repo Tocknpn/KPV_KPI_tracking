@@ -3,6 +3,7 @@ import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
+import { generateSampleWorkbook, downloadXLSX } from '../../utils/xlsx'
 import type { SyncLog, EmailConfig } from '../../types'
 
 const DEFAULT_EMAIL: EmailConfig = {
@@ -15,7 +16,6 @@ export default function Settings() {
   const { token } = useAuthStore()
   const { setLastSyncedAt } = useAppStore()
 
-  const [isForceSyncing, setIsForceSyncing] = useState(false)
   const [seeding, setSeeding]       = useState(false)
   const [showKpiRef, setShowKpiRef] = useState(false)
   const [sheetsId, setSheetsId] = useState('')
@@ -91,15 +91,13 @@ export default function Settings() {
     if (path) setSaPath(path)
   }
 
-  async function forceSyncAll() {
-    if (!token) return
-    setIsForceSyncing(true)
-    const res = await window.api.forceSyncAll(token)
-    if (res.success) showToast(`Full sync complete — ${res.count} entries + all config tabs pushed.`)
-    else showToast(`Force sync failed: ${res.error}`)
-    window.api.getSyncLogs(token).then(setSyncLogs)
-    refreshLastSync()
-    setIsForceSyncing(false)
+  // Generates a static example workbook — one sheet per tab, real column headers, a couple
+  // of placeholder rows. Pure local file, never reads the local DB or touches the connected
+  // Sheet — replaces the old "Force Full Sync" button, which pushed whatever was in the
+  // local DB (including leftover test/seed data) straight over the connected Sheet with no
+  // guardrail. One misclick after "Load Test Data" could have wiped production with fakes.
+  function downloadSampleSheet() {
+    downloadXLSX('salestrack_sample_sheet.xlsx', generateSampleWorkbook())
   }
 
   async function pullFromCloud() {
@@ -519,19 +517,17 @@ export default function Settings() {
                 </button>
               </div>
               <button
-                onClick={forceSyncAll}
-                disabled={isForceSyncing}
-                className="w-full py-2 bg-surface-container-high text-on-surface border border-outline-variant/30 rounded font-label-md text-label-md flex items-center justify-center gap-2 hover:bg-primary/10 hover:text-primary hover:border-primary/30 disabled:opacity-60 transition-colors"
+                onClick={downloadSampleSheet}
+                className="w-full py-2 bg-surface-container-high text-on-surface border border-outline-variant/30 rounded font-label-md text-label-md flex items-center justify-center gap-2 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors"
               >
-                <span className={`material-symbols-outlined text-sm ${isForceSyncing ? 'animate-spin-slow' : ''}`}>
-                  {isForceSyncing ? 'sync' : 'cloud_sync'}
-                </span>
-                {isForceSyncing ? 'Syncing all...' : 'Force Full Sync (All Tabs)'}
+                <span className="material-symbols-outlined text-sm">download</span>
+                Download Sample Sheet
               </button>
               <p className="text-[10px] text-on-surface-variant/60 italic">
                 Push → sends unsynced entries · auto-syncs on every save/upload &nbsp;·&nbsp;
                 Pull → imports all tabs (roster · settings · KPI rates · entries) &nbsp;·&nbsp;
-                Force Full Sync → resets + re-pushes ALL entries and ALL config tabs
+                Download Sample Sheet → an XLSX file with every tab's correct columns + example rows,
+                to paste into a brand-new Google Sheet before connecting — never touches the connected Sheet.
               </p>
             </div>
           </GlassCard>

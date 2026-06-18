@@ -3,7 +3,6 @@ import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useAuthStore } from '../../store/auth.store'
-import { useAppStore } from '../../store/app.store'
 import type { RosterRow, Supervisor } from '../../types'
 import { validateRosterRows, downloadCSV } from '../../utils/csv'
 import { parseXLSX, readFileAsArrayBuffer } from '../../utils/xlsx'
@@ -240,7 +239,6 @@ function RosterUploadModal({ token, onDone, onClose }: {
 // ── Main screen ───────────────────────────────────────────────────────────
 export default function Roster() {
   const { token, user, branches } = useAuthStore()
-  const { setLastSyncedAt } = useAppStore()
   const now = new Date()
 
   const [year, setYear]   = useState(now.getFullYear())
@@ -253,7 +251,6 @@ export default function Roster() {
   const [published, setPublished]     = useState(true)
   const [supervisors, setSupervisors] = useState<Supervisor[]>([])
   const [loading, setLoading]         = useState(false)
-  const [syncing, setSyncing]         = useState(false)
   const [repModal, setRepModal]       = useState<'create' | 'edit' | null>(null)
   const [editRep, setEditRep]         = useState<RosterRow | null>(null)
   const [toast, setToast]             = useState('')
@@ -314,19 +311,6 @@ export default function Roster() {
     await window.api.reactivateRosterRep(token, rep.id, year, month)
     showToast(`"${rep.full_name}" reactivated.`)
     loadRoster()
-  }
-
-  async function syncToSheets() {
-    if (!token) return
-    setSyncing(true)
-    try {
-      await window.api.forceSyncAll(token)
-      setLastSyncedAt(new Date().toISOString())
-      showToast('All data synced to Google Sheets.')
-    } catch {
-      showToast('Sync failed — check Sheets config in Settings.')
-    }
-    setSyncing(false)
   }
 
   async function downloadTemplate() {
@@ -516,11 +500,6 @@ export default function Roster() {
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high transition-all" title="Export current view to CSV">
             <span className="material-symbols-outlined text-sm">file_download</span>
             Export
-          </button>
-          <button onClick={syncToSheets} disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tertiary text-white font-label-md text-label-md hover:opacity-90 disabled:opacity-60 transition-all">
-            <span className={`material-symbols-outlined text-sm ${syncing ? 'animate-spin-slow' : ''}`}>cloud_upload</span>
-            {syncing ? 'Syncing...' : 'Sync to Sheets'}
           </button>
           {canUpload && (
             <button onClick={() => setShowUpload(true)}
