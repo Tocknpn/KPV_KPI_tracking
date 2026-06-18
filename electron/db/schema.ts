@@ -245,6 +245,18 @@ const V2_TABLES = `
   );
 `
 
+// Wraps a fresh-install statement so a failure names exactly which step broke instead of
+// bubbling up as a bare "NOT NULL constraint failed" with no indication of which of the four
+// statements (BASE_TABLES/V2_TABLES/BASE_INDEXES/schema_version insert) was running — that
+// ambiguity is what made an earlier crash on a brand-new device impossible to pin down from
+// the startup-error.log alone, since all four ran inside one unguarded block.
+function runStep(label: string, fn: () => void): void {
+  try { fn() } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    throw new Error(`[fresh-install:${label}] ${msg}`)
+  }
+}
+
 export function applySchema(db: Database): boolean {
   let currentVersion = 0
   try {
@@ -257,10 +269,11 @@ export function applySchema(db: Database): boolean {
 
   if (currentVersion === 0) {
     // Fresh install — create everything
-    db.run(BASE_TABLES)
-    db.run(V2_TABLES)
-    db.run(BASE_INDEXES)
-    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', ?)`).run(String(SCHEMA_VERSION))
+    runStep('BASE_TABLES', () => db.run(BASE_TABLES))
+    runStep('V2_TABLES', () => db.run(V2_TABLES))
+    runStep('BASE_INDEXES', () => db.run(BASE_INDEXES))
+    runStep('schema_version_insert', () =>
+      db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', ?)`).run([String(SCHEMA_VERSION)]))
     return true // Caller should seed
   }
 
@@ -485,7 +498,7 @@ export function applySchema(db: Database): boolean {
     `)
     const now = new Date()
     const currentYm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
-    db.prepare(`INSERT OR IGNORE INTO roster_months (year_month) VALUES (?)`).run(currentYm)
+    db.prepare(`INSERT OR IGNORE INTO roster_months (year_month) VALUES (?)`).run([currentYm])
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '15')`).run()
   }
 

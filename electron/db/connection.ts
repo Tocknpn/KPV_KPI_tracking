@@ -45,7 +45,8 @@ export async function initDatabase(): Promise<void> {
 
   const isNew = applySchema(db)
   if (isNew) {
-    seedDatabase(db)
+    try { seedDatabase(db) }
+    catch (e) { throw new Error(`[seedDatabase] ${e instanceof Error ? e.message : String(e)}`) }
     persistDb()
   }
 }
