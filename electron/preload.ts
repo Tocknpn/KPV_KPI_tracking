@@ -67,10 +67,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('kpi:getBranchMetricRates', token, branchId, year, month),
   saveBranchMetricRates: (token: string, branchId: number, year: number, month: number, rates: { jewelry: { b2c: number; b2b: number }; bar: { b2c: number; b2b: number } }) =>
     ipcRenderer.invoke('kpi:saveBranchMetricRates', token, branchId, year, month, rates),
-  getBranchQtyTiers: (token: string, branchId: number, year: number, month: number) =>
-    ipcRenderer.invoke('kpi:getBranchQtyTiers', token, branchId, year, month),
-  saveBranchQtyTiers: (token: string, branchId: number, year: number, month: number, tiers: Array<{ thresholdPct: number; score: number }>) =>
-    ipcRenderer.invoke('kpi:saveBranchQtyTiers', token, branchId, year, month, tiers),
+  getBranchQtyTiers: (token: string, branchId: number, year: number, month: number, staffType: 'b2c' | 'b2b') =>
+    ipcRenderer.invoke('kpi:getBranchQtyTiers', token, branchId, year, month, staffType),
+  saveBranchQtyTiers: (token: string, branchId: number, year: number, month: number, tiers: Array<{ thresholdPct: number; score: number }>, staffType: 'b2c' | 'b2b') =>
+    ipcRenderer.invoke('kpi:saveBranchQtyTiers', token, branchId, year, month, tiers, staffType),
   saveBranchKpiTarget: (token: string, branchId: number, target: number) =>
     ipcRenderer.invoke('kpi:saveBranchKpiTarget', token, branchId, target),
   saveBranchTargetDefaults: (token: string, branchId: number, targetB2c: number, targetB2b: number) =>
@@ -83,8 +83,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('kpi:getFormula', token),
   saveKpiFormula: (token: string, base: number, weight: number) =>
     ipcRenderer.invoke('kpi:saveFormula', token, base, weight),
-  simulateKpiScore: (token: string, metricId: number, branchId: number | null, actual: number, target: number) =>
-    ipcRenderer.invoke('kpi:simulate', token, metricId, branchId, actual, target),
+  simulateKpiScore: (token: string, metricId: number, branchId: number | null, actual: number, target: number, staffType?: string) =>
+    ipcRenderer.invoke('kpi:simulate', token, metricId, branchId, actual, target, staffType),
   getSupKpiPct: (token: string) =>
     ipcRenderer.invoke('kpi:getSupKpiPct', token),
   saveSupKpiPct: (token: string, pct: number) =>
@@ -97,10 +97,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('kpi:getDefaultMetricRates', token, branchId),
   saveDefaultMetricRates: (token: string, branchId: number, rates: { jewelry: { b2c: number; b2b: number }; bar: { b2c: number; b2b: number } }) =>
     ipcRenderer.invoke('kpi:saveDefaultMetricRates', token, branchId, rates),
-  getDefaultQtyTiers: (token: string, branchId: number) =>
-    ipcRenderer.invoke('kpi:getDefaultQtyTiers', token, branchId),
-  saveDefaultQtyTiers: (token: string, branchId: number, tiers: Array<{ thresholdPct: number; score: number }>) =>
-    ipcRenderer.invoke('kpi:saveDefaultQtyTiers', token, branchId, tiers),
+  getDefaultQtyTiers: (token: string, branchId: number, staffType: 'b2c' | 'b2b') =>
+    ipcRenderer.invoke('kpi:getDefaultQtyTiers', token, branchId, staffType),
+  saveDefaultQtyTiers: (token: string, branchId: number, tiers: Array<{ thresholdPct: number; score: number }>, staffType: 'b2c' | 'b2b') =>
+    ipcRenderer.invoke('kpi:saveDefaultQtyTiers', token, branchId, tiers, staffType),
 
   // ── Supervisors ────────────────────────────────────────────────────────
   getSupervisors: (token: string, branchId?: number) =>

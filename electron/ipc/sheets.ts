@@ -71,9 +71,11 @@ async function pushSettings(db: Database, sheets: ReturnType<typeof google.sheet
 }
 
 async function pushBranches(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
-  const rows = (prepare(db, `SELECT code, name, kpi_point_target FROM branches ORDER BY id`).all() as Array<{ code: string; name: string; kpi_point_target: number }>)
-    .map(r => [r.code, r.name, r.kpi_point_target])
-  await writeTab(sheets, spreadsheetId, TABS.BRANCHES, ['code', 'name', 'kpi_point_target'], rows)
+  const rows = (prepare(db, `SELECT code, name, kpi_point_target, target_b2c_default, target_b2b_default FROM branches ORDER BY id`).all() as Array<{
+    code: string; name: string; kpi_point_target: number; target_b2c_default: number | null; target_b2b_default: number | null
+  }>)
+    .map(r => [r.code, r.name, r.kpi_point_target, r.target_b2c_default ?? r.kpi_point_target, r.target_b2b_default ?? r.kpi_point_target])
+  await writeTab(sheets, spreadsheetId, TABS.BRANCHES, ['code', 'name', 'kpi_point_target', 'target_b2c_default', 'target_b2b_default'], rows)
 }
 
 const METRIC_NAMES: Record<number, string> = { 1: 'Jewelry', 2: 'Bar', 3: 'Qty' }
@@ -93,16 +95,18 @@ async function pushKpiRates(db: Database, sheets: ReturnType<typeof google.sheet
 async function pushQtyTiers(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
   // A config bounded to one month (effective_to set) only governs that month; effective_to
   // NULL = "standing config" used as the fallback for any month with no specific override.
+  // staff_type IS NULL = a pre-split config shared by both types (kept for old data); a
+  // real config always has b2c or b2b now, shown as "ALL" only for that legacy NULL case.
   const rows = (prepare(db, `
-    SELECT COALESCE(b.code, 'Global') AS branch_code, c.effective_from, c.effective_to, t.threshold_pct, t.score, t.tier_order
+    SELECT COALESCE(b.code, 'Global') AS branch_code, c.staff_type, c.effective_from, c.effective_to, t.threshold_pct, t.score, t.tier_order
     FROM kpi_tiers t
     JOIN kpi_tier_configs c ON c.id = t.config_id
     LEFT JOIN branches b ON b.id = c.branch_id
     WHERE c.metric_id = 3 AND c.is_active = 1
-    ORDER BY COALESCE(b.code, 'Global'), c.effective_from, t.tier_order
-  `).all() as Array<{ branch_code: string; effective_from: string; effective_to: string | null; threshold_pct: number; score: number; tier_order: number }>)
-    .map(r => [r.branch_code, r.effective_to ? `${r.effective_from} → ${r.effective_to}` : 'Standing (all months)', `≥ ${r.threshold_pct} pcs`, `× ${r.score}`, r.tier_order])
-  await writeTab(sheets, spreadsheetId, TABS.QTY_TIERS, ['Branch', 'Applies To', 'If Qty Is', 'Score Multiplier', 'Tier Order'], rows)
+    ORDER BY COALESCE(b.code, 'Global'), c.staff_type, c.effective_from, t.tier_order
+  `).all() as Array<{ branch_code: string; staff_type: string | null; effective_from: string; effective_to: string | null; threshold_pct: number; score: number; tier_order: number }>)
+    .map(r => [r.branch_code, r.staff_type ? r.staff_type.toUpperCase() : 'ALL', r.effective_to ? `${r.effective_from} → ${r.effective_to}` : 'Standing (all months)', `≥ ${r.threshold_pct} pcs`, `× ${r.score}`, r.tier_order])
+  await writeTab(sheets, spreadsheetId, TABS.QTY_TIERS, ['Branch', 'Staff Type', 'Applies To', 'If Qty Is', 'Score Multiplier', 'Tier Order'], rows)
 }
 
 // One row per rep per month it actually changed — reps with no change in a given month
@@ -203,11 +207,16 @@ function parseReadableYearMonth(label: string): string | null {
   return `${m[2]}${String(idx + 1).padStart(2, '0')}`
 }
 
+const COMMISSION_DEFAULTS_YM = '000000'
+function commissionMonthLabel(yearMonth: string): string {
+  return yearMonth === COMMISSION_DEFAULTS_YM ? 'Standing (all months)' : readableYearMonth(yearMonth)
+}
+
 export async function pushCommission(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
   const rows = (prepare(db, `SELECT staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak FROM commission_configs ORDER BY year_month, staff_type`).all() as Array<{ staff_type: string; year_month: string; jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number }>)
-    .map(r => r.staff_type === 'supervisor'
-      ? [readableYearMonth(r.year_month), 'Supervisor', `${r.jewelry_rate_lak}% of team commission`, '', '']
-      : [readableYearMonth(r.year_month), r.staff_type.toUpperCase(), r.jewelry_rate_lak, r.bar_rate_lak, r.qty_rate_lak])
+    .map(r => r.staff_type === 'supervisor' || r.staff_type === 'supervisor_b2c' || r.staff_type === 'supervisor_b2b'
+      ? [commissionMonthLabel(r.year_month), r.staff_type === 'supervisor' ? 'Supervisor' : `Supervisor ${r.staff_type.slice(-3).toUpperCase()}`, `${r.jewelry_rate_lak}% of team commission`, '', '']
+      : [commissionMonthLabel(r.year_month), r.staff_type.toUpperCase(), r.jewelry_rate_lak, r.bar_rate_lak, r.qty_rate_lak])
   await writeTab(sheets, spreadsheetId, TABS.COMMISSION, ['Month', 'Staff Type', 'Jewelry Rate (₭/Baht)', 'Bar Rate (₭/Baht)', 'Qty Rate (₭/pc)'], rows)
 }
 
@@ -223,9 +232,13 @@ export async function pullCommissionConfigsFromSheet(db: Database, sheets: Retur
   let imported = 0
   for (const row of dataRows as string[][]) {
     const [monthLabel, staffTypeLabel, jRate, bRate, qRate] = row
-    const yearMonth = parseReadableYearMonth(monthLabel)
+    const yearMonth = (monthLabel ?? '').toLowerCase().startsWith('standing') ? COMMISSION_DEFAULTS_YM : parseReadableYearMonth(monthLabel)
     if (!yearMonth || !staffTypeLabel) continue
-    const staffType = staffTypeLabel.toLowerCase()
+    // "Supervisor B2C" / "Supervisor B2B" -> 'supervisor_b2c' / 'supervisor_b2b'; bare
+    // "Supervisor" (pre-split rows) stays 'supervisor' so old months keep their own history.
+    const staffType = staffTypeLabel.toLowerCase().startsWith('supervisor')
+      ? staffTypeLabel.toLowerCase().replace(/\s+/g, '_')
+      : staffTypeLabel.toLowerCase()
     // parseFloat tolerates the Supervisor row's "50% of team commission" string fine — it
     // just reads the leading number and stops at the first non-numeric character.
     prepare(db, `
@@ -408,61 +421,112 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     }
 
     // ── Branches ──────────────────────────────────────────────────────
-    const brRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Branches!A:C' }).catch(() => null)
+    const brRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Branches!A:E' }).catch(() => null)
     if (brRes) {
       const all = brRes.data.values ?? []
       const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'code' ? all.slice(1) : all
       for (const row of data) {
-        const [code, , targetStr] = row as string[]
+        const [code, , targetStr, b2cStr, b2bStr] = row as string[]
         if (!code) continue
         const target = parseFloat(targetStr)
         if (isNaN(target)) continue
-        prepare(db, `UPDATE branches SET kpi_point_target = ? WHERE code = ?`).run(target, code)
+        // B2C/B2B default columns are new — older Sheets (or a manually-trimmed row) may not
+        // have them yet, so fall back to the combined target rather than writing NaN/null.
+        const b2c = parseFloat(b2cStr); const b2b = parseFloat(b2bStr)
+        prepare(db, `UPDATE branches SET kpi_point_target=?, target_b2c_default=?, target_b2b_default=? WHERE code=?`)
+          .run(target, isNaN(b2c) ? target : b2c, isNaN(b2b) ? target : b2b, code)
         counts.branches++
       }
     }
 
     // ── KPI Rates ─────────────────────────────────────────────────────
-    const rateRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'KPIRates!A:C' }).catch(() => null)
+    // Must mirror pushKpiRates's actual columns: Metric name (not metric_id), Branch
+    // code/"Global", Staff Type, Applies To ("Standing (all months)" or "Mon YYYY"),
+    // Points per Unit. The old version here read raw metric_id/points in the wrong
+    // columns entirely and silently matched zero rows on every pull — never caught
+    // because a no-op pull looks identical to a successful one with no changes.
+    const rateRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'KPIRates!A:E' }).catch(() => null)
     if (rateRes) {
       const all = rateRes.data.values ?? []
-      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'metric_id' ? all.slice(1) : all
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'metric' ? all.slice(1) : all
+      const METRIC_IDS: Record<string, number> = { jewelry: 1, bar: 2, qty: 3 }
       for (const row of data) {
-        const [metricIdStr, staffType, ppuStr] = row as string[]
-        const metricId = parseInt(metricIdStr)
+        const [metricName, branchCode, staffTypeLabel, appliesTo, ppuStr] = row as string[]
+        const metricId = METRIC_IDS[(metricName ?? '').toLowerCase()]
         const ppu = parseFloat(ppuStr)
-        if (!metricId || !staffType || isNaN(ppu)) continue
+        if (!metricId || !staffTypeLabel || isNaN(ppu)) continue
+        const staffType = staffTypeLabel.toLowerCase()
+        const branchRow = branchCode && branchCode !== 'Global'
+          ? prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
+          : undefined
+        const branchId = branchRow?.id ?? null
+        const yearMonth = (appliesTo ?? '').toLowerCase().startsWith('standing') ? null : parseReadableYearMonth(appliesTo)
+        // No reliable unique constraint to upsert against here (the partial index predates
+        // year_month) — delete-then-insert per row, same pattern saveBranchMetricRates uses.
         prepare(db, `
-          INSERT INTO kpi_metric_type_rates (metric_id, staff_type, points_per_unit) VALUES (?,?,?)
-          ON CONFLICT(metric_id, staff_type) DO UPDATE SET points_per_unit = excluded.points_per_unit
-        `).run(metricId, staffType, ppu)
+          DELETE FROM kpi_metric_type_rates
+          WHERE metric_id=? AND staff_type=? AND (branch_id=? OR (branch_id IS NULL AND ? IS NULL)) AND (year_month=? OR (year_month IS NULL AND ? IS NULL))
+        `).run(metricId, staffType, branchId, branchId, yearMonth, yearMonth)
+        prepare(db, `INSERT INTO kpi_metric_type_rates (metric_id, branch_id, staff_type, year_month, points_per_unit) VALUES (?,?,?,?,?)`)
+          .run(metricId, branchId, staffType, yearMonth, ppu)
         counts.kpiRates++
       }
     }
 
-    // ── Qty Tiers (update multiplier only — does not add/remove tiers) ─
-    const tierRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'QtyTiers!A:D' }).catch(() => null)
+    // ── Qty Tiers ────────────────────────────────────────────────────
+    // Must mirror pushQtyTiers's actual columns: Branch, Applies To, "If Qty Is" (text like
+    // "≥ 900 pcs"), "Score Multiplier" (text like "× 5"), Tier Order. The old version here
+    // read these as plain numbers in the wrong column positions and silently matched
+    // nothing on every pull — same class of bug as KPI Rates above.
+    const tierRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'QtyTiers!A:F' }).catch(() => null)
     if (tierRes) {
       const all = tierRes.data.values ?? []
-      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'branch_code' ? all.slice(1) : all
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'branch' ? all.slice(1) : all
+      // Group rows by (branch, staffType, appliesTo) so each distinct config gets its tiers
+      // replaced as one set, rather than one UPDATE per tier guessing at an existing config.
+      const groups = new Map<string, { branchCode: string; staffType: string | null; appliesTo: string; tiers: Array<{ threshold: number; score: number; order: number }> }>()
       for (const row of data) {
-        const [branchCode, thresholdStr, multiplierStr] = row as string[]
-        const threshold  = parseFloat(thresholdStr)
-        const multiplier = parseFloat(multiplierStr)
-        if (isNaN(threshold) || isNaN(multiplier)) continue
-        const branchRow = branchCode && branchCode !== 'Global'
+        const [branchCode, staffTypeLabel, appliesTo, qtyLabel, multLabel, orderStr] = row as string[]
+        const threshold = parseFloat((qtyLabel ?? '').replace(/[^0-9.]/g, ''))
+        const score     = parseFloat((multLabel ?? '').replace(/[^0-9.]/g, ''))
+        const order      = parseInt(orderStr) || 0
+        if (!branchCode || isNaN(threshold) || isNaN(score)) continue
+        const staffType = (staffTypeLabel ?? '').toUpperCase() === 'ALL' ? null : (staffTypeLabel ?? '').toLowerCase() || null
+        const key = `${branchCode}::${staffType}::${appliesTo}`
+        if (!groups.has(key)) groups.set(key, { branchCode, staffType, appliesTo, tiers: [] })
+        groups.get(key)!.tiers.push({ threshold, score, order })
+      }
+      for (const { branchCode, staffType, appliesTo, tiers } of groups.values()) {
+        const branchRow = branchCode !== 'Global'
           ? prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
           : undefined
-        const configRow = prepare(db, `
-          SELECT c.id FROM kpi_tier_configs c
-          WHERE c.metric_id = 3 AND c.is_active = 1
-            AND (c.branch_id = ? OR c.branch_id IS NULL)
-          ORDER BY CASE WHEN c.branch_id IS NULL THEN 1 ELSE 0 END
-          LIMIT 1
-        `).get(branchRow?.id ?? null) as { id: number } | undefined
-        if (!configRow) continue
-        prepare(db, `UPDATE kpi_tiers SET score = ? WHERE config_id = ? AND threshold_pct = ?`).run(multiplier, configRow.id, threshold)
-        counts.qtyTiers++
+        const branchId = branchRow?.id ?? null
+        const isStanding = (appliesTo ?? '').toLowerCase().startsWith('standing')
+        const range = isStanding ? null : /^(\d{4}-\d{2}-\d{2})\s*→\s*(\d{4}-\d{2}-\d{2})$/.exec(appliesTo ?? '')
+        if (!isStanding && !range) continue // not "Standing" and not a parseable date range — skip rather than guess
+        const effectiveFrom = isStanding ? '2000-01-01' : range![1]
+        const effectiveTo   = isStanding ? null : range![2]
+        let configRow = prepare(db, `
+          SELECT id FROM kpi_tier_configs
+          WHERE metric_id=3 AND (branch_id=? OR (branch_id IS NULL AND ? IS NULL)) AND (staff_type=? OR (staff_type IS NULL AND ? IS NULL))
+            AND effective_from=? AND (effective_to=? OR (effective_to IS NULL AND ? IS NULL))
+        `).get(branchId, branchId, staffType, staffType, effectiveFrom, effectiveTo, effectiveTo) as { id: number } | undefined
+        let configId: number
+        if (configRow) {
+          configId = configRow.id
+          prepare(db, `DELETE FROM kpi_tiers WHERE config_id = ?`).run(configId)
+        } else {
+          const label = `${branchCode} ${staffType ? staffType.toUpperCase() + ' ' : ''}Qty Tiers — ${isStanding ? 'Default' : appliesTo}`
+          const result = prepare(db, `
+            INSERT INTO kpi_tier_configs (metric_id, branch_id, staff_type, label, effective_from, effective_to, is_active) VALUES (3,?,?,?,?,?,1)
+          `).run(branchId, staffType, label, effectiveFrom, effectiveTo)
+          configId = result.lastInsertRowid as number
+        }
+        tiers.sort((a, b) => b.threshold - a.threshold).forEach((t, i) => {
+          prepare(db, `INSERT INTO kpi_tiers (config_id, threshold_pct, score, tier_order) VALUES (?,?,?,?)`)
+            .run(configId, t.threshold, t.score, t.order || i + 1)
+          counts.qtyTiers++
+        })
       }
     }
 
@@ -546,24 +610,35 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
       }
     }
 
-    // ── Monthly Branch Targets ─────────────────────────────────────────
-    const mbtRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'MonthlyBranchTargets!A:D' }).catch(() => null)
+    // ── Monthly Branch Targets ───────────────────────────────────────
+    // Must mirror pushMonthlyTargets's actual columns: Branch code, one readable "Mon YYYY"
+    // Month string (not separate year/month columns), Target, B2C Override, B2B Override.
+    // The old version expected a 'branch_code' header (actual is 'Branch'), split Month into
+    // two non-existent year/month columns, and never read range E (B2C/B2B at all) — every
+    // field here was wrong, so this pull has likely never once written a real row.
+    const mbtRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'MonthlyBranchTargets!A:E' }).catch(() => null)
     if (mbtRes) {
       const all = mbtRes.data.values ?? []
-      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'branch_code' ? all.slice(1) : all
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'branch' ? all.slice(1) : all
       for (const row of data) {
-        const [branchCode, yearStr, monthStr, targetStr] = row as string[]
+        const [branchCode, monthLabel, targetStr, b2cStr, b2bStr] = row as string[]
         if (!branchCode) continue
         const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
         if (!branch) continue
-        const year   = parseInt(yearStr)
-        const month  = parseInt(monthStr)
+        const yearMonth = parseReadableYearMonth(monthLabel)
         const target = parseFloat(targetStr)
-        if (isNaN(year) || isNaN(month) || isNaN(target)) continue
+        if (!yearMonth || isNaN(target)) continue
+        const year  = parseInt(yearMonth.slice(0, 4))
+        const month = parseInt(yearMonth.slice(4))
+        const b2c = parseFloat(b2cStr); const b2b = parseFloat(b2bStr)
         prepare(db, `
-          INSERT OR REPLACE INTO branch_kpi_monthly_targets (branch_id, year, month, kpi_point_target)
-          VALUES (?,?,?,?)
-        `).run(branch.id, year, month, target)
+          INSERT INTO branch_kpi_monthly_targets (branch_id, year, month, kpi_point_target, target_b2c, target_b2b)
+          VALUES (?,?,?,?,?,?)
+          ON CONFLICT(branch_id, year, month) DO UPDATE SET
+            kpi_point_target = excluded.kpi_point_target,
+            target_b2c        = excluded.target_b2c,
+            target_b2b        = excluded.target_b2b
+        `).run(branch.id, year, month, target, isNaN(b2c) ? null : b2c, isNaN(b2b) ? null : b2b)
         counts.monthlyTargets++
       }
     }

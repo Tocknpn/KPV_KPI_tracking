@@ -49,7 +49,7 @@ interface Window {
     saveMonthlyBranchTargets(token: string, year: number, month: number, targets: Array<{ branchId: number; target: number; targetB2c?: number | null; targetB2b?: number | null }>): Promise<{ success: boolean }>
     getKpiFormula(token: string): Promise<{ base: number; weight: number }>
     saveKpiFormula(token: string, base: number, weight: number): Promise<{ success: boolean }>
-    simulateKpiScore(token: string, metricId: number, branchId: number | null, actual: number, target: number): Promise<{ score: number; pct: number; tierId: number | null }>
+    simulateKpiScore(token: string, metricId: number, branchId: number | null, actual: number, target: number, staffType?: string): Promise<{ score: number; pct: number; tierId: number | null }>
 
     // Reports
     getDashboardStats(token: string, branchIds: number[], year: number, month: number): Promise<import('./types').DashboardStats>

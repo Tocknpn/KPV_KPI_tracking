@@ -211,29 +211,33 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     return { success: true }
   })
 
-  // Qty tier config active for a branch AS OF a specific month — mirrors the same date-range
-  // priority computeKpiScore uses, so this always shows what actually scored that month.
-  ipcMain.handle('kpi:getBranchQtyTiers', async (_e, token: string, branchId: number, year: number, month: number) => {
+  // Qty tier config active for a branch+type AS OF a specific month — mirrors the same
+  // date-range AND staff_type priority computeKpiScore uses, so this always shows what
+  // actually scored that month. Falls back to an old type-less (staff_type IS NULL) config
+  // from before this split existed, so a branch that's never had B2C/B2B tiers set
+  // separately still shows its previous shared tiers as the starting point for both.
+  ipcMain.handle('kpi:getBranchQtyTiers', async (_e, token: string, branchId: number, year: number, month: number, staffType: 'b2c' | 'b2b') => {
     requireAuth(token)
     const db = getDb()
     const probeDate = `${year}-${String(month).padStart(2, '0')}-15`
     const config = prepare(db, `
       SELECT id, label, effective_from, effective_to FROM kpi_tier_configs
-      WHERE metric_id = 3 AND (branch_id = ? OR branch_id IS NULL) AND is_active = 1
+      WHERE metric_id = 3 AND (branch_id = ? OR branch_id IS NULL) AND (staff_type = ? OR staff_type IS NULL) AND is_active = 1
         AND effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?)
       ORDER BY
         CASE WHEN branch_id    IS NULL THEN 1 ELSE 0 END,
+        CASE WHEN staff_type   IS NULL THEN 1 ELSE 0 END,
         CASE WHEN effective_to IS NULL THEN 1 ELSE 0 END,
         effective_from DESC
       LIMIT 1
-    `).get(branchId, probeDate, probeDate) as { id: number; label: string; effective_from: string; effective_to: string | null } | undefined
+    `).get(branchId, staffType, probeDate, probeDate) as { id: number; label: string; effective_from: string; effective_to: string | null } | undefined
     if (!config) return { configId: null, tiers: [], label: null }
     const tiers = prepare(db, `SELECT id, threshold_pct, score FROM kpi_tiers WHERE config_id = ? ORDER BY threshold_pct DESC`).all(config.id)
     return { configId: config.id, tiers, label: config.label }
   })
 
   ipcMain.handle('kpi:saveBranchQtyTiers', async (_e, token: string, branchId: number, year: number, month: number,
-    tiers: Array<{ thresholdPct: number; score: number }>
+    tiers: Array<{ thresholdPct: number; score: number }>, staffType: 'b2c' | 'b2b'
   ) => {
     const u = requireAuth(token)
     if (!['admin','hr'].includes(u.role)) throw new Error('Forbidden')
@@ -244,20 +248,20 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     const monthLabel = `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][month - 1]} ${year}`
     let configId: number
     transaction(db, () => {
-      // Exact match on this month's bounds — editing the same month again updates in place;
-      // a different month always gets its own config, so past months are never rewritten.
+      // Exact match on this month's bounds + staff_type — editing the same month/type again
+      // updates in place; a different month or type always gets its own config.
       const existing = prepare(db, `
         SELECT id FROM kpi_tier_configs
-        WHERE metric_id = 3 AND branch_id = ? AND effective_from = ? AND effective_to = ?
-      `).get(branchId, monthStart, monthEnd) as { id: number } | undefined
+        WHERE metric_id = 3 AND branch_id = ? AND staff_type = ? AND effective_from = ? AND effective_to = ?
+      `).get(branchId, staffType, monthStart, monthEnd) as { id: number } | undefined
       if (existing) {
         configId = existing.id
         prepare(db, `DELETE FROM kpi_tiers WHERE config_id = ?`).run(configId)
       } else {
         const result = prepare(db, `
-          INSERT INTO kpi_tier_configs (metric_id, branch_id, label, effective_from, effective_to, is_active)
-          VALUES (3, ?, ?, ?, ?, 1)
-        `).run(branchId, `${branch?.code ?? 'Branch'} Qty Tiers — ${monthLabel}`, monthStart, monthEnd)
+          INSERT INTO kpi_tier_configs (metric_id, branch_id, staff_type, label, effective_from, effective_to, is_active)
+          VALUES (3, ?, ?, ?, ?, ?, 1)
+        `).run(branchId, staffType, `${branch?.code ?? 'Branch'} ${staffType.toUpperCase()} Qty Tiers — ${monthLabel}`, monthStart, monthEnd)
         configId = result.lastInsertRowid as number
       }
       tiers.sort((a, b) => b.thresholdPct - a.thresholdPct).forEach((t, i) => {
@@ -352,10 +356,10 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     return { success: true }
   })
 
-  ipcMain.handle('kpi:simulate', async (_e, token: string, metricId: number, branchId: number | null, actual: number, target: number) => {
+  ipcMain.handle('kpi:simulate', async (_e, token: string, metricId: number, branchId: number | null, actual: number, target: number, staffType?: string) => {
     requireAuth(token)
     const today = new Date().toISOString().split('T')[0]
-    return computeKpiScore(getDb(), metricId, branchId ?? 0, actual, target, today)
+    return computeKpiScore(getDb(), metricId, branchId ?? 0, actual, target, today, staffType)
   })
 
   ipcMain.handle('kpi:getSupKpiPct', async (_e, token: string) => {
@@ -436,22 +440,22 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     return { success: true }
   })
 
-  ipcMain.handle('kpi:getDefaultQtyTiers', async (_e, token: string, branchId: number) => {
+  ipcMain.handle('kpi:getDefaultQtyTiers', async (_e, token: string, branchId: number, staffType: 'b2c' | 'b2b') => {
     requireAuth(token)
     const db = getDb()
     const config = prepare(db, `
       SELECT id, label FROM kpi_tier_configs
-      WHERE metric_id = 3 AND (branch_id = ? OR branch_id IS NULL) AND is_active = 1 AND effective_to IS NULL
-      ORDER BY CASE WHEN branch_id IS NULL THEN 1 ELSE 0 END
+      WHERE metric_id = 3 AND (branch_id = ? OR branch_id IS NULL) AND (staff_type = ? OR staff_type IS NULL) AND is_active = 1 AND effective_to IS NULL
+      ORDER BY CASE WHEN branch_id IS NULL THEN 1 ELSE 0 END, CASE WHEN staff_type IS NULL THEN 1 ELSE 0 END
       LIMIT 1
-    `).get(branchId) as { id: number; label: string } | undefined
+    `).get(branchId, staffType) as { id: number; label: string } | undefined
     if (!config) return { configId: null, tiers: [], label: null }
     const tiers = prepare(db, `SELECT id, threshold_pct, score FROM kpi_tiers WHERE config_id = ? ORDER BY threshold_pct DESC`).all(config.id)
     return { configId: config.id, tiers, label: config.label }
   })
 
   ipcMain.handle('kpi:saveDefaultQtyTiers', async (_e, token: string, branchId: number,
-    tiers: Array<{ thresholdPct: number; score: number }>
+    tiers: Array<{ thresholdPct: number; score: number }>, staffType: 'b2c' | 'b2b'
   ) => {
     requireAdmin(token)
     const db = getDb()
@@ -459,16 +463,16 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     let configId: number
     transaction(db, () => {
       const existing = prepare(db, `
-        SELECT id FROM kpi_tier_configs WHERE metric_id = 3 AND branch_id = ? AND effective_to IS NULL
-      `).get(branchId) as { id: number } | undefined
+        SELECT id FROM kpi_tier_configs WHERE metric_id = 3 AND branch_id = ? AND staff_type = ? AND effective_to IS NULL
+      `).get(branchId, staffType) as { id: number } | undefined
       if (existing) {
         configId = existing.id
         prepare(db, `DELETE FROM kpi_tiers WHERE config_id = ?`).run(configId)
       } else {
         const result = prepare(db, `
-          INSERT INTO kpi_tier_configs (metric_id, branch_id, label, effective_from, effective_to, is_active)
-          VALUES (3, ?, ?, '2000-01-01', NULL, 1)
-        `).run(branchId, `${branch?.code ?? 'Branch'} Qty Tiers — Default`)
+          INSERT INTO kpi_tier_configs (metric_id, branch_id, staff_type, label, effective_from, effective_to, is_active)
+          VALUES (3, ?, ?, ?, '2000-01-01', NULL, 1)
+        `).run(branchId, staffType, `${branch?.code ?? 'Branch'} ${staffType.toUpperCase()} Qty Tiers — Default`)
         configId = result.lastInsertRowid as number
       }
       tiers.sort((a, b) => b.thresholdPct - a.thresholdPct).forEach((t, i) => {

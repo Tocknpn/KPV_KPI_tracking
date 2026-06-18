@@ -21,7 +21,10 @@ export default function KpiSettings() {
   const [selectedMetric, setSelectedMetric] = useState<number>(3)
   // KPI Score Config is branch-scoped only — no Global option
   const [selectedBranch, setSelectedBranch] = useState<number | null>(null)
-  const [tiers, setTiers] = useState<EditableTier[]>([])
+  // Qty Tiers — split B2C/B2B, same as rates/targets/commission. Two independent tables
+  // per branch instead of one shared one.
+  const [tiersB2c, setTiersB2c] = useState<EditableTier[]>([])
+  const [tiersB2b, setTiersB2b] = useState<EditableTier[]>([])
   const [branchRates, setBranchRates] = useState<BranchRates>({ jewelry: { b2c: 0, b2b: 0 }, bar: { b2c: 0, b2b: 0 } })
   const [toast, setToast] = useState('')
   // Global month filter — controls all sections
@@ -64,6 +67,7 @@ export default function KpiSettings() {
   // Simulator
   const [simActual, setSimActual] = useState('')
   const [simBranch, setSimBranch] = useState<number | null>(null)
+  const [simStaffType, setSimStaffType] = useState<'b2c' | 'b2b'>('b2c')
   const [simResult, setSimResult] = useState<{ score: number; pct: number } | null>(null)
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3500) }
@@ -84,16 +88,16 @@ export default function KpiSettings() {
   // — the same rows every month already falls back to when nothing's set for it).
   useEffect(() => {
     if (!token || selectedBranch === null) return
+    const toTiers = (r: { tiers: Array<{ id: number; threshold_pct: number; score: number }> }) =>
+      r.tiers.length ? r.tiers.map(t => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS
     if (isAdmin) {
       window.api.getDefaultMetricRates(token, selectedBranch).then((r: BranchRates) => { setBranchRates(r); setDirtyMult(false) })
-      window.api.getDefaultQtyTiers(token, selectedBranch).then((r: { configId: number | null; tiers: Array<{ id: number; threshold_pct: number; score: number }> }) => {
-        setTiers(r.tiers.length ? r.tiers.map(t => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS)
-      })
+      window.api.getDefaultQtyTiers(token, selectedBranch, 'b2c').then(r => setTiersB2c(toTiers(r)))
+      window.api.getDefaultQtyTiers(token, selectedBranch, 'b2b').then(r => setTiersB2b(toTiers(r)))
     } else {
       window.api.getBranchMetricRates(token, selectedBranch, globalYear, globalMonth).then((r: BranchRates) => { setBranchRates(r); setDirtyMult(false) })
-      window.api.getBranchQtyTiers(token, selectedBranch, globalYear, globalMonth).then((r: { configId: number | null; tiers: Array<{ id: number; threshold_pct: number; score: number }> }) => {
-        setTiers(r.tiers.length ? r.tiers.map(t => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS)
-      })
+      window.api.getBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, 'b2c').then(r => setTiersB2c(toTiers(r)))
+      window.api.getBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, 'b2b').then(r => setTiersB2b(toTiers(r)))
     }
   }, [token, selectedBranch, globalYear, globalMonth, isAdmin])
 
@@ -169,7 +173,8 @@ export default function KpiSettings() {
         // Admin maintains. All four KPI-setup tables now have a "standing" concept.
         if (selectedBranch !== null) {
           await window.api.saveDefaultMetricRates(token, selectedBranch, branchRates)
-          await window.api.saveDefaultQtyTiers(token, selectedBranch, tiers.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })))
+          await window.api.saveDefaultQtyTiers(token, selectedBranch, tiersB2c.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })), 'b2c')
+          await window.api.saveDefaultQtyTiers(token, selectedBranch, tiersB2b.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })), 'b2b')
         }
         for (const b of branches) {
           const valB2c = parseFloat(branchTargetB2cDefaults[b.id] ?? '')
@@ -194,7 +199,8 @@ export default function KpiSettings() {
       // Jewelry/Bar rates + Qty tiers for the selected branch — scoped to this exact month
       if (selectedBranch !== null) {
         await window.api.saveBranchMetricRates(token, selectedBranch, globalYear, globalMonth, branchRates)
-        await window.api.saveBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, tiers.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })))
+        await window.api.saveBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, tiersB2c.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })), 'b2c')
+        await window.api.saveBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, tiersB2b.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })), 'b2b')
       }
 
       // Monthly branch KPI point targets — Commission is Admin/Defaults-only now (backend
@@ -221,12 +227,16 @@ export default function KpiSettings() {
     setTargetB2bEdits(Object.fromEntries(monthlyTargets.map(b => [b.id, String(b.target_b2b_default ?? b.kpi_point_target)])))
     setDirtyTargets(true)
     if (selectedBranch !== null) {
-      const [rates, tierResult] = await Promise.all([
+      const toTiers = (r: { tiers: Array<{ id: number; threshold_pct: number; score: number }> }) =>
+        r.tiers.length ? r.tiers.map(t => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS
+      const [rates, tierB2c, tierB2b] = await Promise.all([
         window.api.getDefaultMetricRates(token, selectedBranch),
-        window.api.getDefaultQtyTiers(token, selectedBranch),
+        window.api.getDefaultQtyTiers(token, selectedBranch, 'b2c'),
+        window.api.getDefaultQtyTiers(token, selectedBranch, 'b2b'),
       ])
       setBranchRates(rates)
-      setTiers(tierResult.tiers.length ? tierResult.tiers.map((t: { id: number; threshold_pct: number; score: number }) => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS)
+      setTiersB2c(toTiers(tierB2c))
+      setTiersB2b(toTiers(tierB2b))
       setDirtyMult(true)
     }
   }
@@ -239,30 +249,34 @@ export default function KpiSettings() {
     setSimResult(null)
   }
 
-  function addTier() {
-    setTiers(prev => [...prev, { threshold_pct: 0, score: 0 }].sort((a, b) => b.threshold_pct - a.threshold_pct))
+  function tierSetter(type: 'b2c' | 'b2b') {
+    return type === 'b2c' ? setTiersB2c : setTiersB2b
   }
 
-  function removeTier(i: number) {
-    setTiers(prev => prev.filter((_, idx) => idx !== i))
+  function addTier(type: 'b2c' | 'b2b') {
+    tierSetter(type)(prev => [...prev, { threshold_pct: 0, score: 0 }].sort((a, b) => b.threshold_pct - a.threshold_pct))
   }
 
-  function updateTier(i: number, field: 'threshold_pct' | 'score', val: string) {
-    setTiers(prev => {
+  function removeTier(type: 'b2c' | 'b2b', i: number) {
+    tierSetter(type)(prev => prev.filter((_, idx) => idx !== i))
+  }
+
+  function updateTier(type: 'b2c' | 'b2b', i: number, field: 'threshold_pct' | 'score', val: string) {
+    tierSetter(type)(prev => {
       const next = [...prev]
       next[i] = { ...next[i], [field]: parseFloat(val) || 0 }
       return next
     })
   }
 
-  function sortTiers() {
-    setTiers(prev => [...prev].sort((a, b) => b.threshold_pct - a.threshold_pct))
+  function sortTiers(type: 'b2c' | 'b2b') {
+    tierSetter(type)(prev => [...prev].sort((a, b) => b.threshold_pct - a.threshold_pct))
   }
 
   async function simulate() {
     if (!token) return
     const actual = parseFloat(simActual) || 0
-    const result = await window.api.simulateKpiScore(token, selectedMetric, simBranch, actual, actual)
+    const result = await window.api.simulateKpiScore(token, selectedMetric, simBranch, actual, actual, simStaffType)
     setSimResult(result)
   }
 
@@ -573,60 +587,70 @@ export default function KpiSettings() {
           </div>
         </div>
 
-        {/* Qty tiers — inline, no profile picker, one set per branch */}
+        {/* Qty tiers — split B2C/B2B, two independent tables per branch */}
         <div className="flex items-center gap-2 mb-3">
           <span className="material-symbols-outlined text-tertiary text-sm">inventory_2</span>
           <span className="font-label-md text-label-md text-tertiary font-bold">Qty Tiers</span>
           <span className="text-[10px] text-on-surface-variant">— {branches.find(b => b.id === selectedBranch)?.name ?? ''}</span>
         </div>
-        <div className="overflow-x-auto rounded-xl border border-outline-variant/20 mb-3">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-surface-container-low/50">
-                <th className="px-5 py-3 text-left font-label-md text-label-md text-on-surface-variant uppercase">#</th>
-                <th className="px-5 py-3 text-right font-label-md text-label-md text-on-surface-variant uppercase">If Qty ≥</th>
-                <th className="px-5 py-3 text-right font-label-md text-label-md text-on-surface-variant uppercase">Multiplier (×)</th>
-                <th className="px-5 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant/10">
-              {tiers.length === 0 ? (
-                <tr><td colSpan={4} className="px-5 py-8 text-center text-on-surface-variant text-body-sm">No tiers. Click "Add Tier".</td></tr>
-              ) : tiers.map((tier, i) => (
-                <tr key={i} className="hover:bg-primary/[0.02] transition-colors group">
-                  <td className="px-5 py-2.5 font-bold text-on-surface-variant text-body-sm">{i + 1}</td>
-                  <td className="px-5 py-2.5 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <span className="text-on-surface-variant text-body-sm">≥</span>
-                      <input type="number" min="0" step="1" value={tier.threshold_pct} onChange={e => updateTier(i, 'threshold_pct', e.target.value)}
-                        className="w-24 text-right bg-surface-container border-none rounded px-2 py-1 font-tabular-nums text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
-                      <span className="text-on-surface-variant text-body-sm">pcs</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-2.5 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <span className="text-on-surface-variant text-body-sm">×</span>
-                      <input type="number" min="0" step="0.5" value={tier.score} onChange={e => updateTier(i, 'score', e.target.value)}
-                        className="w-24 text-right bg-surface-container border-none rounded px-2 py-1 font-tabular-nums font-bold text-primary text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
-                    </div>
-                  </td>
-                  <td className="px-5 py-2.5 text-right">
-                    <button onClick={() => removeTier(i)} className="opacity-0 group-hover:opacity-100 text-error hover:bg-error-container p-1 rounded transition-all">
-                      <span className="material-symbols-outlined text-sm">delete</span>
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <button onClick={sortTiers} className="text-on-surface-variant border border-outline-variant px-3 py-2 rounded-lg text-body-sm hover:bg-surface-container flex items-center gap-1">
-            <span className="material-symbols-outlined text-sm">sort</span> Sort
-          </button>
-          <button onClick={addTier} className="bg-primary/10 text-primary px-3 py-2 rounded-lg font-label-md text-label-md flex items-center gap-1 hover:bg-primary/20 transition-colors">
-            <span className="material-symbols-outlined text-sm">add</span> Add Tier
-          </button>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {([['b2c', tiersB2c], ['b2b', tiersB2b]] as const).map(([type, tierList]) => (
+            <div key={type}>
+              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider inline-block mb-2
+                ${type === 'b2b' ? 'bg-secondary text-white' : 'bg-primary text-white'}`}>
+                {type.toUpperCase()}
+              </span>
+              <div className="overflow-x-auto rounded-xl border border-outline-variant/20 mb-3">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-surface-container-low/50">
+                      <th className="px-3 py-2.5 text-left font-label-md text-label-md text-on-surface-variant uppercase">#</th>
+                      <th className="px-3 py-2.5 text-right font-label-md text-label-md text-on-surface-variant uppercase">If Qty ≥</th>
+                      <th className="px-3 py-2.5 text-right font-label-md text-label-md text-on-surface-variant uppercase">× </th>
+                      <th className="px-3 py-2.5" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant/10">
+                    {tierList.length === 0 ? (
+                      <tr><td colSpan={4} className="px-3 py-6 text-center text-on-surface-variant text-body-sm">No tiers. Click "Add Tier".</td></tr>
+                    ) : tierList.map((tier, i) => (
+                      <tr key={i} className="hover:bg-primary/[0.02] transition-colors group">
+                        <td className="px-3 py-2 font-bold text-on-surface-variant text-body-sm">{i + 1}</td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <span className="text-on-surface-variant text-[11px]">≥</span>
+                            <input type="number" min="0" step="1" value={tier.threshold_pct} onChange={e => updateTier(type, i, 'threshold_pct', e.target.value)}
+                              className="w-20 text-right bg-surface-container border-none rounded px-2 py-1 font-tabular-nums text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                            <span className="text-on-surface-variant text-[11px]">pcs</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <span className="text-on-surface-variant text-[11px]">×</span>
+                            <input type="number" min="0" step="0.5" value={tier.score} onChange={e => updateTier(type, i, 'score', e.target.value)}
+                              className="w-20 text-right bg-surface-container border-none rounded px-2 py-1 font-tabular-nums font-bold text-primary text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button onClick={() => removeTier(type, i)} className="opacity-0 group-hover:opacity-100 text-error hover:bg-error-container p-1 rounded transition-all">
+                            <span className="material-symbols-outlined text-sm">delete</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={() => sortTiers(type)} className="text-on-surface-variant border border-outline-variant px-3 py-1.5 rounded-lg text-[11px] hover:bg-surface-container flex items-center gap-1">
+                  <span className="material-symbols-outlined text-sm">sort</span> Sort
+                </button>
+                <button onClick={() => addTier(type)} className="bg-primary/10 text-primary px-3 py-1.5 rounded-lg font-label-md text-[11px] flex items-center gap-1 hover:bg-primary/20 transition-colors">
+                  <span className="material-symbols-outlined text-sm">add</span> Add Tier
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </GlassCard>
 
@@ -671,17 +695,30 @@ export default function KpiSettings() {
                 />
               </div>
               {!isWeightMetric && (
-                <div>
-                  <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Branch</label>
-                  <select
-                    value={simBranch ?? ''}
-                    onChange={e => setSimBranch(e.target.value ? Number(e.target.value) : null)}
-                    className="bg-surface-container border-b-2 border-primary px-3 py-2 outline-none text-body-sm"
-                  >
-                    <option value="">Global</option>
-                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
-                </div>
+                <>
+                  <div>
+                    <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Branch</label>
+                    <select
+                      value={simBranch ?? ''}
+                      onChange={e => setSimBranch(e.target.value ? Number(e.target.value) : null)}
+                      className="bg-surface-container border-b-2 border-primary px-3 py-2 outline-none text-body-sm"
+                    >
+                      <option value="">Global</option>
+                      {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Type</label>
+                    <select
+                      value={simStaffType}
+                      onChange={e => setSimStaffType(e.target.value as 'b2c' | 'b2b')}
+                      className="bg-surface-container border-b-2 border-primary px-3 py-2 outline-none text-body-sm"
+                    >
+                      <option value="b2c">B2C</option>
+                      <option value="b2b">B2B</option>
+                    </select>
+                  </div>
+                </>
               )}
               <button
                 onClick={simulate}
