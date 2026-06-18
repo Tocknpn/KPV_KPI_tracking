@@ -31,7 +31,7 @@ interface Props {
 export function TopBar({ title }: Props) {
   const navigate = useNavigate()
   const { token, user, clearSession, branches } = useAuthStore()
-  const { unsyncedCount, sidebarCollapsed, lastSyncedAt, setLastSyncedAt } = useAppStore()
+  const { unsyncedCount, sidebarCollapsed, lastSyncedAt, setLastSyncedAt, syncBanner } = useAppStore()
   const [, setNowTick] = useState(0) // forces relativeTime() to re-render as time passes
   const [zoom, setZoomState] = useState<number>(() => {
     const saved = localStorage.getItem(ZOOM_KEY)
@@ -80,6 +80,24 @@ export function TopBar({ title }: Props) {
 
       {/* Right */}
       <div className="flex items-center gap-3">
+        {/* Startup sync outcome — visible on every screen/role so a device with no admin/hr
+            login still shows *why* Roster/KPI data looks stale or empty, instead of looking
+            identical to a device that's simply never had anything new to pull. */}
+        {syncBanner && !syncBanner.configured && (
+          <span className="text-[11px] font-bold text-error bg-error-container/30 px-2.5 py-1 rounded-full flex items-center gap-1"
+            title="No Google Sheets connection set up on this device — ask Admin to configure it in Settings.">
+            <span className="material-symbols-outlined text-[14px]">cloud_off</span>
+            Sheets not connected
+          </span>
+        )}
+        {syncBanner && syncBanner.configured && !syncBanner.success && (
+          <span className="text-[11px] font-bold text-error bg-error-container/30 px-2.5 py-1 rounded-full flex items-center gap-1"
+            title={`Startup sync failed: ${syncBanner.error ?? 'unknown error'} — data on screen may be out of date.`}>
+            <span className="material-symbols-outlined text-[14px]">sync_problem</span>
+            Sync failed
+          </span>
+        )}
+
         {/* Data freshness — when this device last synced with Google Sheets */}
         {lastSyncedAt && (
           <span

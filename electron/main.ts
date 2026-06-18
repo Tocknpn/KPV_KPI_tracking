@@ -94,13 +94,32 @@ app.whenReady().then(async () => {
     return
   }
 
-  // Auto-pull config + data from Google Sheets on startup (if credentials configured)
+  // Auto-pull config + data from Google Sheets on startup (if credentials configured).
+  // A device with no admin/hr login (e.g. a remote branch running only an hr_support
+  // account) has no other way to trigger a sync — this is its only chance to ever see
+  // current Roster/KPI data. Forward the outcome to the renderer so a failed or
+  // never-configured sync is visible on screen instead of silently logged to a console
+  // nobody on that machine will ever open.
   const sheetsId = getSetting('sheets_id')
   const saPath   = getSetting('service_account_path')
+  function reportSyncResult(result: { configured: boolean; success: boolean; error?: string }) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sheets:startupSyncResult', result)
+    }
+  }
   if (sheetsId && saPath) {
     pullAllFromCloud(sheetsId, saPath)
-      .then(r => { if (r.success) console.log('[startup] Sheets pull:', r.counts); else console.warn('[startup] Sheets pull failed:', r.error) })
-      .catch(e => console.warn('[startup] Sheets pull error:', e?.message))
+      .then(r => {
+        if (r.success) console.log('[startup] Sheets pull:', r.counts)
+        else console.warn('[startup] Sheets pull failed:', r.error)
+        reportSyncResult({ configured: true, success: r.success, error: r.error })
+      })
+      .catch(e => {
+        console.warn('[startup] Sheets pull error:', e?.message)
+        reportSyncResult({ configured: true, success: false, error: e instanceof Error ? e.message : String(e) })
+      })
+  } else {
+    reportSyncResult({ configured: false, success: false })
   }
 
   // Start scheduled email jobs

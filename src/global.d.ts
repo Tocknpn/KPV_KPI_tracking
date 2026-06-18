@@ -11,6 +11,7 @@ interface Window {
       monthlyDetail: Array<{ year_month: string; label: string; days: number; total: number; qty: number; avg_per_day: number; partial: boolean; mom_pct: number | null; is_base: boolean }>
     }>
     isSheetsConfigured(): Promise<boolean>
+    onStartupSyncResult(cb: (r: { configured: boolean; success: boolean; error?: string }) => void): void
     bootstrapConnect(sheetsId: string, serviceAccountPath: string): Promise<{ success: boolean; message?: string; error?: string }>
     browseFileBootstrap(): Promise<string | null>
     logout(token: string): Promise<{ success: boolean }>

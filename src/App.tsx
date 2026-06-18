@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { useAppStore } from './store/app.store'
 import Login from './screens/Login'
 import Dashboard from './screens/Dashboard'
 import DailyEntry from './screens/DailyEntry'
@@ -17,6 +18,7 @@ export default function App() {
   // due to AV scanning the new binary). Block routes until main process signals ready.
   const [dbReady, setDbReady] = useState(false)
   const [initError, setInitError] = useState<string | null>(null)
+  const setSyncBanner = useAppStore(s => s.setSyncBanner)
 
   useEffect(() => {
     // Poll once: if DB already ready (fast startup), resolve immediately.
@@ -26,6 +28,9 @@ export default function App() {
       else window.api.onAppReady(() => setDbReady(true))
     })
     window.api.onAppInitError((message: string) => setInitError(message))
+    // Surfaces the startup auto-pull's outcome (configured/success/error) so a device with
+    // no admin/hr login still sees why its data looks stale or empty — see TopBar banner.
+    window.api.onStartupSyncResult(r => setSyncBanner(r))
   }, [])
 
   if (initError) {

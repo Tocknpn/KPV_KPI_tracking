@@ -228,6 +228,8 @@ contextBridge.exposeInMainWorld('api', {
   checkAppReady: () => ipcRenderer.invoke('app:isReady') as Promise<boolean>,
   onAppReady: (cb: () => void) => ipcRenderer.once('app:ready', cb),
   onAppInitError: (cb: (message: string) => void) => ipcRenderer.once('app:init-error', (_e, message: string) => cb(message)),
+  onStartupSyncResult: (cb: (r: { configured: boolean; success: boolean; error?: string }) => void) =>
+    ipcRenderer.once('sheets:startupSyncResult', (_e, r) => cb(r)),
 
   // ── Admin / Test Data ─────────────────────────────────────────────────
   seedTestData: (token: string) =>

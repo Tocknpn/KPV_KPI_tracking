@@ -486,6 +486,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
   error?: string
 }> {
   const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, supervisorRoster: 0, qtyTiers: 0, users: 0, supervisors: 0, monthlyTargets: 0 }
+  const sectionErrors: string[] = []
   try {
     const auth   = getServiceAuth(saPath)
     const sheets = google.sheets({ version: 'v4', auth })
@@ -644,8 +645,14 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     }
 
     // ── Roster ─────────────────────────────────────────────────────────
-    counts.roster += await pullRosterFromSheet(db, sheets, sheetsId).catch(() => 0)
-    counts.supervisorRoster += await pullSupervisorRosterFromSheet(db, sheets, sheetsId).catch(() => 0)
+    // Unlike the other sections' silent .catch(() => 0/null), capture the real error here —
+    // a remote device with no admin/hr login depends entirely on this pull succeeding, and a
+    // swallowed auth/permission error on just this tab would look identical to "nothing new
+    // to import" with zero way for anyone on that device to tell the difference.
+    try { counts.roster += await pullRosterFromSheet(db, sheets, sheetsId) }
+    catch (e) { sectionErrors.push(`Roster: ${e instanceof Error ? e.message : String(e)}`) }
+    try { counts.supervisorRoster += await pullSupervisorRosterFromSheet(db, sheets, sheetsId) }
+    catch (e) { sectionErrors.push(`SupervisorRoster: ${e instanceof Error ? e.message : String(e)}`) }
 
     // ── Daily Entries ─────────────────────────────────────────────────
     const entryRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A:G' }).catch(() => ({ data: { values: [] } }))
@@ -733,8 +740,10 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     }
 
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now)
-    prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('pull', ?, 'success')`).run(counts.entries)
+    prepare(db, `INSERT INTO sync_logs (direction, records_count, status, error_message) VALUES ('pull', ?, ?, ?)`)
+      .run(counts.entries, sectionErrors.length ? 'partial' : 'success', sectionErrors.join('; ') || null)
 
+    if (sectionErrors.length) return { success: false, counts, error: sectionErrors.join('; ') }
     return { success: true, counts }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
