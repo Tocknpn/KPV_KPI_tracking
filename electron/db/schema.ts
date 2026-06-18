@@ -34,16 +34,17 @@ const BASE_TABLES = `
     expires_at TEXT    NOT NULL
   );
   CREATE TABLE IF NOT EXISTS salesmen (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    rep_code   TEXT    UNIQUE,
-    full_name  TEXT    NOT NULL,
-    nickname   TEXT    NOT NULL DEFAULT '',
-    branch_id  INTEGER NOT NULL REFERENCES branches(id),
-    staff_type TEXT    NOT NULL DEFAULT 'b2c',
-    position   TEXT    NOT NULL DEFAULT '',
-    department TEXT    NOT NULL DEFAULT '',
-    active     INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    rep_code      TEXT    UNIQUE,
+    full_name     TEXT    NOT NULL,
+    nickname      TEXT    NOT NULL DEFAULT '',
+    branch_id     INTEGER NOT NULL REFERENCES branches(id),
+    supervisor_id INTEGER REFERENCES supervisors(id),
+    staff_type    TEXT    NOT NULL DEFAULT 'b2c',
+    position      TEXT    NOT NULL DEFAULT '',
+    department    TEXT    NOT NULL DEFAULT '',
+    active        INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
   );
   CREATE TABLE IF NOT EXISTS targets (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,6 +134,8 @@ const BASE_TABLES = `
     year             INTEGER NOT NULL,
     month            INTEGER NOT NULL,
     kpi_point_target REAL    NOT NULL DEFAULT 0,
+    target_b2c       REAL    NOT NULL DEFAULT 0,
+    target_b2b       REAL    NOT NULL DEFAULT 0,
     UNIQUE(branch_id, year, month)
   );
   CREATE TABLE IF NOT EXISTS supervisors (
