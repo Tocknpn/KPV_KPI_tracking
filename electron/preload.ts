@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('auth:updateUser', token, id, data),
   deleteUser: (token: string, id: number) =>
     ipcRenderer.invoke('auth:deleteUser', token, id),
+  permanentlyDeleteUser: (token: string, id: number) =>
+    ipcRenderer.invoke('auth:permanentlyDeleteUser', token, id),
 
   // ── Branches & Salesmen ───────────────────────────────────────────────
   getBranches: (token: string) =>

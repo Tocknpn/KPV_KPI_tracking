@@ -197,6 +197,33 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
     return { success: true }
   })
 
+  // True hard delete — auth:deleteUser above only deactivates. FK enforcement is ON
+  // (connection.ts), so users with upload_logs (NOT NULL user_id, no cascade) can't be
+  // deleted outright without either destroying upload history or reassigning it to someone
+  // else — both worse than just refusing and pointing at Deactivate instead. audit_logs.user_id
+  // is nullable and the row already carries username/role as separate text columns, so we
+  // null the FK there instead of deleting the audit trail itself.
+  ipcMain.handle('auth:permanentlyDeleteUser', async (_e, token: string, id: number) => {
+    const admin = requireAdmin(token)
+    if (id === admin.id) throw new Error('Cannot delete your own account.')
+    const db = getDb()
+    const target = prepare(db, `SELECT username FROM users WHERE id = ?`).get(id) as { username: string } | undefined
+    if (!target) return { success: false, error: 'User not found.' }
+    if (target.username === 'admin') throw new Error('Cannot delete the admin account — it is the permanent fallback login.')
+
+    const uploads = prepare(db, `SELECT COUNT(*) AS n FROM upload_logs WHERE user_id = ?`).get(id) as { n: number }
+    if (uploads.n > 0) {
+      return { success: false, error: `Cannot permanently delete — this user has ${uploads.n} upload(s) on record. Deactivate instead to keep that history intact.` }
+    }
+
+    prepare(db, `DELETE FROM sessions WHERE user_id = ?`).run(id)
+    prepare(db, `UPDATE audit_logs SET user_id = NULL WHERE user_id = ?`).run(id)
+    prepare(db, `DELETE FROM users WHERE id = ?`).run(id)
+    logAudit(db, admin.id, admin.username, admin.role, 'user_permanent_delete', `Permanently deleted user "${target.username}" (id=${id})`, 'user', String(id))
+    pushUsersIfConfigured(db).catch(() => {})
+    return { success: true }
+  })
+
   ipcMain.handle('auth:getBranches', async (_e, token: string) => {
     requireAuth(token)
     return prepare(getDb(), `SELECT * FROM branches ORDER BY id`).all()

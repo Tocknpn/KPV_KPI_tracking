@@ -15,6 +15,7 @@ const TABS = {
   KPI_RATES:       'KPIRates',
   QTY_TIERS:       'QtyTiers',
   ROSTER:          'Roster',
+  SUPERVISOR_ROSTER: 'SupervisorRoster',
   COMMISSION:      'CommissionConfig',
   USERS:           'Users',
   SUPERVISORS:     'Supervisors',
@@ -118,6 +119,22 @@ async function pushRoster(db: Database, sheets: ReturnType<typeof google.sheets>
     ['Month', 'rep_code', 'full_name', 'nickname', 'branch_code', 'supervisor_name', 'staff_type', 'active', 'supervisor_code'], rows)
 }
 
+// Supervisor equivalent of pushRoster — same "one row per supervisor per month that
+// changed" shape, pure history (report:teamPerformance derives headcount from roster_monthly
+// directly, never reads this tab), auto-populated by the rep roster upload, never by hand.
+async function pushSupervisorRoster(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  const rows = (prepare(db, `
+    SELECT srm.year_month, sup.sup_code, sup.full_name, sup.nickname, b.code AS branch_code, srm.staff_type, srm.active
+    FROM supervisor_roster_monthly srm
+    JOIN supervisors sup ON sup.id = srm.supervisor_id
+    JOIN branches b ON b.id = srm.branch_id
+    ORDER BY srm.year_month, b.code, sup.full_name
+  `).all() as Array<{ year_month: string; sup_code: string | null; full_name: string; nickname: string | null; branch_code: string; staff_type: string; active: number }>)
+    .map(r => [readableYearMonth(r.year_month), r.sup_code ?? '', r.full_name, r.nickname ?? '', r.branch_code, r.staff_type, r.active])
+  await writeTab(sheets, spreadsheetId, TABS.SUPERVISOR_ROSTER,
+    ['Month', 'sup_code', 'full_name', 'nickname', 'branch_code', 'staff_type', 'active'], rows)
+}
+
 // Single source of truth for reading the Roster tab back into the DB — column order must
 // stay in lockstep with pushRoster above (same lesson as CommissionConfig's earlier bug).
 export async function pullRosterFromSheet(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<number> {
@@ -179,6 +196,46 @@ export async function pullRosterFromSheet(db: Database, sheets: ReturnType<typeo
       .run(latest.branch_id, latest.supervisor_id, latest.staff_type, latest.active, salesmanId)
   }
 
+  return imported
+}
+
+// Pull-back for SupervisorRoster — column order must stay in lockstep with
+// pushSupervisorRoster. Does not create supervisors (Roster pull/upload already owns that);
+// a sup_code/name with no match is skipped, since this tab is pure history of supervisors
+// the rep roster already created.
+export async function pullSupervisorRosterFromSheet(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<number> {
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'SupervisorRoster!A:G' }).catch(() => null)
+  if (!res) return 0
+  const allRows = res.data.values ?? []
+  const dataRows = allRows.length > 0 && String(allRows[0][0]).toLowerCase().includes('month') ? allRows.slice(1) : allRows
+
+  let imported = 0
+  for (const row of dataRows as string[][]) {
+    const [monthLabel, supCode, fullName, , branchCode, staffTypeRaw, activeStr] = row
+    const yearMonth = parseReadableYearMonth(monthLabel)
+    if (!yearMonth || !branchCode) continue
+    const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
+    if (!branch) continue
+
+    let supId: number | null = null
+    if (supCode?.trim()) {
+      const sup = prepare(db, `SELECT id FROM supervisors WHERE sup_code = ?`).get(supCode.trim()) as { id: number } | undefined
+      supId = sup?.id ?? null
+    }
+    if (!supId && fullName) {
+      const sup = prepare(db, `SELECT id FROM supervisors WHERE branch_id = ? AND full_name = ?`).get(branch.id, fullName) as { id: number } | undefined
+      supId = sup?.id ?? null
+    }
+    if (!supId) continue
+
+    const staffType = staffTypeRaw === 'b2b' ? 'b2b' : 'b2c'
+    const active = activeStr === '0' ? 0 : 1
+    prepare(db, `
+      INSERT INTO supervisor_roster_monthly (supervisor_id, year_month, branch_id, staff_type, active) VALUES (?,?,?,?,?)
+      ON CONFLICT(supervisor_id, year_month) DO UPDATE SET branch_id=excluded.branch_id, staff_type=excluded.staff_type, active=excluded.active
+    `).run(supId, yearMonth, branch.id, staffType, active)
+    imported++
+  }
   return imported
 }
 
@@ -319,7 +376,12 @@ export async function pushRosterIfConfigured(db: Database): Promise<void> {
   try {
     const auth   = getServiceAuth(saPath)
     const sheets = google.sheets({ version: 'v4', auth })
-    await pushRoster(db, sheets, sheetsId)
+    // Roster upload writes both reps and the supervisors it auto-creates/links from them —
+    // push both tabs together so SupervisorRoster never lags a step behind Roster.
+    await Promise.all([
+      pushRoster(db, sheets, sheetsId),
+      pushSupervisorRoster(db, sheets, sheetsId),
+    ])
   } catch { /* Sheets unavailable — silently skip */ }
 }
 
@@ -408,6 +470,7 @@ export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
       pushKpiRates(db, sheets, sheetsId),
       pushQtyTiers(db, sheets, sheetsId),
       pushRoster(db, sheets, sheetsId),
+      pushSupervisorRoster(db, sheets, sheetsId),
       pushCommission(db, sheets, sheetsId),
       pushUsers(db, sheets, sheetsId),
       pushSupervisors(db, sheets, sheetsId),
@@ -422,7 +485,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
   counts: { entries: number; configs: number; settings: number; branches: number; kpiRates: number; roster: number; qtyTiers: number; users: number; supervisors: number; monthlyTargets: number }
   error?: string
 }> {
-  const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, qtyTiers: 0, users: 0, supervisors: 0, monthlyTargets: 0 }
+  const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, supervisorRoster: 0, qtyTiers: 0, users: 0, supervisors: 0, monthlyTargets: 0 }
   try {
     const auth   = getServiceAuth(saPath)
     const sheets = google.sheets({ version: 'v4', auth })
@@ -582,6 +645,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
 
     // ── Roster ─────────────────────────────────────────────────────────
     counts.roster += await pullRosterFromSheet(db, sheets, sheetsId).catch(() => 0)
+    counts.supervisorRoster += await pullSupervisorRosterFromSheet(db, sheets, sheetsId).catch(() => 0)
 
     // ── Daily Entries ─────────────────────────────────────────────────
     const entryRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A:G' }).catch(() => ({ data: { values: [] } }))
@@ -733,6 +797,7 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
         prepare(db, `DELETE FROM staff_monthly_targets`).run()
         prepare(db, `DELETE FROM commission_configs`).run()
         prepare(db, `DELETE FROM roster_monthly`).run()
+        prepare(db, `DELETE FROM supervisor_roster_monthly`).run()
         prepare(db, `DELETE FROM upload_logs`).run()
         prepare(db, `DELETE FROM audit_logs`).run()
         prepare(db, `DELETE FROM sessions`).run()

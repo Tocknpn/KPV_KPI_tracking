@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 25
+const SCHEMA_VERSION = 26
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -194,6 +194,16 @@ const BASE_TABLES = `
     active        INTEGER NOT NULL DEFAULT 1,
     UNIQUE(salesman_id, year_month)
   );
+  CREATE TABLE IF NOT EXISTS supervisor_roster_monthly (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    supervisor_id INTEGER NOT NULL REFERENCES supervisors(id),
+    year_month    TEXT    NOT NULL,
+    branch_id     INTEGER NOT NULL REFERENCES branches(id),
+    staff_type    TEXT    NOT NULL,
+    active        INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(supervisor_id, year_month)
+  );
+  CREATE INDEX IF NOT EXISTS idx_sup_roster_monthly_ym ON supervisor_roster_monthly(year_month);
 `
 
 // Indexes that must exist on a fresh install too — mirrors the same CREATE INDEX
@@ -645,6 +655,28 @@ export function applySchema(db: Database): boolean {
     db.run(`ALTER TABLE kpi_metric_type_rates_v25 RENAME TO kpi_metric_type_rates`)
     db.run(`CREATE INDEX IF NOT EXISTS idx_kmtr_lookup ON kpi_metric_type_rates(metric_id, staff_type, branch_id, year_month)`)
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '25')`).run()
+  }
+
+  if (currentVersion < 26) {
+    // Supervisors only ever had a current snapshot, no history — mirrors roster_monthly's
+    // shape exactly (same "one row per entity per month it changed" pattern) so a
+    // supervisor's branch/type/active as of a past month is recorded, not just guessed
+    // from whatever's current today. Pure record-keeping: report:teamPerformance already
+    // derives headcount/target/actual from roster_monthly directly, not from this table,
+    // so adding it changes nothing about how KPI%/targets/commission currently calculate.
+    db.run(`
+      CREATE TABLE IF NOT EXISTS supervisor_roster_monthly (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        supervisor_id INTEGER NOT NULL REFERENCES supervisors(id),
+        year_month    TEXT    NOT NULL,
+        branch_id     INTEGER NOT NULL REFERENCES branches(id),
+        staff_type    TEXT    NOT NULL,
+        active        INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(supervisor_id, year_month)
+      )
+    `)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_sup_roster_monthly_ym ON supervisor_roster_monthly(year_month)`)
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '26')`).run()
   }
 
   return false // Existing DB — no seeding needed

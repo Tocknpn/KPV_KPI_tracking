@@ -18,6 +18,7 @@ interface Window {
     createUser(token: string, data: unknown): Promise<{ success: boolean; id?: number; error?: string }>
     updateUser(token: string, id: number, data: unknown): Promise<{ success: boolean }>
     deleteUser(token: string, id: number): Promise<{ success: boolean }>
+    permanentlyDeleteUser(token: string, id: number): Promise<{ success: boolean; error?: string }>
 
     // Org
     getBranches(token: string): Promise<import('./types').Branch[]>

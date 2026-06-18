@@ -3,7 +3,7 @@ import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth } from './auth'
 import { pushRosterIfConfigured } from './sheets'
-import { snapshotSalesman, getRosterSnapshotAsOf } from '../db/history'
+import { snapshotSalesman, snapshotSupervisor, getRosterSnapshotAsOf } from '../db/history'
 
 function requireRosterManager(token: string) {
   const u = requireAuth(token)
@@ -59,7 +59,10 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
     // database export+disk-write (see db/query.ts's persistDb()), which can lock up the
     // whole app for a company-sized roster. transaction() defers all of that to one write.
     transaction(db, () => {
+      let prevSupervisorId: number | null = null
       if (data.id) {
+        const prev = prepare(db, `SELECT supervisor_id FROM salesmen WHERE id=?`).get(data.id) as { supervisor_id: number | null } | undefined
+        prevSupervisorId = prev?.supervisor_id ?? null
         prepare(db, `
           UPDATE salesmen
           SET rep_code=?, full_name=?, nickname=?, branch_id=?, supervisor_id=?, staff_type=?, active=?
@@ -76,7 +79,14 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
 
       // KPI point target is always resolved from HR KPI Setting — roster no longer stores per-rep targets
       const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
-      snapshotSalesman(db, salesmanId, effectiveDateFor(y, m))
+      const effDate = effectiveDateFor(y, m)
+      snapshotSalesman(db, salesmanId, effDate)
+      // Refresh the Supervisor Roster snapshot too — any rep add/edit/transfer can change a
+      // supervisor's team composition for this month, not just bulk roster uploads. A
+      // transfer affects two supervisors (the team that lost the rep, the one that gained
+      // them) — snapshot both, not just the new one.
+      if (data.supervisorId) snapshotSupervisor(db, data.supervisorId, effDate)
+      if (prevSupervisorId && prevSupervisorId !== data.supervisorId) snapshotSupervisor(db, prevSupervisorId, effDate)
     })
     pushRosterIfConfigured(db).catch(() => {})
     return { success: true, id: salesmanId }
@@ -86,9 +96,12 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
     requireRosterManager(token)
     const db = getDb()
     transaction(db, () => {
+      const rep = prepare(db, `SELECT supervisor_id FROM salesmen WHERE id=?`).get(id) as { supervisor_id: number | null } | undefined
       prepare(db, `UPDATE salesmen SET active=0 WHERE id=?`).run(id)
       const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
-      snapshotSalesman(db, id, effectiveDateFor(y, m))
+      const effDate = effectiveDateFor(y, m)
+      snapshotSalesman(db, id, effDate)
+      if (rep?.supervisor_id) snapshotSupervisor(db, rep.supervisor_id, effDate)
     })
     pushRosterIfConfigured(db).catch(() => {})
     return { success: true }
@@ -99,8 +112,11 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
     const db = getDb()
     transaction(db, () => {
       prepare(db, `UPDATE salesmen SET active=1 WHERE id=?`).run(id)
+      const rep = prepare(db, `SELECT supervisor_id FROM salesmen WHERE id=?`).get(id) as { supervisor_id: number | null } | undefined
       const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
-      snapshotSalesman(db, id, effectiveDateFor(y, m))
+      const effDate = effectiveDateFor(y, m)
+      snapshotSalesman(db, id, effDate)
+      if (rep?.supervisor_id) snapshotSupervisor(db, rep.supervisor_id, effDate)
     })
     pushRosterIfConfigured(db).catch(() => {})
     return { success: true }

@@ -266,6 +266,17 @@ export default function UserManagementContent() {
     showToast(`User "${u.username}" restored.`); load()
   }
 
+  // Permanent — separate from Deactivate above, which just disables login. This removes
+  // the row entirely; backend refuses if the user has upload history, to avoid silently
+  // destroying or reassigning records tied to them.
+  async function handlePermanentDelete(u: UserRow) {
+    if (!token) return
+    if (!confirm(`Permanently delete "${u.username}"? This cannot be undone — use Deactivate instead if you might need this account back.`)) return
+    const res = await window.api.permanentlyDeleteUser(token, u.id)
+    if (res.success) { showToast(`User "${u.username}" permanently deleted.`); load() }
+    else showToast(res.error ?? 'Delete failed.')
+  }
+
   const needsBranch = ROLES_NEEDING_BRANCH.includes(form.role)
   const needsSupervisor = ROLES_NEEDING_SUPERVISOR.includes(form.role)
   const supervisorsForBranch = form.branchId ? supervisors.filter(s => s.branch_id === Number(form.branchId)) : []
@@ -371,6 +382,12 @@ export default function UserManagementContent() {
                         <button onClick={() => handleRestore(u)} title="Restore"
                           className="p-1.5 text-tertiary hover:bg-tertiary-fixed/30 rounded-lg transition-colors">
                           <span className="material-symbols-outlined text-sm">person</span>
+                        </button>
+                      )}
+                      {u.username !== 'admin' && (
+                        <button onClick={() => handlePermanentDelete(u)} title="Delete permanently"
+                          className="p-1.5 text-error hover:bg-error-container/30 rounded-lg transition-colors">
+                          <span className="material-symbols-outlined text-sm">delete_forever</span>
                         </button>
                       )}
                     </div>

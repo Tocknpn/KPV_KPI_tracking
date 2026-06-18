@@ -65,6 +65,54 @@ export function snapshotSalesman(db: Database, salesmanId: number, effectiveDate
   `).run(salesmanId, targetYm, row.branch_id, row.supervisor_id, row.staff_type, row.active)
 }
 
+// Supervisor equivalent of ensureMonthMaterialized — same carry-forward shape, separate
+// table since supervisor_roster_monthly tracks a different entity than roster_monthly.
+function ensureSupMonthMaterialized(db: Database, year: number, month: number): string {
+  const target = ym(year, month)
+  const exists = prepare(db, `SELECT 1 FROM supervisor_roster_monthly WHERE year_month = ? LIMIT 1`).get(target)
+  if (exists) return target
+  const priorBefore = prepare(db, `SELECT MAX(year_month) AS ym FROM supervisor_roster_monthly WHERE year_month < ?`).get(target) as { ym: string | null } | undefined
+  const sourceYm = priorBefore?.ym
+  if (sourceYm) {
+    const rows = prepare(db, `SELECT supervisor_id, branch_id, staff_type, active FROM supervisor_roster_monthly WHERE year_month = ?`).all(sourceYm) as
+      Array<{ supervisor_id: number; branch_id: number; staff_type: string; active: number }>
+    for (const r of rows) {
+      prepare(db, `
+        INSERT INTO supervisor_roster_monthly (supervisor_id, year_month, branch_id, staff_type, active)
+        VALUES (?,?,?,?,?)
+      `).run(r.supervisor_id, target, r.branch_id, r.staff_type, r.active)
+    }
+  }
+  return target
+}
+
+// Snapshot a supervisor's current branch/type/active state into supervisor_roster_monthly —
+// same idea as snapshotSalesman, called after the roster upload creates/links a supervisor.
+// Pure history/record-keeping: report:teamPerformance derives headcount straight from
+// roster_monthly, not from this table, so this never affects any existing calculation.
+export function snapshotSupervisor(db: Database, supervisorId: number, effectiveDate?: string): void {
+  const row = prepare(db, `SELECT branch_id, staff_type, active FROM supervisors WHERE id = ?`).get(supervisorId) as
+    { branch_id: number; staff_type: string; active: number } | undefined
+  if (!row) return
+
+  let year: number, month: number
+  if (effectiveDate && /^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
+    year = parseInt(effectiveDate.slice(0, 4), 10)
+    month = parseInt(effectiveDate.slice(5, 7), 10)
+  } else {
+    const now = new Date()
+    year = now.getFullYear(); month = now.getMonth() + 1
+  }
+
+  const targetYm = ensureSupMonthMaterialized(db, year, month)
+  prepare(db, `
+    INSERT INTO supervisor_roster_monthly (supervisor_id, year_month, branch_id, staff_type, active)
+    VALUES (?,?,?,?,?)
+    ON CONFLICT(supervisor_id, year_month) DO UPDATE SET
+      branch_id = excluded.branch_id, staff_type = excluded.staff_type, active = excluded.active
+  `).run(supervisorId, targetYm, row.branch_id, row.staff_type, row.active)
+}
+
 // Gate: a month "has a roster" if it or any earlier month has rows — i.e. it'll resolve to
 // something via carry-forward. Only a month with literally nothing before it is empty.
 export function isMonthPublished(db: Database, year: number, month: number): boolean {
