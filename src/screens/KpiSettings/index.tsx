@@ -16,7 +16,7 @@ const DEFAULT_TIERS: EditableTier[] = [
 ]
 
 export default function KpiSettings() {
-  const { token, branches } = useAuthStore()
+  const { token, user, branches } = useAuthStore()
   const [metrics, setMetrics] = useState<KpiMetric[]>([])
   const [selectedMetric, setSelectedMetric] = useState<number>(3)
   // KPI Score Config is branch-scoped only — no Global option
@@ -27,6 +27,10 @@ export default function KpiSettings() {
   // Global month filter — controls all sections
   const [globalYear, setGlobalYear]   = useState(new Date().getFullYear())
   const [globalMonth, setGlobalMonth] = useState(new Date().getMonth() + 1)
+  // Edit Defaults mode (admin only) — Jewelry/Bar rates + Qty tiers operate on the standing
+  // values every month silently falls back to, instead of this month's specific override.
+  const [editingDefaults, setEditingDefaults] = useState(false)
+  const [monthSubmitted, setMonthSubmitted] = useState(true) // assume fine until checked, avoids a flash of the warning on every load
   // Monthly branch KPI targets
   const [monthlyTargets, setMonthlyTargets] = useState<Array<{
     id: number; name: string; code: string; kpi_point_target: number
@@ -68,14 +72,30 @@ export default function KpiSettings() {
   }, [branches, selectedBranch])
 
   // Load this branch's jewelry/bar rates + qty tiers AS OF the selected month — editing and
-  // saving here only ever affects that month, never rewrites earlier months' scoring.
+  // saving here only ever affects that month, never rewrites earlier months' scoring. In
+  // Edit Defaults mode, load/save the standing values instead (year_month/effective_to NULL
+  // — the same rows every month already falls back to when nothing's set for it).
   useEffect(() => {
     if (!token || selectedBranch === null) return
-    window.api.getBranchMetricRates(token, selectedBranch, globalYear, globalMonth).then((r: BranchRates) => { setBranchRates(r); setDirtyMult(false) })
-    window.api.getBranchQtyTiers(token, selectedBranch, globalYear, globalMonth).then((r: { configId: number | null; tiers: Array<{ id: number; threshold_pct: number; score: number }> }) => {
-      setTiers(r.tiers.length ? r.tiers.map(t => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS)
-    })
-  }, [token, selectedBranch, globalYear, globalMonth])
+    if (editingDefaults) {
+      window.api.getDefaultMetricRates(token, selectedBranch).then((r: BranchRates) => { setBranchRates(r); setDirtyMult(false) })
+      window.api.getDefaultQtyTiers(token, selectedBranch).then((r: { configId: number | null; tiers: Array<{ id: number; threshold_pct: number; score: number }> }) => {
+        setTiers(r.tiers.length ? r.tiers.map(t => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS)
+      })
+    } else {
+      window.api.getBranchMetricRates(token, selectedBranch, globalYear, globalMonth).then((r: BranchRates) => { setBranchRates(r); setDirtyMult(false) })
+      window.api.getBranchQtyTiers(token, selectedBranch, globalYear, globalMonth).then((r: { configId: number | null; tiers: Array<{ id: number; threshold_pct: number; score: number }> }) => {
+        setTiers(r.tiers.length ? r.tiers.map(t => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS)
+      })
+    }
+  }, [token, selectedBranch, globalYear, globalMonth, editingDefaults])
+
+  // Has HR confirmed this month's KPI setup yet? Purely informational — scoring already
+  // works via the existing fallback chain regardless, this just flags an unconfirmed month.
+  useEffect(() => {
+    if (!token) return
+    window.api.isMonthSubmitted(token, globalYear, globalMonth).then(r => setMonthSubmitted(r.submitted))
+  }, [token, globalYear, globalMonth])
 
   // Load commission configs when global month/year changes
   useEffect(() => {
@@ -138,6 +158,17 @@ export default function KpiSettings() {
     if (!token) return
     setSavingAll(true)
     try {
+      if (editingDefaults) {
+        // Defaults aren't tied to a month — just the standing rates/tiers Admin maintains.
+        if (selectedBranch !== null) {
+          await window.api.saveDefaultMetricRates(token, selectedBranch, branchRates)
+          await window.api.saveDefaultQtyTiers(token, selectedBranch, tiers.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })))
+        }
+        setDirtyMult(false)
+        showToast('Defaults saved.')
+        return
+      }
+
       const ym = `${globalYear}${String(globalMonth).padStart(2, '0')}`
 
       // Jewelry/Bar rates + Qty tiers for the selected branch — scoped to this exact month
@@ -159,14 +190,32 @@ export default function KpiSettings() {
       // Monthly branch KPI point targets
       await saveMonthlyTargets()
 
+      // Marks this month as confirmed regardless of whether anything actually changed —
+      // HR clicking Save All is the explicit "I reviewed this month" signal we need, not
+      // just the values themselves (which might be identical to last month / defaults).
+      await window.api.markMonthSubmitted(token, globalYear, globalMonth)
+      setMonthSubmitted(true)
+
       setDirtyMult(false); setDirtyComm(false); setDirtySupShare(false); setDirtyTargets(false)
       showToast(`All KPI settings saved for ${MONTH_NAMES[globalMonth - 1]} ${globalYear}.`)
     } finally { setSavingAll(false) }
   }
 
-  function copyFromDefaults() {
+  // Pulls Admin's defaults into every section's editable boxes for the currently selected
+  // month/branch — HR reviews/adjusts, then Save All writes them as this month's real values.
+  async function useDefaults() {
+    if (!token) return
     setTargetEdits(Object.fromEntries(monthlyTargets.map(b => [b.id, String(b.kpi_point_target)])))
     setDirtyTargets(true)
+    if (selectedBranch !== null) {
+      const [rates, tierResult] = await Promise.all([
+        window.api.getDefaultMetricRates(token, selectedBranch),
+        window.api.getDefaultQtyTiers(token, selectedBranch),
+      ])
+      setBranchRates(rates)
+      setTiers(tierResult.tiers.length ? tierResult.tiers.map((t: { id: number; threshold_pct: number; score: number }) => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS)
+      setDirtyMult(true)
+    }
   }
 
   const selectedMetricObj = metrics.find(m => m.id === selectedMetric)
@@ -258,10 +307,22 @@ export default function KpiSettings() {
           className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none w-24 font-bold text-primary"
         />
         <span className="text-body-sm text-on-surface-variant ml-1">— all sections below reflect this month</span>
+        {monthSubmitted ? (
+          <span className="ml-auto flex items-center gap-1.5 text-[11px] font-bold text-tertiary uppercase">
+            <span className="material-symbols-outlined text-sm">check_circle</span>
+            Confirmed
+          </span>
+        ) : (
+          <span className="ml-auto flex items-center gap-1.5 text-[11px] font-bold text-secondary uppercase">
+            <span className="material-symbols-outlined text-sm">warning</span>
+            Not confirmed — click Save All below
+          </span>
+        )}
       </GlassCard>
 
-      {/* Commission Rates Config */}
-      <GlassCard elevated className="p-5 mb-6">
+      {/* Commission Rates Config — not part of Defaults, hidden while editing them so Save
+          All's scope (rates+tiers only, in that mode) isn't ambiguous */}
+      {!editingDefaults && <GlassCard elevated className="p-5 mb-6">
         <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
           <div>
             <h4 className="font-headline-md text-on-surface flex items-center gap-2">
@@ -333,10 +394,10 @@ export default function KpiSettings() {
             </div>
           </div>
         </div>
-      </GlassCard>
+      </GlassCard>}
 
-      {/* Monthly Branch KPI Point Targets */}
-      <GlassCard elevated className="p-5 mb-6">
+      {/* Monthly Branch KPI Point Targets — not part of Defaults, same reason as above */}
+      {!editingDefaults && <GlassCard elevated className="p-5 mb-6">
         <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
           <div>
             <h4 className="font-headline-md text-headline-md text-on-surface flex items-center gap-2">Monthly KPI Point Targets — {MONTH_NAMES[globalMonth - 1]} {globalYear}{dirtyTargets && <span className="text-secondary font-bold text-sm">*</span>}</h4>
@@ -345,7 +406,7 @@ export default function KpiSettings() {
             </p>
           </div>
           <button
-            onClick={copyFromDefaults}
+            onClick={useDefaults}
             className="text-on-surface-variant border border-outline-variant px-3 py-2 rounded-lg text-body-sm hover:bg-surface-container transition-colors flex items-center gap-1"
             title="Copy branch defaults to this month"
           >
@@ -412,7 +473,7 @@ export default function KpiSettings() {
         <p className="text-[11px] text-on-surface-variant italic">
           Branches without a monthly override use their default target
         </p>
-      </GlassCard>
+      </GlassCard>}
 
       {/* ── KPI Score Config — branch-scoped, no Global option ── */}
       <GlassCard elevated className="p-5 mb-6">
@@ -420,13 +481,24 @@ export default function KpiSettings() {
           <div>
             <h4 className="font-headline-md text-on-surface flex items-center gap-2">
               <span className="material-symbols-outlined text-primary">tune</span>
-              KPI Score Config — {MONTH_NAMES[globalMonth - 1]} {globalYear}
+              KPI Score Config — {editingDefaults ? 'Defaults' : `${MONTH_NAMES[globalMonth - 1]} ${globalYear}`}
               {dirtyMult && <span className="text-secondary font-bold text-sm">*</span>}
             </h4>
             <p className="text-body-sm text-on-surface-variant mt-1">
-              Jewelry, Bar, and Qty rates are set per branch — select a branch below.
+              {editingDefaults
+                ? 'Standing values every month falls back to when nothing\'s set for it — what "Use Defaults" pulls in below.'
+                : 'Jewelry, Bar, and Qty rates are set per branch — select a branch below.'}
             </p>
           </div>
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => setEditingDefaults(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold uppercase transition-colors ${editingDefaults ? 'bg-primary text-white' : 'text-on-surface-variant border border-outline-variant hover:bg-surface-container'}`}
+            >
+              <span className="material-symbols-outlined text-sm">{editingDefaults ? 'close' : 'tune'}</span>
+              {editingDefaults ? 'Exit Defaults Editor' : 'Edit Defaults'}
+            </button>
+          )}
         </div>
 
         {/* Branch tabs */}
@@ -548,7 +620,7 @@ export default function KpiSettings() {
         <button onClick={saveAllKpiSettings} disabled={savingAll}
           className="flex items-center gap-3 px-8 py-3 bg-primary text-white rounded-2xl font-label-md text-label-md shadow-2xl shadow-primary/30 hover:opacity-90 disabled:opacity-60 transition-all">
           <span className={`material-symbols-outlined text-sm ${savingAll ? 'animate-spin-slow' : ''}`}>{savingAll ? 'sync' : 'save'}</span>
-          {savingAll ? 'Saving All…' : `Save All — ${MONTH_NAMES[globalMonth - 1]} ${globalYear}`}
+          {savingAll ? 'Saving…' : editingDefaults ? 'Save Defaults' : `Save All — ${MONTH_NAMES[globalMonth - 1]} ${globalYear}`}
         </button>
       </div>
 

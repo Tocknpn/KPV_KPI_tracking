@@ -87,6 +87,18 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('kpi:getSupKpiPct', token),
   saveSupKpiPct: (token: string, pct: number) =>
     ipcRenderer.invoke('kpi:saveSupKpiPct', token, pct),
+  isMonthSubmitted: (token: string, year: number, month: number) =>
+    ipcRenderer.invoke('kpi:isMonthSubmitted', token, year, month),
+  markMonthSubmitted: (token: string, year: number, month: number) =>
+    ipcRenderer.invoke('kpi:markMonthSubmitted', token, year, month),
+  getDefaultMetricRates: (token: string, branchId: number) =>
+    ipcRenderer.invoke('kpi:getDefaultMetricRates', token, branchId),
+  saveDefaultMetricRates: (token: string, branchId: number, rates: { jewelry: { b2c: number; b2b: number }; bar: { b2c: number; b2b: number } }) =>
+    ipcRenderer.invoke('kpi:saveDefaultMetricRates', token, branchId, rates),
+  getDefaultQtyTiers: (token: string, branchId: number) =>
+    ipcRenderer.invoke('kpi:getDefaultQtyTiers', token, branchId),
+  saveDefaultQtyTiers: (token: string, branchId: number, tiers: Array<{ thresholdPct: number; score: number }>) =>
+    ipcRenderer.invoke('kpi:saveDefaultQtyTiers', token, branchId, tiers),
 
   // ── Supervisors ────────────────────────────────────────────────────────
   getSupervisors: (token: string, branchId?: number) =>

@@ -358,4 +358,112 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     pushAllConfigIfConfigured(db).catch(() => {})
     return { success: true }
   })
+
+  // ── Monthly submission tracking ─────────────────────────────────────────
+  // Soft-warn workflow: a month with no submission still scores fine (computeKpiScore's
+  // existing fallback chain keeps working untouched) — this is purely a visibility signal
+  // so HR/Admin see a banner reminding them to confirm the month, even if nothing changed.
+  ipcMain.handle('kpi:isMonthSubmitted', async (_e, token: string, year: number, month: number) => {
+    requireAuth(token)
+    const ym = `${year}${String(month).padStart(2, '0')}`
+    const row = prepare(getDb(), `SELECT 1 FROM kpi_monthly_submissions WHERE year_month = ?`).get(ym)
+    return { submitted: !!row }
+  })
+
+  ipcMain.handle('kpi:markMonthSubmitted', async (_e, token: string, year: number, month: number) => {
+    const u = requireAuth(token)
+    if (!['admin', 'hr'].includes(u.role)) throw new Error('Forbidden')
+    const ym = `${year}${String(month).padStart(2, '0')}`
+    prepare(getDb(), `INSERT OR REPLACE INTO kpi_monthly_submissions (year_month, submitted_by, submitted_at) VALUES (?, ?, datetime('now'))`)
+      .run(ym, u.username)
+    return { success: true }
+  })
+
+  // ── Admin-maintained defaults ────────────────────────────────────────────
+  // "Defaults" is just the existing standing rows every rate/tier lookup already falls back
+  // to (year_month IS NULL for rates, effective_to IS NULL for tiers) — there was previously
+  // no UI path to edit them directly, only month-scoped values. This exposes that path so
+  // Admin can maintain one canonical default set, and HR can pull it into a new month via
+  // "Use Defaults" without retyping every box by hand.
+  ipcMain.handle('kpi:getDefaultMetricRates', async (_e, token: string, branchId: number) => {
+    requireAuth(token)
+    const db = getDb()
+    const rows = prepare(db, `
+      SELECT metric_id, staff_type, points_per_unit FROM kpi_metric_type_rates
+      WHERE metric_id IN (1,2) AND year_month IS NULL AND (branch_id = ? OR branch_id IS NULL)
+      ORDER BY CASE WHEN branch_id IS NULL THEN 1 ELSE 0 END
+    `).all(branchId) as Array<{ metric_id: number; staff_type: string; points_per_unit: number }>
+    const result: Record<'jewelry' | 'bar', Record<'b2c' | 'b2b', number>> = {
+      jewelry: { b2c: 0, b2b: 0 }, bar: { b2c: 0, b2b: 0 },
+    }
+    for (const r of rows) {
+      const metric = r.metric_id === 1 ? 'jewelry' : 'bar'
+      const type = r.staff_type as 'b2c' | 'b2b'
+      if (result[metric][type] === 0) result[metric][type] = r.points_per_unit // branch-specific row already came first
+    }
+    return result
+  })
+
+  ipcMain.handle('kpi:saveDefaultMetricRates', async (_e, token: string, branchId: number, rates: {
+    jewelry: { b2c: number; b2b: number }; bar: { b2c: number; b2b: number }
+  }) => {
+    requireAdmin(token)
+    const db = getDb()
+    transaction(db, () => {
+      const writes: Array<[number, 'b2c' | 'b2b', number]> = [
+        [1, 'b2c', rates.jewelry.b2c], [1, 'b2b', rates.jewelry.b2b],
+        [2, 'b2c', rates.bar.b2c],     [2, 'b2b', rates.bar.b2b],
+      ]
+      for (const [metricId, staffType, pointsPerUnit] of writes) {
+        prepare(db, `DELETE FROM kpi_metric_type_rates WHERE metric_id=? AND branch_id=? AND staff_type=? AND year_month IS NULL`).run(metricId, branchId, staffType)
+        prepare(db, `INSERT INTO kpi_metric_type_rates (metric_id, branch_id, staff_type, year_month, points_per_unit) VALUES (?,?,?,NULL,?)`).run(metricId, branchId, staffType, pointsPerUnit)
+      }
+    })
+    pushAllConfigIfConfigured(db).catch(() => {})
+    return { success: true }
+  })
+
+  ipcMain.handle('kpi:getDefaultQtyTiers', async (_e, token: string, branchId: number) => {
+    requireAuth(token)
+    const db = getDb()
+    const config = prepare(db, `
+      SELECT id, label FROM kpi_tier_configs
+      WHERE metric_id = 3 AND (branch_id = ? OR branch_id IS NULL) AND is_active = 1 AND effective_to IS NULL
+      ORDER BY CASE WHEN branch_id IS NULL THEN 1 ELSE 0 END
+      LIMIT 1
+    `).get(branchId) as { id: number; label: string } | undefined
+    if (!config) return { configId: null, tiers: [], label: null }
+    const tiers = prepare(db, `SELECT id, threshold_pct, score FROM kpi_tiers WHERE config_id = ? ORDER BY threshold_pct DESC`).all(config.id)
+    return { configId: config.id, tiers, label: config.label }
+  })
+
+  ipcMain.handle('kpi:saveDefaultQtyTiers', async (_e, token: string, branchId: number,
+    tiers: Array<{ thresholdPct: number; score: number }>
+  ) => {
+    requireAdmin(token)
+    const db = getDb()
+    const branch = prepare(db, `SELECT code FROM branches WHERE id = ?`).get(branchId) as { code: string } | undefined
+    let configId: number
+    transaction(db, () => {
+      const existing = prepare(db, `
+        SELECT id FROM kpi_tier_configs WHERE metric_id = 3 AND branch_id = ? AND effective_to IS NULL
+      `).get(branchId) as { id: number } | undefined
+      if (existing) {
+        configId = existing.id
+        prepare(db, `DELETE FROM kpi_tiers WHERE config_id = ?`).run(configId)
+      } else {
+        const result = prepare(db, `
+          INSERT INTO kpi_tier_configs (metric_id, branch_id, label, effective_from, effective_to, is_active)
+          VALUES (3, ?, ?, '2000-01-01', NULL, 1)
+        `).run(branchId, `${branch?.code ?? 'Branch'} Qty Tiers — Default`)
+        configId = result.lastInsertRowid as number
+      }
+      tiers.sort((a, b) => b.thresholdPct - a.thresholdPct).forEach((t, i) => {
+        prepare(db, `INSERT INTO kpi_tiers (config_id, threshold_pct, score, tier_order) VALUES (?,?,?,?)`)
+          .run(configId, t.thresholdPct, t.score, i + 1)
+      })
+    })
+    pushAllConfigIfConfigured(db).catch(() => {})
+    return { success: true, configId: configId! }
+  })
 }

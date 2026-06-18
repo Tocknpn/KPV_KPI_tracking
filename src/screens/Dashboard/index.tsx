@@ -5,6 +5,7 @@ import { KpiCard } from '../../components/ui/KpiCard'
 import { RadialGauge } from '../../components/ui/RadialGauge'
 import { ArcGauge } from '../../components/ui/ArcGauge'
 import { GlassCard } from '../../components/ui/GlassCard'
+import { KpiSubmissionBanner } from '../../components/ui/KpiSubmissionBanner'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import { getDefaultDateRange } from '../../utils/dates'
@@ -237,6 +238,7 @@ export default function Dashboard() {
 
   return (
     <AppShell title="SalesTrack Pro">
+      <KpiSubmissionBanner year={year} month={month} />
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
         <div>

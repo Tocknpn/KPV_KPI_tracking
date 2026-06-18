@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 22
+const SCHEMA_VERSION = 23
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -112,6 +112,11 @@ const BASE_TABLES = `
     qty_rate_lak     REAL    NOT NULL DEFAULT 0,
     created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE(staff_type, year_month)
+  );
+  CREATE TABLE IF NOT EXISTS kpi_monthly_submissions (
+    year_month   TEXT PRIMARY KEY,
+    submitted_by TEXT,
+    submitted_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE TABLE IF NOT EXISTS kpi_tiers (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -575,6 +580,23 @@ export function applySchema(db: Database): boolean {
     try { db.run(`CREATE INDEX IF NOT EXISTS idx_daily_entries_date ON daily_entries(entry_date)`) } catch { /* already exists */ }
     try { db.run(`CREATE INDEX IF NOT EXISTS idx_daily_entries_branch_date ON daily_entries(branch_id, entry_date)`) } catch { /* already exists */ }
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '22')`).run()
+  }
+
+  if (currentVersion < 23) {
+    // Explicit record of "HR confirmed this month's KPI setup" — separate from whether any
+    // rate/tier/target row actually exists for that month, because HR must submit every
+    // month even when nothing changed (clicking "Save All" after using Defaults still
+    // counts). Without this there's no way to distinguish "HR confirmed, nothing changed"
+    // from "HR forgot this month entirely" — both look identical in the underlying tables
+    // since computeKpiScore's fallback makes a forgotten month silently keep working.
+    db.run(`
+      CREATE TABLE IF NOT EXISTS kpi_monthly_submissions (
+        year_month   TEXT PRIMARY KEY,
+        submitted_by TEXT,
+        submitted_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '23')`).run()
   }
 
   return false // Existing DB — no seeding needed

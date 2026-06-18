@@ -8,6 +8,7 @@ import { useAppStore } from '../../store/app.store'
 import { getDefaultDateRange } from '../../utils/dates'
 import { generateRowsXLSX, downloadXLSX } from '../../utils/xlsx'
 import { exportElementToPdf } from '../../utils/pdf'
+import { KpiSubmissionBanner } from '../../components/ui/KpiSubmissionBanner'
 import type { MonthlyReportRow, TeamPerformanceRow, ExecutiveBranchRow } from '../../types'
 import { RepProfileModal, SupProfileModal } from './IndividualProfileModal'
 
@@ -641,6 +642,7 @@ export default function Reports() {
 
   return (
     <AppShell title="SalesTrack Pro">
+      <KpiSubmissionBanner year={year} month={month} />
       {toast && (
         <div className="fixed top-20 right-6 z-50 bg-inverse-surface text-inverse-on-surface px-5 py-3 rounded-xl shadow-lg animate-slide-in text-body-sm">
           {toast}
