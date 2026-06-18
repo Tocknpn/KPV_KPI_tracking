@@ -3,7 +3,7 @@ import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin, logAudit } from './auth'
 import { pushRosterIfConfigured, syncEntriesToCloudIfConfigured } from './sheets'
-import { snapshotSalesman, snapshotSupervisor, publishMonth, publishMonthFromDate } from '../db/history'
+import { snapshotSalesman, snapshotSupervisor, publishMonth, publishMonthFromDate, getRosterMapAsOf } from '../db/history'
 
 export interface UploadRowResult {
   row: number
@@ -61,8 +61,9 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
   // ── Process daily upload (rep_code based matching) ────────────────────
   ipcMain.handle('upload:daily', async (_e, token: string, rows: DailyRow[], meta: UploadLogEntry) => {
     const user = requireAuth(token)
-    // Admin is intentionally excluded — Sales Upload is Accountant Officer's job per the role spec.
-    if (user.role !== 'accountant_officer') throw new Error('Forbidden')
+    // Admin is intentionally excluded — Sales Upload is Accountant Officer's (branch-scoped)
+    // and Accountant Manager's (cross-branch) job per the role spec.
+    if (!['accountant_officer', 'accountant_manager'].includes(user.role)) throw new Error('Forbidden')
     if (!rows.length) return { success: false, error: 'No rows to import.' }
 
     const results: UploadRowResult[] = []
@@ -384,18 +385,35 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
   })
 
   // ── Get salesmen list for template generation (with supervisor info) ──
-  ipcMain.handle('upload:getSalesmenForTemplate', async (_e, token: string, branchId: number) => {
+  // branchId null/undefined = all branches (Accountant Manager's export). Resolves against
+  // the roster AS OF the current month, not the live salesmen table — a rep who transferred
+  // branches or deactivated mid-month should reflect what was true for the month being
+  // filled in, same as every other roster-aware calculation in the app.
+  ipcMain.handle('upload:getSalesmenForTemplate', async (_e, token: string, branchId: number | null) => {
     requireAuth(token)
-    return prepare(db, `
-      SELECT s.id, s.rep_code, s.full_name, s.nickname, s.branch_id, b.code AS branch_code,
-             sv.id   AS supervisor_id,
-             sv.full_name AS supervisor_name
-      FROM salesmen s
-      JOIN branches b ON b.id = s.branch_id
-      LEFT JOIN supervisors sv ON sv.id = s.supervisor_id
-      WHERE s.branch_id = ? AND s.active = 1
-      ORDER BY sv.full_name NULLS LAST, s.full_name
-    `).all(branchId)
+    const now = new Date()
+    const rosterMap = getRosterMapAsOf(db, now.getFullYear(), now.getMonth() + 1)
+    const salesmen = prepare(db, `SELECT id, rep_code, full_name, nickname FROM salesmen`).all() as
+      Array<{ id: number; rep_code: string; full_name: string; nickname: string }>
+    const branchRows = prepare(db, `SELECT id, code FROM branches`).all() as Array<{ id: number; code: string }>
+    const branchCodeById = new Map(branchRows.map(b => [b.id, b.code]))
+    const supRows = prepare(db, `SELECT id, full_name FROM supervisors`).all() as Array<{ id: number; full_name: string }>
+    const supNameById = new Map(supRows.map(s => [s.id, s.full_name]))
+
+    const rows = []
+    for (const s of salesmen) {
+      const roster = rosterMap.get(s.id)
+      if (!roster || !roster.active) continue
+      if (branchId != null && roster.branch_id !== branchId) continue
+      rows.push({
+        id: s.id, rep_code: s.rep_code, full_name: s.full_name, nickname: s.nickname,
+        branch_id: roster.branch_id, branch_code: branchCodeById.get(roster.branch_id) ?? '',
+        supervisor_id: roster.supervisor_id,
+        supervisor_name: roster.supervisor_id ? (supNameById.get(roster.supervisor_id) ?? null) : null,
+      })
+    }
+    rows.sort((a, b) => (a.supervisor_name ?? '￿').localeCompare(b.supervisor_name ?? '￿') || a.full_name.localeCompare(b.full_name))
+    return rows
   })
 
   // ── 7-day per-rep upload status grid ────────────────────────────────

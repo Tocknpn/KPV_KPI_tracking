@@ -727,7 +727,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
             kpi_point_target = excluded.kpi_point_target,
             target_b2c        = excluded.target_b2c,
             target_b2b        = excluded.target_b2b
-        `).run(branch.id, year, month, target, isNaN(b2c) ? null : b2c, isNaN(b2b) ? null : b2b)
+        `).run(branch.id, year, month, target, isNaN(b2c) ? target : b2c, isNaN(b2b) ? target : b2b)
         counts.monthlyTargets++
       }
     }

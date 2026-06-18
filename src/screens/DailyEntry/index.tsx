@@ -114,12 +114,17 @@ export default function DailyEntry() {
     }
   }
 
-  // Template downloads (XLSX)
+  // Template downloads (XLSX) — Accountant Manager isn't scoped to one branch, so their
+  // template carries every active rep across every branch in one file, not just whichever
+  // branch happens to be selected.
+  const isAccountantManager = user?.role === 'accountant_manager'
+
   async function downloadDailyTemplate() {
     if (!token) return
-    const salesmen = await window.api.getSalesmenForTemplate(token, effectiveBranchId) as Array<{ id: number; full_name: string; branch_id: number; branch_code: string }>
+    const salesmen = await window.api.getSalesmenForTemplate(token, isAccountantManager ? null : effectiveBranchId) as Array<{ id: number; full_name: string; branch_id: number; branch_code: string }>
     const data = generateDailyTemplateXLSX(salesmen, date)
-    downloadXLSX(`daily_template_${branchName.replace(/\s+/g,'_')}_${date}.xlsx`, data)
+    const label = isAccountantManager ? 'All_Branches' : branchName.replace(/\s+/g, '_')
+    downloadXLSX(`daily_template_${label}_${date}.xlsx`, data)
   }
 
   return (
