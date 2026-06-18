@@ -3,7 +3,7 @@ import { google } from 'googleapis'
 import bcrypt from 'bcryptjs'
 import { readFileSync, existsSync } from 'fs'
 import { getDb } from '../db/connection'
-import { prepare } from '../db/query'
+import { prepare, transaction } from '../db/query'
 import { requireAuth } from './auth'
 import type { Database } from 'sql.js'
 
@@ -582,16 +582,16 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 export function registerSheetsHandlers(ipcMain: IpcMain): void {
 
-  // ── Pre-login bootstrap — no token, intentionally ─────────────────────────
-  // A brand-new device's local DB only has the seeded default accounts (admin/admin1234,
-  // etc.) until it connects to Sheets and pulls the real Users tab down. These 3 handlers
-  // let that happen from the Login screen, before anyone has signed in.
+  // ── Pre-login database connect/switch — no token, intentionally ───────────
+  // Lets the Login screen connect a brand-new device to Sheets for the first time, AND
+  // lets ANY device switch to a different spreadsheet entirely (e.g. Test database vs
+  // Production database) without needing to log in first — by design, since switching
+  // databases is exactly the moment there's no guarantee a real account from the NEW
+  // database has ever existed on this device yet.
   //
-  // Self-gated for safety: bootstrapConnect refuses to run if this device is ALREADY
-  // configured. Once a device has a real sheets_id/service_account_path saved, changing it
-  // requires an authenticated admin via Settings (sheets:saveConfig, unchanged) — otherwise
-  // anyone who can launch the exe could silently repoint an already-live device at a
-  // different spreadsheet and pull in attacker-controlled accounts.
+  // No super-admin backdoor account exists to "always get in" across databases — deliberately
+  // skipped as too risky (one fixed credential valid on every install, including production,
+  // forever). Use the per-device seeded admin/admin1234 instead if truly locked out.
 
   ipcMain.handle('sheets:isConfigured', async () => {
     return !!(getSetting('sheets_id') && getSetting('service_account_path'))
@@ -608,9 +608,6 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
   })
 
   ipcMain.handle('sheets:bootstrapConnect', async (_e, sheetsId: string, serviceAccountPath: string) => {
-    if (getSetting('sheets_id') && getSetting('service_account_path')) {
-      return { success: false, error: 'This device is already connected. Log in and use Settings to change it.' }
-    }
     if (!sheetsId) return { success: false, error: 'Spreadsheet ID required.' }
     if (!serviceAccountPath) return { success: false, error: 'Service account JSON path required.' }
     if (!existsSync(serviceAccountPath)) return { success: false, error: `File not found: ${serviceAccountPath}` }
@@ -620,15 +617,37 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       const sheets = google.sheets({ version: 'v4', auth })
       await sheets.spreadsheets.get({ spreadsheetId: sheetsId, fields: 'properties.title' }) // throws if unreachable/unshared
 
+      // Switching to a DIFFERENT database — wipe this device's local data first. pullAllFromCloud
+      // only upserts rows that exist in the new sheet; without a wipe, any Test-database rep_code/
+      // username that doesn't also exist in Production (or vice versa) would linger forever,
+      // silently mixing the two databases in one local file. The seeded admin account survives
+      // this (re-seeded if missing) so the device can never end up with zero way to log in.
+      const db = getDb()
+      const wasAlreadyConfigured = !!(getSetting('sheets_id') && getSetting('service_account_path'))
+      if (wasAlreadyConfigured) {
+        transaction(db, () => {
+          prepare(db, `DELETE FROM daily_entries`).run()
+          prepare(db, `DELETE FROM targets`).run()
+          prepare(db, `DELETE FROM staff_monthly_targets`).run()
+          prepare(db, `DELETE FROM commission_configs`).run()
+          prepare(db, `DELETE FROM roster_monthly`).run()
+          prepare(db, `DELETE FROM upload_logs`).run()
+          prepare(db, `DELETE FROM audit_logs`).run()
+          prepare(db, `DELETE FROM sessions`).run()
+          prepare(db, `DELETE FROM user_permissions`).run()
+          prepare(db, `DELETE FROM salesmen`).run()
+          prepare(db, `DELETE FROM supervisors`).run()
+          prepare(db, `DELETE FROM users WHERE username != 'admin'`).run()
+        })
+      }
+
       // Persist sheets_id/service_account_path only AFTER a successful pull — otherwise a
       // pull failure (network drop mid-sync, bad tab, etc.) leaves the device marked
-      // "configured" with no real data ever having arrived, silently hiding this exact
-      // retry button (isSheetsConfigured() would now return true) with no way back except
-      // logging in with the seeded default account and finishing setup manually.
+      // "configured" with no real data ever having arrived, with the prior database's local
+      // data already wiped and nothing to show for it.
       const result = await pullAllFromCloud(sheetsId, serviceAccountPath)
       if (!result.success) return { success: false, error: result.error ?? 'Connected, but the initial sync failed.' }
 
-      const db = getDb()
       prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('sheets_id', ?)`).run(sheetsId)
       prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('service_account_path', ?)`).run(serviceAccountPath)
 

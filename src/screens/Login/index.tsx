@@ -14,9 +14,11 @@ export default function Login() {
   const [loading, setLoading]   = useState(false)
   const [syncStatus, setSyncStatus] = useState<string | null>(null)
 
-  // First-time-on-this-device connection setup — only relevant before Sheets has ever been
-  // configured locally. Once it has, this link disappears; further changes need an
-  // authenticated admin via Settings (bootstrapConnect refuses to run otherwise anyway).
+  // Database connect/switch — always available, pre-login, on purpose. Lets this device
+  // point at a different Google Sheet entirely (e.g. Test database vs Production database)
+  // without needing to log in first — switching IS the moment there's no guarantee a login
+  // from the new database has ever existed here yet. sheetsConfigured only changes the
+  // warning copy (switch vs first-time), it no longer hides the button.
   const [sheetsConfigured, setSheetsConfigured] = useState<boolean | null>(null)
   const [showSetup, setShowSetup] = useState(false)
   const [setupSheetId, setSetupSheetId]   = useState('')
@@ -35,6 +37,7 @@ export default function Login() {
   }
 
   async function handleBootstrapConnect() {
+    if (sheetsConfigured && !confirm('Switch database? This clears all local data on this device first, then pulls fresh from the new Sheet. Anything not yet synced is lost.')) return
     setSetupBusy(true); setSetupError(''); setSetupSuccess('')
     try {
       const res = await window.api.bootstrapConnect(setupSheetId.trim(), setupJsonPath.trim())
@@ -107,9 +110,18 @@ export default function Login() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center font-sans"
+      className="min-h-screen flex items-center justify-center font-sans relative"
       style={{ background: 'linear-gradient(135deg, #eef2ff 0%, #f0f9ff 100%)' }}
     >
+      {/* Database connect/switch — small, always available, corner of the screen */}
+      <button
+        onClick={() => setShowSetup(v => !v)}
+        title="Connect / switch database"
+        className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/60 hover:bg-white text-on-surface-variant hover:text-primary flex items-center justify-center transition-colors shadow-sm"
+      >
+        <span className="material-symbols-outlined text-[18px]">dns</span>
+      </button>
+
       {/* Card */}
       <div className="w-full max-w-sm mx-4">
         {/* Logo */}
@@ -198,28 +210,24 @@ export default function Login() {
           </form>
         </div>
 
-        {/* First-time device setup */}
-        {sheetsConfigured === false && !showSetup && (
-          <button
-            onClick={() => setShowSetup(true)}
-            className="w-full text-center text-[12px] text-primary hover:underline mt-4"
-          >
-            First time on this device? Connect to Google Sheets
-          </button>
-        )}
-
         {showSetup && (
           <div className="bg-white rounded-2xl shadow-glass-elevated border border-white/80 px-6 py-5 mt-4 space-y-3">
             <div className="flex items-center justify-between">
-              <p className="font-bold text-body-sm text-on-surface">Connect This Device</p>
+              <p className="font-bold text-body-sm text-on-surface">{sheetsConfigured ? 'Switch Database' : 'Connect This Device'}</p>
               <button onClick={() => setShowSetup(false)} className="text-on-surface-variant hover:text-error">
                 <span className="material-symbols-outlined text-sm">close</span>
               </button>
             </div>
             <p className="text-[11px] text-on-surface-variant">
-              Paste the Google Sheet ID and the service account JSON key path — same for every device.
-              On success this also pulls all current accounts/data down, so you can log in with your real credentials right after.
+              Paste the Google Sheet ID and the service account JSON key path for the database you want this device on (e.g. Test or Production).
+              On success this pulls all accounts/data from that database down, so you can log in with its real credentials right after.
             </p>
+            {sheetsConfigured && (
+              <div className="flex items-center gap-2 bg-secondary-container/20 border border-secondary/20 text-on-surface-variant px-3 py-2 rounded-lg text-[11px]">
+                <span className="material-symbols-outlined text-sm text-secondary">warning</span>
+                This device is already connected to a database. Switching clears its local data first — anything not yet synced will be lost.
+              </div>
+            )}
             <input
               value={setupSheetId} onChange={e => setSetupSheetId(e.target.value)}
               placeholder="Google Sheet ID"
@@ -254,7 +262,7 @@ export default function Login() {
               <span className={`material-symbols-outlined text-sm ${setupBusy ? 'animate-spin-slow' : ''}`}>
                 {setupBusy ? 'sync' : 'cloud_sync'}
               </span>
-              {setupBusy ? 'Connecting…' : 'Test Connection & Sync'}
+              {setupBusy ? 'Connecting…' : sheetsConfigured ? 'Switch Database & Sync' : 'Test Connection & Sync'}
             </button>
           </div>
         )}
