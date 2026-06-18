@@ -126,21 +126,24 @@ interface RosterStub {
   nickname?: string | null
   branch_code: string
   supervisor_name?: string | null
+  supervisor_code?: string | null
   staff_type?: string | null
 }
 
 // KPI point target is not part of the roster — it is always looked up from HR KPI Setting.
 // Effective_Date (REQUIRED, YYYY-MM-DD) is the month this row counts for — there is no
 // month picker in the app; the file is the only source of truth for which month a row belongs to.
+// Sup_Code is optional but preferred over Team_Sup_Name for matching/creating a supervisor —
+// codes don't collide across Lao text/typos/duplicate names the way names can.
 export function generateRosterTemplateXLSX(salesmen: RosterStub[]): Uint8Array {
   const today = new Date().toISOString().split('T')[0]
-  const headers = ['Rep_Code', 'Full_Name', 'Nickname', 'Branch_Code', 'Team_Sup_Name', 'Staff_Type', 'Effective_Date (required)']
+  const headers = ['Rep_Code', 'Full_Name', 'Nickname', 'Branch_Code', 'Team_Sup_Name', 'Staff_Type', 'Effective_Date (required)', 'Sup_Code (optional)']
   const dataRows = salesmen.length > 0
     ? salesmen.map(s => [
         s.rep_code ?? '', s.full_name, s.nickname ?? '', s.branch_code,
-        s.supervisor_name ?? '', s.staff_type ?? 'b2c', today,
+        s.supervisor_name ?? '', s.staff_type ?? 'b2c', today, s.supervisor_code ?? '',
       ])
-    : [['', '', '', '', '', 'b2c', today]]
+    : [['', '', '', '', '', 'b2c', today, '']]
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows])
   ws['!cols'] = [
@@ -151,6 +154,7 @@ export function generateRosterTemplateXLSX(salesmen: RosterStub[]): Uint8Array {
     { wch: 26 }, // Team_Sup_Name
     { wch: 12 }, // Staff_Type
     { wch: 14 }, // Effective_Date
+    { wch: 16 }, // Sup_Code
   ]
 
   const wb = XLSX.utils.book_new()

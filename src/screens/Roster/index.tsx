@@ -5,7 +5,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useAuthStore } from '../../store/auth.store'
 import type { RosterRow, Supervisor } from '../../types'
 import { validateRosterRows, downloadCSV } from '../../utils/csv'
-import { parseXLSX, readFileAsArrayBuffer } from '../../utils/xlsx'
+import { parseXLSX, readFileAsArrayBuffer, generateRosterTemplateXLSX, downloadXLSX } from '../../utils/xlsx'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -317,19 +317,11 @@ export default function Roster() {
     if (!token) return
     setDlTemplate(true)
     try {
-      const rows = await window.api.getRosterTemplate(token) as Array<Record<string, unknown>>
-      const header = ['rep_code','full_name','nickname','branch_code','supervisor_name','staff_type','effective_date','supervisor_code']
-      const csvRows = [header.join(',')]
-      for (const r of rows) {
-        csvRows.push(header.map(k => {
-          const v = String(r[k] ?? '')
-          return v.includes(',') ? `"${v}"` : v
-        }).join(','))
-      }
-      const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' })
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a'); a.href = url; a.download = 'roster_template.csv'; a.click()
-      URL.revokeObjectURL(url)
+      const rows = await window.api.getRosterTemplate(token) as Array<{
+        rep_code: string | null; full_name: string; nickname: string | null; branch_code: string
+        supervisor_name: string | null; supervisor_code: string | null; staff_type: string | null
+      }>
+      downloadXLSX('roster_template.xlsx', generateRosterTemplateXLSX(rows))
     } finally { setDlTemplate(false) }
   }
 

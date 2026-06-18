@@ -239,8 +239,14 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(r.branchCode) as { id: number } | undefined
           if (!branch) { skipped.push(`${r.repCode}(bad branch:${r.branchCode})`); continue }
 
+          const staffType = r.staffType === 'b2b' ? 'b2b' : 'b2c'
+
           // Resolve supervisor — sup_code first (stable, unique, unlike a name), fall back
-          // to name/nickname match for files that don't carry a code yet.
+          // to name/nickname match for files that don't carry a code yet. If the roster
+          // names a supervisor that doesn't exist locally yet, create it from the roster
+          // row itself — supervisors were previously only ever creatable by hand via Team
+          // Performance, so a roster naming a real supervisor that nobody had separately
+          // set up silently dropped the link (rep saved fine, supervisor_id stayed NULL).
           let supId: number | null = null
           if (r.supervisorCode) {
             const sup = prepare(db, `SELECT id FROM supervisors WHERE sup_code = ?`).get(r.supervisorCode) as { id: number } | undefined
@@ -250,8 +256,11 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
             const sup = prepare(db, `SELECT id FROM supervisors WHERE branch_id = ? AND (full_name = ? OR nickname = ?)`).get(branch.id, r.supervisorName, r.supervisorName) as { id: number } | undefined
             supId = sup?.id ?? null
           }
-
-          const staffType = r.staffType === 'b2b' ? 'b2b' : 'b2c'
+          if (!supId && r.supervisorName) {
+            const ins = prepare(db, `INSERT INTO supervisors (full_name, nickname, branch_id, staff_type, active, sup_code) VALUES (?,?,?,?,1,?)`)
+              .run(r.supervisorName, '', branch.id, staffType, r.supervisorCode ?? null)
+            supId = Number(ins.lastInsertRowid)
+          }
 
           const existing = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(r.repCode) as { id: number } | undefined
           let salesmanId: number
