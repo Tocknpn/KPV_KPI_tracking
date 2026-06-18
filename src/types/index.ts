@@ -57,6 +57,8 @@ export interface Branch {
   name: string
   code: string
   kpi_point_target: number
+  target_b2c_default: number
+  target_b2b_default: number
 }
 
 export interface Salesman {

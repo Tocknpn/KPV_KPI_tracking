@@ -22,6 +22,22 @@ function getEffectiveConfig(db: import('sql.js').Database, staffType: string, ye
   `).get(staffType, yearMonth) as CommissionConfig | undefined
 }
 
+// Admin's Defaults row — sorts as the OLDEST possible year_month, so the existing "most
+// recent row <= requested month" lookup above only ever picks it when no real month-specific
+// (or earlier-month-carried-forward) row exists yet. No schema change needed: it's just an
+// ordinary commission_configs row at a year_month no real month can ever produce.
+const DEFAULTS_YM = '000000'
+
+// Supervisor share is per staff_type now (B2C team share can differ from B2B). Falls back to
+// the old single 'supervisor' key for months saved before this split, so historical commission
+// reports don't silently change. Final fallback is 30%, same as the pre-existing default.
+function getEffectiveSupPct(db: import('sql.js').Database, staffType: 'b2c' | 'b2b', yearMonth: string): number {
+  const typed = getEffectiveConfig(db, `supervisor_${staffType}`, yearMonth)
+  if (typed) return typed.jewelry_rate_lak / 100
+  const legacy = getEffectiveConfig(db, 'supervisor', yearMonth)
+  return legacy ? legacy.jewelry_rate_lak / 100 : 0.30
+}
+
 export function registerCommissionHandlers(ipcMain: IpcMain): void {
 
   // Get commission configs (all or filtered by yearMonth)
@@ -63,6 +79,59 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
       } catch { /* Sheets not configured or unavailable — silently skip */ }
     }
 
+    return { success: true }
+  })
+
+  // Commission Rate Defaults — Admin-only, not month-scoped. Reuses the existing
+  // commission_configs table via the DEFAULTS_YM sentinel (see getEffectiveConfig above),
+  // so any month that's never had its own explicit rate automatically inherits these.
+  ipcMain.handle('commission:getDefaults', async (_e, token: string) => {
+    requireAuth(token)
+    const db = getDb()
+    const get = (staffType: string) => prepare(db, `
+      SELECT jewelry_rate_lak, bar_rate_lak, qty_rate_lak FROM commission_configs WHERE staff_type=? AND year_month=?
+    `).get(staffType, DEFAULTS_YM) as { jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number } | undefined
+    const b2c = get('b2c'); const b2b = get('b2b')
+    const supB2c = get('supervisor_b2c'); const supB2b = get('supervisor_b2b')
+    return {
+      b2c: { jewelry: b2c?.jewelry_rate_lak ?? 0, bar: b2c?.bar_rate_lak ?? 0, qty: b2c?.qty_rate_lak ?? 0 },
+      b2b: { jewelry: b2b?.jewelry_rate_lak ?? 0, bar: b2b?.bar_rate_lak ?? 0, qty: b2b?.qty_rate_lak ?? 0 },
+      supB2cPct: supB2c?.jewelry_rate_lak ?? 30,
+      supB2bPct: supB2b?.jewelry_rate_lak ?? 30,
+    }
+  })
+
+  ipcMain.handle('commission:saveDefaults', async (_e, token: string, data: {
+    b2c: { jewelry: number; bar: number; qty: number }
+    b2b: { jewelry: number; bar: number; qty: number }
+    supB2cPct: number; supB2bPct: number
+  }) => {
+    requireAdmin(token)
+    const db = getDb()
+    const upsert = (staffType: string, jewelry: number, bar: number, qty: number) => {
+      prepare(db, `
+        INSERT INTO commission_configs (staff_type, year_month, jewelry_rate_lak, bar_rate_lak, qty_rate_lak)
+        VALUES (?,?,?,?,?)
+        ON CONFLICT(staff_type, year_month) DO UPDATE SET
+          jewelry_rate_lak = excluded.jewelry_rate_lak,
+          bar_rate_lak     = excluded.bar_rate_lak,
+          qty_rate_lak     = excluded.qty_rate_lak
+      `).run(staffType, DEFAULTS_YM, jewelry, bar, qty)
+    }
+    upsert('b2c', data.b2c.jewelry, data.b2c.bar, data.b2c.qty)
+    upsert('b2b', data.b2b.jewelry, data.b2b.bar, data.b2b.qty)
+    upsert('supervisor_b2c', data.supB2cPct, 0, 0)
+    upsert('supervisor_b2b', data.supB2bPct, 0, 0)
+
+    const sheetsId = getSetting('sheets_id')
+    const saPath   = getSetting('service_account_path')
+    if (sheetsId && saPath) {
+      try {
+        const auth   = getServiceAuth(saPath)
+        const sheets = google.sheets({ version: 'v4', auth })
+        await pushCommission(db, sheets, sheetsId)
+      } catch { /* Sheets not configured or unavailable — silently skip */ }
+    }
     return { success: true }
   })
 
@@ -170,10 +239,6 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
       return { ...r, commission_lak: commission, rate_applied: cfg }
     })
 
-    // Supervisor commission share — read from commission_configs (staff_type='supervisor') for the month
-    const supCfg = getEffectiveConfig(db, 'supervisor', yearMonth)
-    const supPct = supCfg ? supCfg.jewelry_rate_lak / 100 : 0.30
-
     const supCommission = new Map<number, number>()
     for (const r of repRows) {
       if (r.supervisor_id) {
@@ -193,12 +258,15 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
       id: number; full_name: string; nickname: string; staff_type: string; branch_id: number; branch_name: string; branch_code: string
     }>
 
-    const supRows = supervisors.map(s => ({
-      ...s,
-      team_commission_lak: supCommission.get(s.id) ?? 0,
-      supervisor_commission_lak: (supCommission.get(s.id) ?? 0) * supPct,
-      sup_pct: supPct * 100,
-    }))
+    const supRows = supervisors.map(s => {
+      const pct = getEffectiveSupPct(db, s.staff_type === 'b2b' ? 'b2b' : 'b2c', yearMonth)
+      return {
+        ...s,
+        team_commission_lak: supCommission.get(s.id) ?? 0,
+        supervisor_commission_lak: (supCommission.get(s.id) ?? 0) * pct,
+        sup_pct: pct * 100,
+      }
+    })
 
     return { reps: repRows, supervisors: supRows, yearMonth, dateFrom, dateTo }
   })

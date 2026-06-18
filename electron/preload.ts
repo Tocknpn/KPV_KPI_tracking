@@ -73,6 +73,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('kpi:saveBranchQtyTiers', token, branchId, year, month, tiers),
   saveBranchKpiTarget: (token: string, branchId: number, target: number) =>
     ipcRenderer.invoke('kpi:saveBranchKpiTarget', token, branchId, target),
+  saveBranchTargetDefaults: (token: string, branchId: number, targetB2c: number, targetB2b: number) =>
+    ipcRenderer.invoke('kpi:saveBranchTargetDefaults', token, branchId, targetB2c, targetB2b),
   getMonthlyBranchTargets: (token: string, year: number, month: number) =>
     ipcRenderer.invoke('kpi:getMonthlyBranchTargets', token, year, month),
   saveMonthlyBranchTargets: (token: string, year: number, month: number, targets: Array<{ branchId: number; target: number; targetB2c?: number | null; targetB2b?: number | null }>) =>
@@ -173,6 +175,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('commission:saveConfig', token, data),
   pullCommissionConfigs: (token: string) =>
     ipcRenderer.invoke('commission:pullConfigs', token),
+  getCommissionDefaults: (token: string) =>
+    ipcRenderer.invoke('commission:getDefaults', token),
+  saveCommissionDefaults: (token: string, data: { b2c: { jewelry: number; bar: number; qty: number }; b2b: { jewelry: number; bar: number; qty: number }; supB2cPct: number; supB2bPct: number }) =>
+    ipcRenderer.invoke('commission:saveDefaults', token, data),
   getCommissionReport: (token: string, branchIds: number[], year: number, month: number, dateFrom?: string, dateTo?: string) =>
     ipcRenderer.invoke('commission:getReport', token, branchIds, year, month, dateFrom, dateTo),
 

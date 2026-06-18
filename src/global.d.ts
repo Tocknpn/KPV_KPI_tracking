@@ -44,7 +44,8 @@ interface Window {
     deleteKpiConfig(token: string, configId: number): Promise<{ success: boolean }>
     saveKpiMetricMultiplier(token: string, metricId: number, pointsPerUnit: number): Promise<{ success: boolean }>
     saveBranchKpiTarget(token: string, branchId: number, target: number): Promise<{ success: boolean }>
-    getMonthlyBranchTargets(token: string, year: number, month: number): Promise<Array<{ id: number; name: string; code: string; kpi_point_target: number; monthly_target: number | null; effective_target: number; target_b2c: number | null; target_b2b: number | null }>>
+    saveBranchTargetDefaults(token: string, branchId: number, targetB2c: number, targetB2b: number): Promise<{ success: boolean }>
+    getMonthlyBranchTargets(token: string, year: number, month: number): Promise<Array<{ id: number; name: string; code: string; kpi_point_target: number; target_b2c_default: number | null; target_b2b_default: number | null; monthly_target: number | null; effective_target: number; target_b2c: number | null; target_b2b: number | null }>>
     saveMonthlyBranchTargets(token: string, year: number, month: number, targets: Array<{ branchId: number; target: number; targetB2c?: number | null; targetB2b?: number | null }>): Promise<{ success: boolean }>
     getKpiFormula(token: string): Promise<{ base: number; weight: number }>
     saveKpiFormula(token: string, base: number, weight: number): Promise<{ success: boolean }>

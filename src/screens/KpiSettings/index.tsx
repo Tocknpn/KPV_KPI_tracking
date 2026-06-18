@@ -29,19 +29,21 @@ export default function KpiSettings() {
   const [globalMonth, setGlobalMonth] = useState(new Date().getMonth() + 1)
   // Edit Defaults mode (admin only) — Jewelry/Bar rates + Qty tiers operate on the standing
   // values every month silently falls back to, instead of this month's specific override.
-  const [editingDefaults, setEditingDefaults] = useState(false)
+  // Admin sets up Defaults only; HR submits Monthly KPI only — not a toggle, a fixed split
+  // by role. Admin never sees Commission/Monthly Targets; HR never sees the raw Defaults editor.
+  const isAdmin = user?.role === 'admin'
   const [monthSubmitted, setMonthSubmitted] = useState(true) // assume fine until checked, avoids a flash of the warning on every load
-  // Branch Point Target defaults — part of "Edit Defaults" same as rates/tiers, just backed
-  // by branches.kpi_point_target directly (already the standing default) instead of a
-  // year_month/effective_to NULL row, since a flat per-branch number has no month concept.
-  const [branchTargetDefaults, setBranchTargetDefaults] = useState<Record<number, string>>({})
+  // Branch Point Target Defaults — required B2C + B2B per branch, no combined number anymore.
+  // Backed by branches.target_b2c_default/target_b2b_default — flat columns, no month concept.
+  const [branchTargetB2cDefaults, setBranchTargetB2cDefaults] = useState<Record<number, string>>({})
+  const [branchTargetB2bDefaults, setBranchTargetB2bDefaults] = useState<Record<number, string>>({})
   // Monthly branch KPI targets
   const [monthlyTargets, setMonthlyTargets] = useState<Array<{
     id: number; name: string; code: string; kpi_point_target: number
+    target_b2c_default: number | null; target_b2b_default: number | null
     monthly_target: number | null; effective_target: number
     target_b2c: number | null; target_b2b: number | null
   }>>([])
-  const [targetEdits, setTargetEdits]     = useState<Record<number, string>>({})
   const [targetB2cEdits, setTargetB2cEdits] = useState<Record<number, string>>({})
   const [targetB2bEdits, setTargetB2bEdits] = useState<Record<number, string>>({})
   const [savingTargets, setSavingTargets] = useState(false)
@@ -51,13 +53,14 @@ export default function KpiSettings() {
   const [dirtyComm, setDirtyComm]     = useState(false)
   const [dirtySupShare, setDirtySupShare] = useState(false)
   const [savingAll, setSavingAll]     = useState(false)
-  // Commission rates
+  // Commission Rate Defaults — Admin-only, not month-scoped (see commission.ts's
+  // DEFAULTS_YM sentinel). Supervisor share is per staff_type now, not one shared number.
   const [commEdits, setCommEdits] = useState<Record<string, { jewelry: string; bar: string; qty: string }>>({
     b2c: { jewelry: '0', bar: '0', qty: '0' },
     b2b: { jewelry: '0', bar: '0', qty: '0' },
   })
-  // Supervisor commission share
-  const [supShareEdit, setSupShareEdit]   = useState('30')
+  const [supShareB2cEdit, setSupShareB2cEdit] = useState('30')
+  const [supShareB2bEdit, setSupShareB2bEdit] = useState('30')
   // Simulator
   const [simActual, setSimActual] = useState('')
   const [simBranch, setSimBranch] = useState<number | null>(null)
@@ -81,7 +84,7 @@ export default function KpiSettings() {
   // — the same rows every month already falls back to when nothing's set for it).
   useEffect(() => {
     if (!token || selectedBranch === null) return
-    if (editingDefaults) {
+    if (isAdmin) {
       window.api.getDefaultMetricRates(token, selectedBranch).then((r: BranchRates) => { setBranchRates(r); setDirtyMult(false) })
       window.api.getDefaultQtyTiers(token, selectedBranch).then((r: { configId: number | null; tiers: Array<{ id: number; threshold_pct: number; score: number }> }) => {
         setTiers(r.tiers.length ? r.tiers.map(t => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS)
@@ -92,14 +95,15 @@ export default function KpiSettings() {
         setTiers(r.tiers.length ? r.tiers.map(t => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS)
       })
     }
-  }, [token, selectedBranch, globalYear, globalMonth, editingDefaults])
+  }, [token, selectedBranch, globalYear, globalMonth, isAdmin])
 
-  // Seed the Branch Point Target defaults editor from the current branches list whenever
-  // Edit Defaults opens — branches already carries kpi_point_target, no extra fetch needed.
+  // Seed the Branch Point Target Defaults editor from the current branches list — branches
+  // already carries target_b2c_default/target_b2b_default, no extra fetch needed.
   useEffect(() => {
-    if (!editingDefaults) return
-    setBranchTargetDefaults(Object.fromEntries(branches.map(b => [b.id, String(b.kpi_point_target)])))
-  }, [editingDefaults, branches])
+    if (!isAdmin) return
+    setBranchTargetB2cDefaults(Object.fromEntries(branches.map(b => [b.id, String(b.target_b2c_default ?? b.kpi_point_target)])))
+    setBranchTargetB2bDefaults(Object.fromEntries(branches.map(b => [b.id, String(b.target_b2b_default ?? b.kpi_point_target)])))
+  }, [isAdmin, branches])
 
   // Has HR confirmed this month's KPI setup yet? Purely informational — scoring already
   // works via the existing fallback chain regardless, this just flags an unconfirmed month.
@@ -108,42 +112,28 @@ export default function KpiSettings() {
     window.api.isMonthSubmitted(token, globalYear, globalMonth).then(r => setMonthSubmitted(r.submitted))
   }, [token, globalYear, globalMonth])
 
-  // Load commission configs when global month/year changes
+  // Commission Rate Defaults — Admin only, loaded once (not month-scoped).
   useEffect(() => {
-    if (!token) return
-    const yearMonth = `${globalYear}${String(globalMonth).padStart(2, '0')}`
-    window.api.getCommissionConfigs(token, yearMonth).then((cfgs: Array<{
-      staff_type: string; jewelry_rate_lak: number; bar_rate_lak: number; qty_rate_lak: number
-    }>) => {
-      const next: Record<string, { jewelry: string; bar: string; qty: string }> = {
-        b2c: { jewelry: '0', bar: '0', qty: '0' },
-        b2b: { jewelry: '0', bar: '0', qty: '0' },
-      }
-      cfgs.forEach(c => {
-        if (c.staff_type === 'supervisor') {
-          setSupShareEdit(String(c.jewelry_rate_lak))
-        } else {
-          next[c.staff_type] = {
-            jewelry: String(c.jewelry_rate_lak),
-            bar:     String(c.bar_rate_lak),
-            qty:     String(c.qty_rate_lak),
-          }
-        }
+    if (!token || !isAdmin) return
+    window.api.getCommissionDefaults(token).then(d => {
+      setCommEdits({
+        b2c: { jewelry: String(d.b2c.jewelry), bar: String(d.b2c.bar), qty: String(d.b2c.qty) },
+        b2b: { jewelry: String(d.b2b.jewelry), bar: String(d.b2b.bar), qty: String(d.b2b.qty) },
       })
-      setCommEdits(next)
+      setSupShareB2cEdit(String(d.supB2cPct))
+      setSupShareB2bEdit(String(d.supB2bPct))
     }).catch(console.error)
-  }, [token, globalYear, globalMonth])
+  }, [token, isAdmin])
 
   // Load monthly targets whenever global month/year changes
   useEffect(() => {
     if (!token) return
     window.api.getMonthlyBranchTargets(token, globalYear, globalMonth).then(data => {
       setMonthlyTargets(data)
-      setTargetEdits(Object.fromEntries(data.map(b => [b.id, String(b.effective_target)])))
-      // B2C/B2B are required every month now — pre-fill from the overall target (the
-      // shared default) when nothing's been explicitly set yet, instead of leaving blank.
-      setTargetB2cEdits(Object.fromEntries(data.map(b => [b.id, String(b.target_b2c ?? b.effective_target)])))
-      setTargetB2bEdits(Object.fromEntries(data.map(b => [b.id, String(b.target_b2b ?? b.effective_target)])))
+      // B2C/B2B are required every month now — pre-fill from each branch's own default when
+      // nothing's been explicitly set yet, instead of leaving blank.
+      setTargetB2cEdits(Object.fromEntries(data.map(b => [b.id, String(b.target_b2c ?? b.target_b2c_default ?? b.effective_target)])))
+      setTargetB2bEdits(Object.fromEntries(data.map(b => [b.id, String(b.target_b2b ?? b.target_b2b_default ?? b.effective_target)])))
       setDirtyTargets(false)
     })
   }, [token, globalYear, globalMonth])
@@ -153,16 +143,17 @@ export default function KpiSettings() {
     setSavingTargets(true)
     const targets = monthlyTargets.map(b => ({
       branchId: b.id,
-      target: parseFloat(targetEdits[b.id] ?? '') || b.effective_target,
-      // Required fields now — always resolve to a real number, falling back to the overall
-      // target rather than null, since "leave blank to inherit overall" is no longer the model.
-      targetB2c: parseFloat(targetB2cEdits[b.id] ?? '') || b.effective_target,
-      targetB2b: parseFloat(targetB2bEdits[b.id] ?? '') || b.effective_target,
+      // Overall target is no longer editable here — Admin maintains it via Defaults, so it
+      // always stays whatever the branch's current default is, every month.
+      target: b.effective_target,
+      // Required fields now — always resolve to a real number, falling back to this
+      // branch's own default rather than null, since "leave blank to inherit" is gone.
+      targetB2c: parseFloat(targetB2cEdits[b.id] ?? '') || (b.target_b2c_default ?? b.effective_target),
+      targetB2b: parseFloat(targetB2bEdits[b.id] ?? '') || (b.target_b2b_default ?? b.effective_target),
     }))
     await window.api.saveMonthlyBranchTargets(token, globalYear, globalMonth, targets)
     const fresh = await window.api.getMonthlyBranchTargets(token, globalYear, globalMonth)
     setMonthlyTargets(fresh)
-    setTargetEdits(Object.fromEntries(fresh.map(b => [b.id, String(b.effective_target)])))
     setTargetB2cEdits(Object.fromEntries(fresh.map(b => [b.id, String(b.target_b2c ?? '')])))
     setTargetB2bEdits(Object.fromEntries(fresh.map(b => [b.id, String(b.target_b2b ?? '')])))
     setSavingTargets(false); setDirtyTargets(false)
@@ -173,26 +164,32 @@ export default function KpiSettings() {
     if (!token) return
     setSavingAll(true)
     try {
-      if (editingDefaults) {
-        // Defaults aren't tied to a month — just the standing rates/tiers/targets Admin
-        // maintains. Covers all three KPI-scoring tables that have a "standing" concept —
-        // Commission has none (flagged separately), so it stays out of Edit Defaults.
+      if (isAdmin) {
+        // Defaults aren't tied to a month — the standing rates/tiers/targets/commission
+        // Admin maintains. All four KPI-setup tables now have a "standing" concept.
         if (selectedBranch !== null) {
           await window.api.saveDefaultMetricRates(token, selectedBranch, branchRates)
           await window.api.saveDefaultQtyTiers(token, selectedBranch, tiers.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })))
         }
         for (const b of branches) {
-          const val = parseFloat(branchTargetDefaults[b.id] ?? '')
-          if (!isNaN(val) && val > 0 && val !== b.kpi_point_target) {
-            await window.api.saveBranchKpiTarget(token, b.id, val)
+          const valB2c = parseFloat(branchTargetB2cDefaults[b.id] ?? '')
+          const valB2b = parseFloat(branchTargetB2bDefaults[b.id] ?? '')
+          if (!isNaN(valB2c) && !isNaN(valB2b) && valB2c > 0 && valB2b > 0
+            && (valB2c !== b.target_b2c_default || valB2b !== b.target_b2b_default)) {
+            await window.api.saveBranchTargetDefaults(token, b.id, valB2c, valB2b)
           }
         }
-        setDirtyMult(false)
+        const supB2c = parseFloat(supShareB2cEdit); const supB2b = parseFloat(supShareB2bEdit)
+        await window.api.saveCommissionDefaults(token, {
+          b2c: { jewelry: parseFloat(commEdits.b2c?.jewelry) || 0, bar: parseFloat(commEdits.b2c?.bar) || 0, qty: parseFloat(commEdits.b2c?.qty) || 0 },
+          b2b: { jewelry: parseFloat(commEdits.b2b?.jewelry) || 0, bar: parseFloat(commEdits.b2b?.bar) || 0, qty: parseFloat(commEdits.b2b?.qty) || 0 },
+          supB2cPct: !isNaN(supB2c) && supB2c > 0 && supB2c <= 100 ? supB2c : 30,
+          supB2bPct: !isNaN(supB2b) && supB2b > 0 && supB2b <= 100 ? supB2b : 30,
+        })
+        setDirtyMult(false); setDirtyComm(false); setDirtySupShare(false)
         showToast('Defaults saved.')
         return
       }
-
-      const ym = `${globalYear}${String(globalMonth).padStart(2, '0')}`
 
       // Jewelry/Bar rates + Qty tiers for the selected branch — scoped to this exact month
       if (selectedBranch !== null) {
@@ -200,17 +197,8 @@ export default function KpiSettings() {
         await window.api.saveBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, tiers.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })))
       }
 
-      // Commission rates — B2C, B2B, and supervisor share
-      for (const t of ['b2c', 'b2b'] as const) {
-        const e = commEdits[t]; if (!e) continue
-        await window.api.saveCommissionConfig(token, { staffType: t, yearMonth: ym, jewelryRateLak: parseFloat(e.jewelry) || 0, barRateLak: parseFloat(e.bar) || 0, qtyRateLak: parseFloat(e.qty) || 0 })
-      }
-      const supPct = parseFloat(supShareEdit)
-      if (!isNaN(supPct) && supPct > 0 && supPct <= 100) {
-        await window.api.saveCommissionConfig(token, { staffType: 'supervisor', yearMonth: ym, jewelryRateLak: supPct, barRateLak: 0, qtyRateLak: 0 })
-      }
-
-      // Monthly branch KPI point targets
+      // Monthly branch KPI point targets — Commission is Admin/Defaults-only now (backend
+      // already required admin for commission saves; this matches that, not a new restriction)
       await saveMonthlyTargets()
 
       // Marks this month as confirmed regardless of whether anything actually changed —
@@ -228,11 +216,9 @@ export default function KpiSettings() {
   // month/branch — HR reviews/adjusts, then Save All writes them as this month's real values.
   async function useDefaults() {
     if (!token) return
-    setTargetEdits(Object.fromEntries(monthlyTargets.map(b => [b.id, String(b.kpi_point_target)])))
-    // B2C/B2B required now too — default both to the same overall target, per the "one big
-    // number, B2C/B2B only diverge when this month genuinely needs it" simplification.
-    setTargetB2cEdits(Object.fromEntries(monthlyTargets.map(b => [b.id, String(b.kpi_point_target)])))
-    setTargetB2bEdits(Object.fromEntries(monthlyTargets.map(b => [b.id, String(b.kpi_point_target)])))
+    // Pull each branch's own B2C/B2B default — set by Admin in Branch Point Target Defaults.
+    setTargetB2cEdits(Object.fromEntries(monthlyTargets.map(b => [b.id, String(b.target_b2c_default ?? b.kpi_point_target)])))
+    setTargetB2bEdits(Object.fromEntries(monthlyTargets.map(b => [b.id, String(b.target_b2b_default ?? b.kpi_point_target)])))
     setDirtyTargets(true)
     if (selectedBranch !== null) {
       const [rates, tierResult] = await Promise.all([
@@ -317,8 +303,10 @@ export default function KpiSettings() {
         </div>
       </GlassCard>
 
-      {/* Global month / year selector */}
-      <GlassCard className="p-4 mb-6 flex flex-wrap items-center gap-4">
+      {/* Global month / year selector — meaningless for Admin: Defaults have no month
+          concept (standing year_month/effective_to NULL rows, same regardless of what's
+          picked here), so this whole card + the Confirmed/Not Confirmed status is HR-only. */}
+      {!isAdmin && <GlassCard className="p-4 mb-6 flex flex-wrap items-center gap-4">
         <span className="material-symbols-outlined text-primary text-sm">calendar_month</span>
         <span className="font-label-md text-label-md text-on-surface">Viewing month:</span>
         <select
@@ -345,95 +333,74 @@ export default function KpiSettings() {
             Not confirmed — click Save All below
           </span>
         )}
-      </GlassCard>
+      </GlassCard>}
 
-      {/* Commission Rates Config — not part of Defaults, hidden while editing them so Save
-          All's scope (rates+tiers only, in that mode) isn't ambiguous */}
-      {!editingDefaults && <GlassCard elevated className="p-5 mb-6">
-        <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
-          <div>
-            <h4 className="font-headline-md text-on-surface flex items-center gap-2">
-              <span className="material-symbols-outlined text-tertiary">payments</span>
-              Commission Rates (LAK) — {MONTH_NAMES[globalMonth - 1]} {globalYear}
-              {(dirtyComm || dirtySupShare) && <span className="text-secondary font-bold text-sm">*</span>}
-            </h4>
-            <p className="text-body-sm text-on-surface-variant mt-1">
-              Rep commission = (Jewelry Baht × rate) + (Bar Baht × rate) + (Qty × rate). Synced to Google Sheets CommissionConfig tab. Shows 0 if no config saved for this month.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {(['b2c', 'b2b'] as const).map(type => (
-            <div key={type} className={`rounded-xl p-5 border ${type === 'b2b' ? 'bg-secondary/5 border-secondary/20' : 'bg-primary/5 border-primary/20'}`}>
-              <div className="flex items-center gap-2 mb-4">
-                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider
+      {/* Commission Rate Defaults — Admin only, not month-scoped. Backend already required
+          admin for any commission save (requireAdmin in commission:saveConfig) — this just
+          makes the UI match a permission that already existed. */}
+      {isAdmin && (
+        <GlassCard elevated className="p-5 mb-6">
+          <h4 className="font-headline-md text-on-surface flex items-center gap-2 mb-1">
+            <span className="material-symbols-outlined text-tertiary">payments</span>
+            Commission Rate Defaults
+            {(dirtyComm || dirtySupShare) && <span className="text-secondary font-bold text-sm">*</span>}
+          </h4>
+          <p className="text-body-sm text-on-surface-variant mb-4">
+            Rep commission = (Jewelry Baht × rate) + (Bar Baht × rate) + (Qty × rate). Applies to any month that's never had its own override.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {(['b2c', 'b2b'] as const).map(type => (
+              <div key={type} className={`rounded-xl p-5 border ${type === 'b2b' ? 'bg-secondary/5 border-secondary/20' : 'bg-primary/5 border-primary/20'}`}>
+                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider inline-block mb-4
                   ${type === 'b2b' ? 'bg-secondary text-white' : 'bg-primary text-white'}`}>
                   {type.toUpperCase()}
                 </span>
-                <span className="text-on-surface-variant text-body-sm">{MONTH_NAMES[globalMonth - 1]} {globalYear}</span>
-              </div>
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                {[
-                  { key: 'jewelry' as const, label: 'Jewelry (₭/Baht)' },
-                  { key: 'bar'     as const, label: 'Bar (₭/Baht)' },
-                  { key: 'qty'     as const, label: 'Qty (₭/pc)' },
-                ].map(({ key, label }) => (
-                  <div key={key}>
-                    <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">{label}</label>
-                    <input
-                      type="number" min="0" step="100"
-                      value={commEdits[type]?.[key] ?? ''}
-                      onChange={e => { setCommEdits(prev => ({ ...prev, [type]: { ...prev[type], [key]: e.target.value } })); setDirtyComm(true) }}
-                      className={`w-full border-b-2 px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold bg-white
-                        ${type === 'b2b' ? 'border-secondary text-secondary' : 'border-primary text-primary'}`}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Supervisor Commission Share */}
-        <div className="mt-6 rounded-xl p-5 border bg-secondary/5 border-secondary/20">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="material-symbols-outlined text-secondary text-sm">supervisor_account</span>
-                <span className="font-label-md text-label-md text-secondary font-bold">Supervisor Commission Share</span>
-                <span className="text-on-surface-variant text-body-sm">{MONTH_NAMES[globalMonth - 1]} {globalYear}</span>
-              </div>
-              <p className="text-[11px] text-on-surface-variant">
-                Supervisor commission = team's total rep commission × this %. Stored per month. Default 30% if not set.
-              </p>
-            </div>
-            <div className="flex items-end gap-3">
-              <div>
-                <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">Share (%)</label>
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  {[
+                    { key: 'jewelry' as const, label: 'Jewelry (₭/Baht)' },
+                    { key: 'bar'     as const, label: 'Bar (₭/Baht)' },
+                    { key: 'qty'     as const, label: 'Qty (₭/pc)' },
+                  ].map(({ key, label }) => (
+                    <div key={key}>
+                      <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">{label}</label>
+                      <input
+                        type="number" min="0" step="100"
+                        value={commEdits[type]?.[key] ?? ''}
+                        onChange={e => { setCommEdits(prev => ({ ...prev, [type]: { ...prev[type], [key]: e.target.value } })); setDirtyComm(true) }}
+                        className={`w-full border-b-2 px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold bg-white
+                          ${type === 'b2b' ? 'border-secondary text-secondary' : 'border-primary text-primary'}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">Supervisor Share (%)</label>
                 <input
                   type="number" min="1" max="100" step="1"
-                  value={supShareEdit}
-                  onChange={e => { setSupShareEdit(e.target.value); setDirtySupShare(true) }}
-                  className="w-28 border-b-2 border-secondary px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold text-secondary bg-white"
+                  value={type === 'b2c' ? supShareB2cEdit : supShareB2bEdit}
+                  onChange={e => { (type === 'b2c' ? setSupShareB2cEdit : setSupShareB2bEdit)(e.target.value); setDirtySupShare(true) }}
+                  className={`w-28 border-b-2 px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold bg-white
+                    ${type === 'b2b' ? 'border-secondary text-secondary' : 'border-primary text-primary'}`}
                 />
               </div>
-            </div>
+            ))}
           </div>
-        </div>
-      </GlassCard>}
+          <p className="text-[10px] text-on-surface-variant/60 mt-3 italic">
+            Supervisor commission = team's total rep commission × this %, scoped to the supervisor's own team type (B2C team uses B2C share, B2B team uses B2B share).
+          </p>
+        </GlassCard>
+      )}
 
-      {/* Branch Point Target Defaults — only shown in Edit Defaults mode. Backed directly by
-          branches.kpi_point_target (already the standing default every month falls back to),
-          not a separate table — same number Monthly Targets' "Use Defaults" pulls from. */}
-      {editingDefaults && (
+      {/* Branch Point Target Defaults — required B2C + B2B per branch, no combined number.
+          Backed directly by branches.target_b2c_default/target_b2b_default — same numbers
+          Monthly Targets' "Use Defaults" pulls from. */}
+      {isAdmin && (
         <GlassCard elevated className="p-5 mb-6">
           <h4 className="font-headline-md text-on-surface flex items-center gap-2 mb-1">
             <span className="material-symbols-outlined text-primary">flag</span>
             Branch Point Target Defaults
           </h4>
           <p className="text-body-sm text-on-surface-variant mb-4">
-            The standing target per branch — what every month uses unless overridden, and what "Use Defaults" fills in below.
+            The standing target per branch, required for both B2C and B2B — what every month uses unless overridden, and what "Use Defaults" fills in below.
           </p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {branches.map(b => (
@@ -442,13 +409,26 @@ export default function KpiSettings() {
                   <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">{b.code}</div>
                   <p className="font-label-md text-label-md text-on-surface">{b.name}</p>
                 </div>
-                <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">Target (pts/person)</label>
-                <input
-                  type="number" min="100" step="100"
-                  value={branchTargetDefaults[b.id] ?? ''}
-                  onChange={e => setBranchTargetDefaults(prev => ({ ...prev, [b.id]: e.target.value }))}
-                  className="w-full bg-white border-b-2 border-primary px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold text-primary"
-                />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[9px] text-secondary uppercase font-bold block mb-1">B2C Target *</label>
+                    <input
+                      type="number" min="1" step="100" required
+                      value={branchTargetB2cDefaults[b.id] ?? ''}
+                      onChange={e => setBranchTargetB2cDefaults(prev => ({ ...prev, [b.id]: e.target.value }))}
+                      className="w-full bg-white border-b border-secondary/40 px-1.5 py-1 text-[11px] outline-none font-tabular-nums font-bold text-secondary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-tertiary uppercase font-bold block mb-1">B2B Target *</label>
+                    <input
+                      type="number" min="1" step="100" required
+                      value={branchTargetB2bDefaults[b.id] ?? ''}
+                      onChange={e => setBranchTargetB2bDefaults(prev => ({ ...prev, [b.id]: e.target.value }))}
+                      className="w-full bg-white border-b border-tertiary/40 px-1.5 py-1 text-[11px] outline-none font-tabular-nums font-bold text-tertiary"
+                    />
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -456,7 +436,7 @@ export default function KpiSettings() {
       )}
 
       {/* Monthly Branch KPI Point Targets — not part of Defaults, same reason as above */}
-      {!editingDefaults && <GlassCard elevated className="p-5 mb-6">
+      {!isAdmin && <GlassCard elevated className="p-5 mb-6">
         <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
           <div>
             <h4 className="font-headline-md text-headline-md text-on-surface flex items-center gap-2">Monthly KPI Point Targets — {MONTH_NAMES[globalMonth - 1]} {globalYear}{dirtyTargets && <span className="text-secondary font-bold text-sm">*</span>}</h4>
@@ -491,22 +471,10 @@ export default function KpiSettings() {
                     )}
                   </div>
                 </div>
-                <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">
-                  Target (pts/person)
-                </label>
-                <input
-                  type="number" min="100" step="100"
-                  value={targetEdits[b.id] ?? b.effective_target}
-                  onChange={e => {
-                    setTargetEdits(prev => ({ ...prev, [b.id]: e.target.value }))
-                    setDirtyTargets(true)
-                  }}
-                  className="w-full bg-white border-b-2 border-primary px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold text-primary"
-                />
-                <p className="text-[10px] text-on-surface-variant mt-1.5">
-                  Default: <strong>{b.kpi_point_target.toLocaleString()} pts</strong>
+                <p className="text-[10px] text-on-surface-variant mb-2">
+                  Default: <strong>{b.kpi_point_target.toLocaleString()} pts</strong> — set in Defaults, not editable here
                 </p>
-                <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-outline-variant/20">
+                <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[9px] text-secondary uppercase font-bold block mb-1">B2C Target *</label>
                     <input type="number" min="1" step="100" required
@@ -538,24 +506,15 @@ export default function KpiSettings() {
           <div>
             <h4 className="font-headline-md text-on-surface flex items-center gap-2">
               <span className="material-symbols-outlined text-primary">tune</span>
-              KPI Score Config — {editingDefaults ? 'Defaults' : `${MONTH_NAMES[globalMonth - 1]} ${globalYear}`}
+              KPI Score Config — {isAdmin ? 'Defaults' : `${MONTH_NAMES[globalMonth - 1]} ${globalYear}`}
               {dirtyMult && <span className="text-secondary font-bold text-sm">*</span>}
             </h4>
             <p className="text-body-sm text-on-surface-variant mt-1">
-              {editingDefaults
+              {isAdmin
                 ? 'Standing values every month falls back to when nothing\'s set for it — what "Use Defaults" pulls in below.'
                 : 'Jewelry, Bar, and Qty rates are set per branch — select a branch below.'}
             </p>
           </div>
-          {user?.role === 'admin' && (
-            <button
-              onClick={() => setEditingDefaults(v => !v)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold uppercase transition-colors ${editingDefaults ? 'bg-primary text-white' : 'text-on-surface-variant border border-outline-variant hover:bg-surface-container'}`}
-            >
-              <span className="material-symbols-outlined text-sm">{editingDefaults ? 'close' : 'tune'}</span>
-              {editingDefaults ? 'Exit Defaults Editor' : 'Edit Defaults'}
-            </button>
-          )}
         </div>
 
         {/* Branch tabs */}
@@ -677,7 +636,7 @@ export default function KpiSettings() {
         <button onClick={saveAllKpiSettings} disabled={savingAll}
           className="flex items-center gap-3 px-8 py-3 bg-primary text-white rounded-2xl font-label-md text-label-md shadow-2xl shadow-primary/30 hover:opacity-90 disabled:opacity-60 transition-all">
           <span className={`material-symbols-outlined text-sm ${savingAll ? 'animate-spin-slow' : ''}`}>{savingAll ? 'sync' : 'save'}</span>
-          {savingAll ? 'Saving…' : editingDefaults ? 'Save Defaults' : `Save All — ${MONTH_NAMES[globalMonth - 1]} ${globalYear}`}
+          {savingAll ? 'Saving…' : isAdmin ? 'Save Defaults' : `Save All — ${MONTH_NAMES[globalMonth - 1]} ${globalYear}`}
         </button>
       </div>
 

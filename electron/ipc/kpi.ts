@@ -277,11 +277,24 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     return { success: true }
   })
 
+  // Branch Point Target Defaults — B2C and B2B required, replacing the single combined
+  // number. kpi_point_target stays in sync as their average, purely for the legacy
+  // "pts/person" cosmetic display — getBranchPointTarget's real scoring path uses the
+  // type-specific columns directly, never this average.
+  ipcMain.handle('kpi:saveBranchTargetDefaults', async (_e, token: string, branchId: number, targetB2c: number, targetB2b: number) => {
+    requireAdmin(token)
+    const db = getDb()
+    prepare(db, `UPDATE branches SET target_b2c_default=?, target_b2b_default=?, kpi_point_target=? WHERE id=?`)
+      .run(targetB2c, targetB2b, Math.round((targetB2c + targetB2b) / 2), branchId)
+    pushAllConfigIfConfigured(db).catch(() => {})
+    return { success: true }
+  })
+
   ipcMain.handle('kpi:getMonthlyBranchTargets', async (_e, token: string, year: number, month: number) => {
     requireAuth(token)
     const db = getDb()
-    const branches = prepare(db, `SELECT id, name, code, kpi_point_target FROM branches ORDER BY id`).all() as Array<{
-      id: number; name: string; code: string; kpi_point_target: number
+    const branches = prepare(db, `SELECT id, name, code, kpi_point_target, target_b2c_default, target_b2b_default FROM branches ORDER BY id`).all() as Array<{
+      id: number; name: string; code: string; kpi_point_target: number; target_b2c_default: number | null; target_b2b_default: number | null
     }>
     return branches.map(b => {
       const monthly = prepare(db, `

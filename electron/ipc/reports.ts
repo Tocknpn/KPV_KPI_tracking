@@ -32,7 +32,10 @@ function getBranchPointTarget(db: import('sql.js').Database, branchId: number, y
     if (staffType === 'b2b' && monthly.target_b2b) return monthly.target_b2b
     return monthly.kpi_point_target
   }
-  const branch = prepare(db, `SELECT kpi_point_target FROM branches WHERE id = ?`).get(branchId) as { kpi_point_target: number } | undefined
+  const branch = prepare(db, `SELECT kpi_point_target, target_b2c_default, target_b2b_default FROM branches WHERE id = ?`)
+    .get(branchId) as { kpi_point_target: number; target_b2c_default: number | null; target_b2b_default: number | null } | undefined
+  if (staffType === 'b2c' && branch?.target_b2c_default) return branch.target_b2c_default
+  if (staffType === 'b2b' && branch?.target_b2b_default) return branch.target_b2b_default
   return branch?.kpi_point_target ?? 0
 }
 

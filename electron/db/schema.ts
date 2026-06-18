@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 23
+const SCHEMA_VERSION = 24
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -8,10 +8,12 @@ const BASE_TABLES = `
     value TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS branches (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    name             TEXT    NOT NULL,
-    code             TEXT    UNIQUE NOT NULL,
-    kpi_point_target REAL    NOT NULL DEFAULT 0
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    name               TEXT    NOT NULL,
+    code               TEXT    UNIQUE NOT NULL,
+    kpi_point_target   REAL    NOT NULL DEFAULT 0,
+    target_b2c_default REAL,
+    target_b2b_default REAL
   );
   CREATE TABLE IF NOT EXISTS users (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -597,6 +599,20 @@ export function applySchema(db: Database): boolean {
       )
     `)
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '23')`).run()
+  }
+
+  if (currentVersion < 24) {
+    // Branch Point Target Defaults split into B2C/B2B — Admin's defaults editor now requires
+    // both explicitly instead of one combined number. Backfill both from the existing
+    // kpi_point_target so upgrading installs keep scoring identically until Admin
+    // deliberately sets them apart. kpi_point_target itself stays as a legacy/cosmetic
+    // "per-person" display value — getBranchPointTarget's no-staffType path (display only,
+    // not used in real scoring math) still reads it.
+    try { db.run(`ALTER TABLE branches ADD COLUMN target_b2c_default REAL`) } catch { /* already exists */ }
+    try { db.run(`ALTER TABLE branches ADD COLUMN target_b2b_default REAL`) } catch { /* already exists */ }
+    db.run(`UPDATE branches SET target_b2c_default = kpi_point_target WHERE target_b2c_default IS NULL`)
+    db.run(`UPDATE branches SET target_b2b_default = kpi_point_target WHERE target_b2b_default IS NULL`)
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '24')`).run()
   }
 
   return false // Existing DB — no seeding needed
