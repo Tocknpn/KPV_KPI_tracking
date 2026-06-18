@@ -695,5 +695,16 @@ export function applySchema(db: Database): boolean {
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '26')`).run()
   }
 
+  // Self-heal columns that BASE_TABLES was historically missing (salesmen.supervisor_id,
+  // branch_kpi_monthly_targets.target_b2c/target_b2b — fixed above, but only for a TRULY
+  // fresh device). A device that hit the app_settings NOT NULL bug already had its
+  // schema_version stamped to current by a partially-broken fresh-install run, so the
+  // `currentVersion < N` blocks above that would normally add these columns never fire
+  // again — currentVersion already reads as "latest". Safe to run every single startup:
+  // ALTER TABLE ADD COLUMN on a column that already exists just throws, caught and ignored.
+  try { db.run(`ALTER TABLE salesmen ADD COLUMN supervisor_id INTEGER REFERENCES supervisors(id)`) } catch { /* already exists */ }
+  try { db.run(`ALTER TABLE branch_kpi_monthly_targets ADD COLUMN target_b2c REAL NOT NULL DEFAULT 0`) } catch { /* already exists */ }
+  try { db.run(`ALTER TABLE branch_kpi_monthly_targets ADD COLUMN target_b2b REAL NOT NULL DEFAULT 0`) } catch { /* already exists */ }
+
   return false // Existing DB — no seeding needed
 }
