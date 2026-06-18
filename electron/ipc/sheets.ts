@@ -55,20 +55,10 @@ async function writeTab(
 }
 
 // ── Individual push functions ─────────────────────────────────────────────────
-
-// Only genuinely-used app_settings keys go here. kpi_total_base/kpi_total_weight and the
-// global kpi_metrics.points_per_unit defaults were dropped — they're permanently frozen
-// leftovers from before rates became branch+type scoped (see KPIRates tab) and no UI
-// writes them anymore, so showing them here was actively misleading.
-const SETTINGS_LABELS: Record<string, string> = {
-  sup_kpi_pct: 'Default Supervisor Commission Share (%)',
-}
-
-async function pushSettings(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
-  const rows = (prepare(db, `SELECT key, value FROM app_settings WHERE key IN ('sup_kpi_pct')`).all() as Array<{ key: string; value: string }>)
-    .map(r => [SETTINGS_LABELS[r.key] ?? r.key, r.value])
-  await writeTab(sheets, spreadsheetId, TABS.SETTINGS, ['Setting', 'Value'], rows)
-}
+// No Settings tab push — its only ever-used key (sup_kpi_pct) has no UI writing it, and
+// kpi_total_base/kpi_total_weight/global kpi_metrics defaults are permanently frozen
+// leftovers from before rates became branch+type scoped. User deleted the Settings tab
+// deliberately; nothing recreates it now.
 
 async function pushBranches(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
   const rows = (prepare(db, `SELECT code, name, kpi_point_target, target_b2c_default, target_b2b_default FROM branches ORDER BY id`).all() as Array<{
@@ -405,18 +395,6 @@ export async function pushBranchesIfConfigured(db: Database): Promise<void> {
   } catch { /* Sheets unavailable — silently skip */ }
 }
 
-// ── Push only the Settings tab — exported for kpi.ts ─────────────────────────
-export async function pushSettingsIfConfigured(db: Database): Promise<void> {
-  const sheetsId = getSetting('sheets_id')
-  const saPath   = getSetting('service_account_path')
-  if (!sheetsId || !saPath) return
-  try {
-    const auth   = getServiceAuth(saPath)
-    const sheets = google.sheets({ version: 'v4', auth })
-    await pushSettings(db, sheets, sheetsId)
-  } catch { /* Sheets unavailable — silently skip */ }
-}
-
 // ── Push all config tabs — exported for use in kpi.ts, upload.ts ──────────────
 export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
   const sheetsId = getSetting('sheets_id')
@@ -426,7 +404,6 @@ export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
     const auth   = getServiceAuth(saPath)
     const sheets = google.sheets({ version: 'v4', auth })
     await Promise.all([
-      pushSettings(db, sheets, sheetsId),
       pushBranches(db, sheets, sheetsId),
       pushKpiRates(db, sheets, sheetsId),
       pushQtyTiers(db, sheets, sheetsId),

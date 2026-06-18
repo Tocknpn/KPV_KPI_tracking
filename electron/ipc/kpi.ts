@@ -4,7 +4,7 @@ import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin } from './auth'
 import {
   pushMonthlyTargetsIfConfigured, pushKpiRatesIfConfigured, pushQtyTiersIfConfigured,
-  pushBranchesIfConfigured, pushSettingsIfConfigured,
+  pushBranchesIfConfigured,
 } from './sheets'
 import type { Database } from 'sql.js'
 
@@ -355,7 +355,6 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     const db = getDb()
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('kpi_total_base', ?)`  ).run(String(base))
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('kpi_total_weight', ?)`).run(String(weight))
-    pushSettingsIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
@@ -375,7 +374,6 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     requireAdmin(token)
     const db = getDb()
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('sup_kpi_pct', ?)`).run(String(pct))
-    pushSettingsIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
