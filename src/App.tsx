@@ -7,7 +7,6 @@ import Reports from './screens/Reports'
 import Executive from './screens/Executive'
 import Settings from './screens/Settings'
 import KpiSettings from './screens/KpiSettings'
-import UserManagement from './screens/UserManagement'
 import UploadHistory from './screens/UploadHistory'
 import Roster from './screens/Roster'
 import SaleReport from './screens/SaleReport'
@@ -68,7 +67,7 @@ export default function App() {
       <Route path="/executive"      element={<Executive />} />
       <Route path="/settings"       element={<Settings />} />
       <Route path="/kpi-settings"   element={<KpiSettings />} />
-      <Route path="/users"          element={<UserManagement />} />
+      <Route path="/users"          element={<Navigate to="/settings" replace />} />
       <Route path="/upload-history" element={<UploadHistory />} />
       <Route path="/upload-status"  element={<Navigate to="/upload-history" replace />} />
       <Route path="/roster"         element={<Roster />} />

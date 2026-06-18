@@ -21,6 +21,16 @@ export default function Login() {
   // warning copy (switch vs first-time), it no longer hides the button.
   const [sheetsConfigured, setSheetsConfigured] = useState<boolean | null>(null)
   const [showSetup, setShowSetup] = useState(false)
+  // Gate in front of the connect/switch panel — not a real security boundary (anyone with
+  // filesystem access to this device could edit the local DB directly anyway), just a
+  // deliberate speed bump so an accidental click on the corner button can't immediately
+  // open the door to wiping/switching this device's database. Fixed password is intentional
+  // here (unlike a login bypass — see ROLE_REDESIGN history) since the threat model is a
+  // misclick, not an attacker. Recovery copy lives in INSTALLATION.md.
+  const [gateOpen, setGateOpen] = useState(false)
+  const [gateInput, setGateInput] = useState('')
+  const [gateError, setGateError] = useState('')
+  const GATE_PASSWORD = 'KPV@KPV2026'
   const [setupSheetId, setSetupSheetId]   = useState('')
   const [setupJsonPath, setSetupJsonPath] = useState('')
   const [setupBusy, setSetupBusy]     = useState(false)
@@ -30,6 +40,16 @@ export default function Login() {
   useEffect(() => {
     window.api.isSheetsConfigured().then(setSheetsConfigured)
   }, [])
+
+  function handleGateSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (gateInput === GATE_PASSWORD) {
+      setGateOpen(false); setGateInput(''); setGateError('')
+      setShowSetup(true)
+    } else {
+      setGateError('Wrong password.')
+    }
+  }
 
   async function handleBrowseJson() {
     const path = await window.api.browseFileBootstrap()
@@ -115,12 +135,34 @@ export default function Login() {
     >
       {/* Database connect/switch — small, always available, corner of the screen */}
       <button
-        onClick={() => setShowSetup(v => !v)}
+        onClick={() => { if (showSetup) { setShowSetup(false) } else { setGateOpen(v => !v); setGateInput(''); setGateError('') } }}
         title="Connect / switch database"
         className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/60 hover:bg-white text-on-surface-variant hover:text-primary flex items-center justify-center transition-colors shadow-sm"
       >
         <span className="material-symbols-outlined text-[18px]">dns</span>
       </button>
+
+      {gateOpen && (
+        <div className="absolute top-16 right-4 w-64 bg-white rounded-2xl shadow-glass-elevated border border-white/80 px-5 py-4 z-10">
+          <form onSubmit={handleGateSubmit} className="space-y-2">
+            <p className="font-bold text-[12px] text-on-surface">Enter password to continue</p>
+            <input
+              type="password"
+              autoFocus
+              value={gateInput}
+              onChange={e => setGateInput(e.target.value)}
+              className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-body-sm outline-none"
+            />
+            {gateError && <p className="text-[11px] text-error">{gateError}</p>}
+            <button
+              type="submit"
+              className="w-full bg-primary text-white py-2 rounded-lg font-label-md text-label-md hover:opacity-90"
+            >
+              Unlock
+            </button>
+          </form>
+        </div>
+      )}
 
       {/* Card */}
       <div className="w-full max-w-sm mx-4">

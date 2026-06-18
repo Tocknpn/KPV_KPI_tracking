@@ -31,8 +31,7 @@ interface Props {
 export function TopBar({ title }: Props) {
   const navigate = useNavigate()
   const { token, user, clearSession, branches } = useAuthStore()
-  const { unsyncedCount, isSyncing, setIsSyncing, setUnsyncedCount, sidebarCollapsed, lastSyncedAt, setLastSyncedAt } = useAppStore()
-  const [syncResult, setSyncResult] = useState<string | null>(null)
+  const { unsyncedCount, sidebarCollapsed, lastSyncedAt, setLastSyncedAt } = useAppStore()
   const [, setNowTick] = useState(0) // forces relativeTime() to re-render as time passes
   const [zoom, setZoomState] = useState<number>(() => {
     const saved = localStorage.getItem(ZOOM_KEY)
@@ -58,27 +57,6 @@ export function TopBar({ title }: Props) {
     document.documentElement.style.zoom = String(value)
   }
 
-  async function handleSync() {
-    if (!token || isSyncing) return
-    setIsSyncing(true)
-    setSyncResult(null)
-    try {
-      const result = await window.api.syncToCloud(token)
-      if (result.success) {
-        setSyncResult(`Synced ${result.count} records`)
-        const count = await window.api.getUnsyncedCount(token)
-        setUnsyncedCount(count)
-        const cfg = await window.api.getSheetsConfig(token)
-        if (cfg.lastSyncedAt) setLastSyncedAt(cfg.lastSyncedAt)
-      } else {
-        setSyncResult(result.error ?? 'Sync failed')
-      }
-    } finally {
-      setIsSyncing(false)
-      setTimeout(() => setSyncResult(null), 4000)
-    }
-  }
-
   async function handleLogout() {
     if (token) await window.api.logout(token)
     clearSession()
@@ -102,13 +80,6 @@ export function TopBar({ title }: Props) {
 
       {/* Right */}
       <div className="flex items-center gap-3">
-        {/* Sync result toast */}
-        {syncResult && (
-          <span className="text-body-sm text-on-surface-variant bg-surface-container px-3 py-1 rounded-full animate-slide-in">
-            {syncResult}
-          </span>
-        )}
-
         {/* Data freshness — when this device last synced with Google Sheets */}
         {lastSyncedAt && (
           <span
@@ -144,26 +115,6 @@ export function TopBar({ title }: Props) {
             </button>
           ))}
         </div>
-
-        {/* Sync to Cloud CTA */}
-        <button
-          onClick={handleSync}
-          disabled={isSyncing}
-          className="bg-primary text-white px-4 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all shadow-primary disabled:opacity-60"
-        >
-          <span className={`material-symbols-outlined text-sm ${isSyncing ? 'animate-spin-slow' : ''}`}>
-            {isSyncing ? 'sync' : 'cloud_upload'}
-          </span>
-          {isSyncing ? 'Syncing...' : 'Sync to Cloud'}
-        </button>
-
-        {/* Notifications placeholder */}
-        <button className="p-2 text-on-surface-variant hover:bg-surface-variant/30 rounded-full transition-colors relative">
-          <span className="material-symbols-outlined">notifications</span>
-          {unsyncedCount > 0 && (
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-surface" />
-          )}
-        </button>
 
         {/* Account */}
         <button

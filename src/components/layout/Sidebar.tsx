@@ -14,7 +14,6 @@ const NAV_ITEMS: Array<{ to: string; icon: string; label: string; key: MenuKey; 
   { to: '/roster',         icon: 'badge',           label: 'Roster',           key: 'roster' },
   { to: '/audit-log',      icon: 'history_edu',     label: 'Audit Log',        key: 'audit_log' },
   { to: '/settings',       icon: 'settings',        label: 'Settings',         key: 'settings' },
-  { to: '/users',          icon: 'manage_accounts', label: 'User Management',  key: 'user_management' },
   { to: '/kpi-settings',   icon: 'tune',            label: 'KPI Settings',     key: 'kpi_settings' },
 ]
 

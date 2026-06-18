@@ -23,9 +23,9 @@
 
 ### Daily / as-needed routine
 1. Log in — check nothing looks broken (sync status, dashboard loads).
-2. **User Management**: create/deactivate accounts as staff join/leave; assign roles + branches; reset a forgotten password by typing a new one in their edit form (or — since passwords are stored in plaintext on the Users Sheet by deliberate choice — look it up there directly).
+2. **Settings → Users tab**: create/deactivate accounts as staff join/leave; assign roles + branches; reset a forgotten password by typing a new one in their edit form (or — since passwords are stored in plaintext on the Users Sheet by deliberate choice — look it up there directly). Each save auto-pushes to the Sheet immediately.
 3. **Audit Log**: spot-check periodically for unexpected `sales_upload_deleted` events, failed logins, or permission changes.
-4. **Settings**: keep the Google Sheets connection healthy; run **Force Full Sync** after any bulk fix or data correction so every device picks it up.
+4. **Settings → Connection Settings tab**: keep the Google Sheets connection healthy — Push/Pull manually if the "X unsynced" badge isn't clearing on its own. To connect or switch which Sheet this device points at, use the password-gated panel on the Login screen instead (see `INSTALLATION.md`).
 
 ### What Admin should NOT try to do
 Upload daily sales, change KPI rates/tiers, or touch the roster — those need an Accountant Officer/HR/HR Support account, by design.
@@ -140,8 +140,8 @@ Log in periodically (daily/weekly, your call) → Dashboard/Sale Report/KPI Repo
 | Rep missing from roster / wrong branch | HR (or HR Support if it's a bulk file HR already prepared) |
 | KPI % looks wrong for a whole branch | Check KPI Settings (HR) — rate/tier/target might be misconfigured for that month |
 | Forgot password | Admin resets it, or look it up on the Users Sheet tab directly |
-| Can't see a menu you think you should have | Admin → User Management → that user's permission overrides |
-| Sheet shows old/garbage data after an app update | Admin/whoever has Sheets access → Settings → Force Full Sync |
+| Can't see a menu you think you should have | Admin → Settings → Users tab → that user's permission overrides |
+| Sheet shows old/garbage data after an app update | Ask the dev to push a one-off fix — no bulk "push everything" button exists anymore (removed as a go-live risk) |
 
 ---
 

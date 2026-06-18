@@ -29,12 +29,11 @@
 
 1. Copy `SalesTrack Pro Setup x.y.z.exe` onto the machine (USB drive, shared network folder, or however you move files there) and run it.
 2. Launch SalesTrack Pro.
-3. On the **Login screen**, click **"First time on this device? Connect to Google Sheets"**:
-   - Paste the Google Sheet ID (same ID on every device — this is what makes them all share data).
-   - Browse to / paste the path of the service account `.json` key file on **this machine** — copy the key file onto each device too, it must exist locally; don't point at a network path that might not always be reachable.
-   - Click **Test Connection & Sync** — this verifies the connection AND pulls every real account/branch/roster/entry down into this device's local database in one step, before anyone logs in.
-   - This link only appears on a device that's never been connected before — once set, it's gone, and changing the connection afterward needs an authenticated admin via Settings (by design, so a stranger can't repoint an already-live device at a different spreadsheet).
-4. Log in with a real account now synced from the Sheet. (If the Sheet has no real users yet — i.e. this is the very first device, ever — log in with the seeded default `admin`/`admin1234` instead, then create real accounts via User Management and Force Full Sync them out to everyone else.)
+3. On the **Login screen**, click the small connect icon (top-right corner). It's always there, on every device, every time — not just the first run.
+   - It first asks for a password: **`KPV@KPV2026`**. This isn't a real security boundary (anyone with the .exe could find it in the source) — it's a deliberate speed bump so an accidental click can't immediately open the door to wiping/switching a device's database. Write it down somewhere the admin team can find it; if lost, it's also recorded here.
+   - After unlocking: paste the Google Sheet ID (same ID on every device — this is what makes them all share data) and the path of the service account `.json` key file on **this machine** — copy the key file onto each device too, it must exist locally; don't point at a network path that might not always be reachable.
+   - Click **Test Connection & Sync** (or **Switch Database & Sync** if this device was already connected to something else) — this verifies the connection AND pulls every real account/branch/roster/entry down into this device's local database, before anyone logs in. If the device was already connected to a *different* Sheet, this first **wipes all local data** (entries, roster, configs, non-admin users) before pulling — anything not yet synced is lost, so don't use this casually on a live device.
+4. Log in with a real account now synced from the Sheet. (If the Sheet has no real users yet — i.e. this is the very first device, ever — log in with the seeded default `admin`/`admin1234` instead, then create real accounts via Settings → Users tab and let normal auto-sync push them out to everyone else.)
 
 Repeat for all 30 devices. **The Sheet ID and the JSON key must be identical across every device** — that's the entire mechanism that keeps them all in sync.
 
@@ -44,8 +43,8 @@ Repeat for all 30 devices. **The Sheet ID and the JSON key must be identical acr
 
 Two ways:
 
-- **Centrally, once:** log in as admin on one device → User Management → create every real user (their role, branch, supervisor link) → Force Full Sync (push) → on every other device, log in (which now auto-pulls from Sheets on login) and the new accounts appear.
-- **Per-branch:** create just that branch's local users on that device, then Force Full Sync to publish them to everyone else.
+- **Centrally, once:** log in as admin on one device → Settings → Users tab → create every real user (their role, branch, supervisor link). Each save auto-pushes to the Sheet immediately — on every other device, log in (which auto-pulls from Sheets on login) and the new accounts appear.
+- **Per-branch:** create just that branch's local users on that device — same auto-push, no extra step needed.
 
 Either way, **passwords are stored in plaintext on the `Users` Sheet tab** (a deliberate choice made for this app — see `README.md` §17) — restrict who can open that Sheet.
 
@@ -57,7 +56,7 @@ Either way, **passwords are stored in plaintext on the `Users` Sheet tab** (a de
 
 What gets wiped: all daily entries, targets, commission configs, roster history, upload logs, audit logs, sessions, and every non-admin user — i.e. everything that's "sample data" or stale demo accounts. What's kept: the 4 real branches, KPI rates/tiers (your real scoring rules), and the `admin` account.
 
-This is a destructive, irreversible action on whichever device you run it on. **Tell me when you're ready for go-live and I'll run it with you watching, then we Force Full Sync once to push the clean state to the Sheet** so every other device inherits it on next login.
+This is a destructive, irreversible action on whichever device you run it on. **Tell me when you're ready for go-live and I'll run it with you watching** — the wipe script also pushes the cleared state straight to the Sheet as part of the same step (there's no "push everything" button in the app anymore — it was removed — it could push leftover test/seed data over the real Sheet with no guardrail), so every other device inherits the clean state on next login.
 
 After that: Accountant Officers start uploading real June daily sales via XLSX, HR sets up the real roster, and the app is live.
 
@@ -69,8 +68,8 @@ After that: Accountant Officers start uploading real June daily sales via XLSX, 
 □ App opens, shows "Connecting to Google Sheets…" then loads (confirms Sheets reachable)
 □ Logged in as the right role for this device/branch
 □ Dashboard shows the expected branch's data (not someone else's, not stale sample data)
-□ Settings → Sheets section shows the correct Sheet ID
-□ Force Full Sync runs without error
+□ Settings → Connection Settings tab shows the correct Sheet ID
+□ Push to Sheets / Pull from Sheets both run without error
 ```
 
 ---
@@ -81,8 +80,8 @@ After that: Accountant Officers start uploading real June daily sales via XLSX, 
 |---|---|---|
 | Stuck on "Starting up…" forever | First-run WASM load blocked by antivirus, or a corrupted DB file | Wait up to 45s (there's a built-in timeout that shows an error if it's truly stuck) — if it errors, check `startup-error.log` in the app's data folder |
 | "Could not sync — using last saved data" at login | No internet, or Sheets not configured yet on this device | Check Settings → Sheets config; app still lets you in with whatever was last saved locally |
-| New user created on Device A doesn't show on Device B | Device A pushed but Device B hasn't pulled yet | Device B: log out and back in (auto-pulls on login), or Settings → Pull from Cloud |
-| Roster/Sheet shows old garbage rows after an app update | Local DB had stale-format rows from before a fix | Force Full Sync — it clears and rewrites every tab from the local DB's current (now-correct) state |
+| New user created on Device A doesn't show on Device B | Device A pushed but Device B hasn't pulled yet | Device B: log out and back in (auto-pulls on login), or Settings → Pull from Sheets |
+| Roster/Sheet shows old garbage rows after an app update | Local DB had stale-format rows from before a fix | Ask the dev to push a one-off fix — there's no bulk "push everything" button in the app anymore (it could push leftover test/seed data over the real Sheet with no guardrail) |
 
 ---
 

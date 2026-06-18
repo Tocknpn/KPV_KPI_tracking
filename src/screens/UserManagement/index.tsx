@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useAuthStore } from '../../store/auth.store'
@@ -166,8 +165,8 @@ function PermissionModal({
   )
 }
 
-// ── Main screen ───────────────────────────────────────────────────────────
-export default function UserManagement() {
+// ── Main content (embedded as the "Users" tab inside Settings) ─────────────
+export default function UserManagementContent() {
   const { token, branches } = useAuthStore()
   const [users, setUsers]     = useState<UserRow[]>([])
   const [supervisors, setSupervisors] = useState<SupervisorOption[]>([])
@@ -276,7 +275,7 @@ export default function UserManagement() {
   const inactive = users.filter(u => !u.active)
 
   return (
-    <AppShell title="User Management" allowedRoles={['admin']}>
+    <>
       {toast && (
         <div className="fixed top-20 right-6 z-50 bg-inverse-surface text-inverse-on-surface px-5 py-3 rounded-xl shadow-lg animate-slide-in text-body-sm">
           {toast}
@@ -525,6 +524,6 @@ export default function UserManagement() {
           </div>
         </div>
       )}
-    </AppShell>
+    </>
   )
 }
