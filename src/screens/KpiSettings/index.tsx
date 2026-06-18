@@ -115,24 +115,29 @@ export default function KpiSettings() {
     if (selectedBranch === null && branches.length > 0) setSelectedBranch(branches[0].id)
   }, [branches, selectedBranch])
 
-  // Load this branch's jewelry/bar rates + qty tiers — once per branch per draft key. Only
-  // fetches if this branch isn't already in the draft cache, so revisiting a branch tab
-  // shows whatever was last edited, not a fresh overwrite from the backend.
+  // Load EVERY branch's jewelry/bar rates + qty tiers for the current scope (Defaults, or
+  // this exact month) up front — not just whichever branch tab happens to be open. Loading
+  // lazily per-tab-click meant Save All only ever covered branches someone actually clicked
+  // into; a branch nobody opened that month silently never got saved, with no indication
+  // anything was skipped. Each fetch still only fires once per branch+scope (skipped if
+  // already cached), so switching tabs back and forth never re-fetches over an edit.
   useEffect(() => {
-    if (!token || selectedBranch === null) return
-    const key = draftKey(selectedBranch)
+    if (!token || branches.length === 0) return
     const toTiers = (r: { tiers: Array<{ id: number; threshold_pct: number; score: number }> }) =>
       r.tiers.length ? r.tiers.map(t => ({ id: t.id, threshold_pct: t.threshold_pct, score: t.score })) : DEFAULT_TIERS
-    if (isAdmin) {
-      if (!(key in ratesDrafts)) window.api.getDefaultMetricRates(token, selectedBranch).then((r: BranchRates) => setRatesDrafts(prev => ({ ...prev, [key]: r })))
-      if (!(key in tiersB2cDrafts)) window.api.getDefaultQtyTiers(token, selectedBranch, 'b2c').then(r => setTiersB2cDrafts(prev => ({ ...prev, [key]: toTiers(r) })))
-      if (!(key in tiersB2bDrafts)) window.api.getDefaultQtyTiers(token, selectedBranch, 'b2b').then(r => setTiersB2bDrafts(prev => ({ ...prev, [key]: toTiers(r) })))
-    } else {
-      if (!(key in ratesDrafts)) window.api.getBranchMetricRates(token, selectedBranch, globalYear, globalMonth).then((r: BranchRates) => setRatesDrafts(prev => ({ ...prev, [key]: r })))
-      if (!(key in tiersB2cDrafts)) window.api.getBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, 'b2c').then(r => setTiersB2cDrafts(prev => ({ ...prev, [key]: toTiers(r) })))
-      if (!(key in tiersB2bDrafts)) window.api.getBranchQtyTiers(token, selectedBranch, globalYear, globalMonth, 'b2b').then(r => setTiersB2bDrafts(prev => ({ ...prev, [key]: toTiers(r) })))
+    for (const b of branches) {
+      const key = draftKey(b.id)
+      if (isAdmin) {
+        if (!(key in ratesDrafts)) window.api.getDefaultMetricRates(token, b.id).then((r: BranchRates) => setRatesDrafts(prev => ({ ...prev, [key]: r })))
+        if (!(key in tiersB2cDrafts)) window.api.getDefaultQtyTiers(token, b.id, 'b2c').then(r => setTiersB2cDrafts(prev => ({ ...prev, [key]: toTiers(r) })))
+        if (!(key in tiersB2bDrafts)) window.api.getDefaultQtyTiers(token, b.id, 'b2b').then(r => setTiersB2bDrafts(prev => ({ ...prev, [key]: toTiers(r) })))
+      } else {
+        if (!(key in ratesDrafts)) window.api.getBranchMetricRates(token, b.id, globalYear, globalMonth).then((r: BranchRates) => setRatesDrafts(prev => ({ ...prev, [key]: r })))
+        if (!(key in tiersB2cDrafts)) window.api.getBranchQtyTiers(token, b.id, globalYear, globalMonth, 'b2c').then(r => setTiersB2cDrafts(prev => ({ ...prev, [key]: toTiers(r) })))
+        if (!(key in tiersB2bDrafts)) window.api.getBranchQtyTiers(token, b.id, globalYear, globalMonth, 'b2b').then(r => setTiersB2bDrafts(prev => ({ ...prev, [key]: toTiers(r) })))
+      }
     }
-  }, [token, selectedBranch, globalYear, globalMonth, isAdmin])
+  }, [token, branches, globalYear, globalMonth, isAdmin])
 
   // Seed the Branch Point Target Defaults editor from the current branches list — branches
   // already carries target_b2c_default/target_b2b_default, no extra fetch needed.
