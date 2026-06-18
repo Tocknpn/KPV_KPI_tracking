@@ -3,7 +3,7 @@ import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth } from './auth'
 import { pushRosterIfConfigured } from './sheets'
-import { snapshotSalesman, snapshotSupervisor, getRosterSnapshotAsOf } from '../db/history'
+import { snapshotSalesman, snapshotSupervisor, getRosterExactMonth } from '../db/history'
 
 function requireRosterManager(token: string) {
   const u = requireAuth(token)
@@ -33,15 +33,16 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('roster:getAll', async (_e, token: string) => {
     requireRosterViewer(token)
     const { year, month } = nowYearMonth()
-    return getRosterSnapshotAsOf(getDb(), year, month)
+    return getRosterExactMonth(getDb(), year, month)
   })
 
-  // Roster reconstructed AS OF a given month — empty + published:false only if no month,
-  // past or present, has ever had any roster data. Otherwise carries forward from the
-  // nearest earlier edited month automatically — no "confirm no changes" step needed.
+  // Roster for the EXACT month requested — no carry-forward. published:false means HR
+  // hasn't uploaded/edited anything for this specific month, even if an earlier month has
+  // data. (KPI/report calculations elsewhere still carry forward via getRosterMapAsOf —
+  // this only changes what HR sees on the Roster management screen itself.)
   ipcMain.handle('roster:getAllAsOf', async (_e, token: string, year: number, month: number) => {
     requireRosterViewer(token)
-    return getRosterSnapshotAsOf(getDb(), year, month)
+    return getRosterExactMonth(getDb(), year, month)
   })
 
   ipcMain.handle('roster:saveRep', async (_e, token: string, data: {

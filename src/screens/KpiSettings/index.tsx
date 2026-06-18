@@ -417,15 +417,19 @@ export default function KpiSettings() {
           className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none w-24 font-bold text-primary"
         />
         <span className="text-body-sm text-on-surface-variant ml-1">— all sections below reflect this month</span>
+        {/* "Confirmed" reflects HR's local Save All + the auto-push that fires right after
+            it — it does not re-check the Sheet itself (the push is fire-and-forget and
+            swallows failures), so the wording says "saved & synced" rather than overclaiming
+            a live verification that doesn't happen. */}
         {monthSubmitted ? (
           <span className="ml-auto flex items-center gap-1.5 text-[11px] font-bold text-tertiary uppercase">
-            <span className="material-symbols-outlined text-sm">check_circle</span>
-            Confirmed
+            <span className="material-symbols-outlined text-sm">cloud_done</span>
+            {MONTH_NAMES[globalMonth - 1]} {globalYear} confirmed — saved & synced to Google Sheets
           </span>
         ) : (
           <span className="ml-auto flex items-center gap-1.5 text-[11px] font-bold text-secondary uppercase">
             <span className="material-symbols-outlined text-sm">warning</span>
-            Not confirmed — click Save All below
+            Not confirmed — click Save All below to confirm and sync {MONTH_NAMES[globalMonth - 1]} {globalYear}
           </span>
         )}
       </GlassCard>}

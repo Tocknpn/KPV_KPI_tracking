@@ -55,6 +55,15 @@ interface Window {
     // Reports
     getDashboardStats(token: string, branchIds: number[], year: number, month: number): Promise<import('./types').DashboardStats>
     getMonthlyReport(token: string, branchIds: number[], year: number, month: number): Promise<{ rows: import('./types').MonthlyReportRow[]; daysInMonth: number; dayOfMonth: number; daysRemaining: number }>
+    getDailyTracking(token: string, branchIds: number[], year: number, month: number): Promise<{
+      reps: Array<{
+        id: number; rep_code: string | null; full_name: string; nickname: string
+        branch_name: string; supervisor_name: string | null
+        days: Array<{ value: number; qty: number } | null>
+        totalValue: number; totalQty: number
+      }>
+      daysInMonth: number
+    }>
     getExecutiveReport(token: string, year: number, month: number): Promise<import('./types').ExecutiveBranchRow[]>
     getBranchAnalytics(token: string, year: number, month: number): Promise<{ dailyTotals: unknown[]; branchContrib: unknown[] }>
 

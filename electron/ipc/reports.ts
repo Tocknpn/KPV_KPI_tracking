@@ -252,6 +252,87 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     return { rows: enriched, daysInMonth, dayOfMonth, daysRemaining }
   })
 
+  // Daily Tracking — a reconciliation grid, not a scoring report. One row per rep, one
+  // column per calendar day of the month, raw uploaded values (Jewelry+Bar combined, Qty),
+  // no KPI math at all. Purpose: Supervisor/Accountant eyeball whether what got uploaded
+  // looks right, day by day — same role scoping as report:monthly (sales_sup → own team,
+  // accountant_officer/branch_manager → own branch, everyone else → whatever's selected).
+  ipcMain.handle('report:dailyTracking', async (_e,
+    token: string, branchIds: number[], year: number, month: number,
+  ) => {
+    const user = requireAuth(token)
+    let effectiveBranchIds: number[]
+    let effectiveSupervisorId: number | null = null
+
+    if (user.role === 'sales_sup') {
+      effectiveBranchIds = [user.branch_id ?? branchIds[0] ?? 1]
+      effectiveSupervisorId = user.supervisor_id
+    } else if (user.role === 'branch_manager' || user.role === 'accountant_officer') {
+      effectiveBranchIds = user.branch_id ? [user.branch_id] : branchIds
+    } else {
+      effectiveBranchIds = branchIds
+    }
+
+    const db = getDb()
+    const daysInMonth = new Date(year, month, 0).getDate()
+    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
+    const monthEnd   = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+
+    const resolvedYm = resolveYm(db, year, month)
+    const rmBranchSql = effectiveBranchIds.length > 0 ? `AND rm.branch_id IN (${effectiveBranchIds.map(() => '?').join(',')})` : ''
+    const rmBranchParams = effectiveBranchIds.length > 0 ? effectiveBranchIds : []
+    const rmSupSql    = effectiveSupervisorId ? `AND rm.supervisor_id = ?` : ''
+    const rmSupParams = effectiveSupervisorId ? [effectiveSupervisorId] : []
+
+    const reps = resolvedYm ? prepare(db, `
+      SELECT s.id, s.rep_code, s.full_name, s.nickname, b.name AS branch_name, sv.full_name AS supervisor_name
+      FROM roster_monthly rm
+      JOIN salesmen s ON s.id = rm.salesman_id
+      LEFT JOIN branches b ON b.id = rm.branch_id
+      LEFT JOIN supervisors sv ON sv.id = rm.supervisor_id
+      WHERE rm.year_month = ? AND rm.active = 1 ${rmBranchSql} ${rmSupSql}
+      ORDER BY b.name, sv.full_name, s.full_name
+    `).all(resolvedYm, ...rmBranchParams, ...rmSupParams) as Array<{
+      id: number; rep_code: string | null; full_name: string; nickname: string; branch_name: string; supervisor_name: string | null
+    }> : []
+
+    if (!reps.length) return { reps: [], daysInMonth }
+
+    const repIds = reps.map(r => r.id)
+    const entryRows = prepare(db, `
+      SELECT salesman_id, entry_date, jewelry_weight_g, bar_weight_g, quantity
+      FROM daily_entries
+      WHERE salesman_id IN (${repIds.map(() => '?').join(',')}) AND entry_date >= ? AND entry_date <= ?
+    `).all(...repIds, monthStart, monthEnd) as Array<{
+      salesman_id: number; entry_date: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number
+    }>
+
+    // Keyed by "salesmanId-day" — day-of-month only since every row is already within this
+    // exact month. A missing key means "nothing uploaded," distinct from an explicit 0 entry.
+    const byRepDay = new Map<string, { value: number; qty: number }>()
+    for (const e of entryRows) {
+      const day = parseInt(e.entry_date.slice(8, 10), 10)
+      byRepDay.set(`${e.salesman_id}-${day}`, { value: (e.jewelry_weight_g || 0) + (e.bar_weight_g || 0), qty: e.quantity || 0 })
+    }
+
+    const result = reps.map(r => {
+      const days: Array<{ value: number; qty: number } | null> = []
+      let totalValue = 0, totalQty = 0
+      for (let d = 1; d <= daysInMonth; d++) {
+        const cell = byRepDay.get(`${r.id}-${d}`) ?? null
+        if (cell) { totalValue += cell.value; totalQty += cell.qty }
+        days.push(cell)
+      }
+      return {
+        id: r.id, rep_code: r.rep_code, full_name: r.full_name, nickname: r.nickname,
+        branch_name: r.branch_name, supervisor_name: r.supervisor_name,
+        days, totalValue, totalQty,
+      }
+    })
+
+    return { reps: result, daysInMonth }
+  })
+
   ipcMain.handle('report:executive', async (_e,
     token: string, year: number, month: number,
     dateFrom: string, dateTo: string,

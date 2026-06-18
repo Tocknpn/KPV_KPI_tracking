@@ -157,8 +157,31 @@ export function getRosterMapAsOf(db: Database, year: number, month: number): Map
   return map
 }
 
-// Full roster snapshot AS OF a given month — used by the Roster screen. published=false
-// means there is no month, past or present, with any roster data at all.
+// Roster for the EXACT month requested — no carry-forward. Used by the Roster screen so
+// HR sees plainly "nothing uploaded for this month yet" instead of silently being shown an
+// earlier month's data relabeled as this one. Reports/KPI calculations still use the
+// carry-forward versions above (getRosterMapAsOf, getHeadcountAsOf) — this only changes
+// what HR sees when reviewing/managing the roster, not how anything gets scored.
+export function getRosterExactMonth(db: Database, year: number, month: number) {
+  const target = ym(year, month)
+  const rows = prepare(db, `
+    SELECT s.id, s.rep_code, s.full_name, s.nickname,
+      rm.branch_id, b.name AS branch_name, b.code AS branch_code,
+      rm.supervisor_id, sup.full_name AS supervisor_name,
+      rm.staff_type, rm.active
+    FROM roster_monthly rm
+    JOIN salesmen s ON s.id = rm.salesman_id
+    JOIN branches b ON b.id = rm.branch_id
+    LEFT JOIN supervisors sup ON sup.id = rm.supervisor_id
+    WHERE rm.year_month = ?
+    ORDER BY rm.active DESC, b.code, s.full_name
+  `).all(target)
+  return { published: rows.length > 0, rows }
+}
+
+// Full roster snapshot AS OF a given month — used by report:teamPerformance and similar
+// calculations that need a sensible value even for a month HR forgot to re-upload.
+// published=false means there is no month, past or present, with any roster data at all.
 export function getRosterSnapshotAsOf(db: Database, year: number, month: number) {
   const resolved = resolveYm(db, year, month)
   if (!resolved) return { published: false, rows: [] as unknown[] }

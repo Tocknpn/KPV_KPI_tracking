@@ -29,7 +29,7 @@ interface CommSupRow {
   team_commission_lak: number; supervisor_commission_lak: number; sup_pct: number
 }
 
-type ReportTab = 'company_overview' | 'supervisor' | 'performance' | 'commission' | 'customer_type'
+type ReportTab = 'company_overview' | 'supervisor' | 'performance' | 'commission' | 'customer_type' | 'daily_tracking'
 
 // ── Utilities ─────────────────────────────────────────────────────────────
 function fmt(n: number, d = 1) { return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) }
@@ -320,6 +320,16 @@ export default function Reports() {
   const [commSupSortDir, setCommSupSortDir] = useState<'asc' | 'desc'>('desc')
   const [commPulling, setCommPulling]       = useState(false)
 
+  // ── Daily Tracking — reconciliation grid, not a scoring report ──────────
+  const [trackingReps, setTrackingReps] = useState<Array<{
+    id: number; rep_code: string | null; full_name: string; nickname: string
+    branch_name: string; supervisor_name: string | null
+    days: Array<{ value: number; qty: number } | null>
+    totalValue: number; totalQty: number
+  }>>([])
+  const [trackingDaysInMonth, setTrackingDaysInMonth] = useState(30)
+  const [trackingLoading, setTrackingLoading] = useState(false)
+
   // ── Load supervisors list ──────────────────────────────────────────────
   useEffect(() => {
     if (!token || !showSupFilter) return
@@ -360,6 +370,12 @@ export default function Reports() {
         .catch(console.error)
         .finally(() => setExecLoading(false))
     }
+
+    setTrackingLoading(true)
+    window.api.getDailyTracking(token, effectiveBranchIds, year, month)
+      .then(data => { setTrackingReps(data.reps); setTrackingDaysInMonth(data.daysInMonth) })
+      .catch(console.error)
+      .finally(() => setTrackingLoading(false))
   }, [token, JSON.stringify(effectiveBranchIds), year, month, dateFrom, dateTo])
 
   // ── Sort handlers ──────────────────────────────────────────────────────
@@ -399,6 +415,10 @@ export default function Reports() {
     : selectedBranchIds.length > 0
       ? supervisors.filter(s => { const b = branches.find(br => br.name === s.branch_name); return b ? selectedBranchIds.includes(b.id) : true })
       : supervisors
+
+  // ── Daily Tracking derived — reconciliation grid respects the same supervisor
+  // multi-select as the other tabs (sup picks their own team out of a branch's full list)
+  const trackingFiltered = trackingReps.filter(r => matchesSup(r.supervisor_name))
 
   // ── Performance derived ────────────────────────────────────────────────
   const searched = rows.filter(r =>
@@ -595,6 +615,19 @@ export default function Reports() {
         'Jewelry (Baht)': r.actual_jewelry, 'Bar (Baht)': r.actual_bar, 'Qty': r.actual_qty,
         'KPI %': r.kpiScore.pct.toFixed(1),
       }))
+    } else if (activeTab === 'daily_tracking') {
+      filename = `daily_tracking_${MONTHS[month - 1]}_${year}`
+      rows = trackingFiltered.map(r => {
+        const row: Record<string, string | number> = {
+          Representative: r.full_name, Branch: r.branch_name, Supervisor: r.supervisor_name ?? '',
+        }
+        for (let d = 1; d <= trackingDaysInMonth; d++) {
+          const cell = r.days[d - 1]
+          row[`Day ${d}`] = cell ? `${cell.value.toFixed(0)}/${cell.qty}` : ''
+        }
+        row['Total (Baht/Qty)'] = `${r.totalValue.toFixed(0)}/${r.totalQty}`
+        return row
+      })
     }
 
     return { rows, filename }
@@ -638,6 +671,7 @@ export default function Reports() {
     { key: 'performance'   as const, label: 'Reps Performance',       icon: 'insert_chart'      },
     { key: 'commission'    as const, label: 'Commission',             icon: 'payments'           },
     { key: 'customer_type' as const, label: 'Customer Type Report',   icon: 'group'             },
+    { key: 'daily_tracking' as const, label: 'Daily Tracking',        icon: 'calendar_month'    },
   ]
 
   return (
@@ -1131,6 +1165,91 @@ export default function Reports() {
             </GlassCard>
           ))}
         </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          TAB: Daily Tracking — reconciliation grid, not a scoring report.
+          One row per rep, one column per day. Blank = nothing uploaded that day
+          (the thing this report exists to catch), "0/0" = uploaded, genuinely zero.
+      ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'daily_tracking' && (
+        <GlassCard elevated className="overflow-hidden">
+          <div className="p-5 pb-0">
+            <h3 className="font-headline-md text-headline-md text-on-surface">Daily Tracking — {MONTHS[month - 1]} {year}</h3>
+            <p className="text-body-sm text-on-surface-variant mt-1">
+              Reconciliation view — each cell is <strong>Jewelry+Bar (Baht) / Qty</strong> for that day. A blank cell means nothing was uploaded for that rep/date yet.
+            </p>
+          </div>
+          <div className="overflow-x-auto p-5">
+            <table className="border-collapse">
+              <thead>
+                <tr>
+                  <th className="sticky left-0 bg-surface-container-low z-10 px-4 py-2.5 text-left font-label-md text-label-md text-on-surface-variant uppercase whitespace-nowrap">Representative</th>
+                  {Array.from({ length: trackingDaysInMonth }, (_, i) => {
+                    const day = i + 1
+                    const dow = new Date(year, month - 1, day).getDay() // 0=Sun, 6=Sat
+                    const isWeekend = dow === 0 || dow === 6
+                    const dowLabel = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]
+                    return (
+                      <th key={day} className={`px-2.5 py-2.5 text-center font-label-md text-[10px] whitespace-nowrap ${isWeekend ? 'font-bold text-on-surface bg-secondary/5' : 'text-on-surface-variant'}`}>
+                        {dowLabel} {day}
+                      </th>
+                    )
+                  })}
+                  <th className="px-4 py-2.5 text-right font-label-md text-label-md text-on-surface-variant uppercase whitespace-nowrap bg-primary/5">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/10">
+                {trackingLoading ? (
+                  <tr><td colSpan={trackingDaysInMonth + 2} className="py-8 text-center text-on-surface-variant text-body-sm">Loading...</td></tr>
+                ) : trackingFiltered.length === 0 ? (
+                  <tr><td colSpan={trackingDaysInMonth + 2} className="py-8 text-center text-on-surface-variant text-body-sm">No reps found for this filter.</td></tr>
+                ) : trackingFiltered.map(r => (
+                  <tr key={r.id} className="hover:bg-primary/[0.03] transition-colors">
+                    <td className="sticky left-0 bg-white z-10 px-4 py-2 whitespace-nowrap">
+                      <p className="font-label-md text-label-md font-bold">{r.full_name}</p>
+                      <p className="text-[10px] text-on-surface-variant">{r.rep_code ?? ''} · {r.supervisor_name ?? '—'} · {r.branch_name}</p>
+                    </td>
+                    {r.days.map((cell, i) => {
+                      const day = i + 1
+                      const dow = new Date(year, month - 1, day).getDay()
+                      const isWeekend = dow === 0 || dow === 6
+                      return (
+                        <td key={i} className={`px-2.5 py-2 text-center font-tabular-nums text-[11px] whitespace-nowrap ${isWeekend ? 'bg-secondary/5' : ''} ${cell ? 'text-on-surface' : 'text-on-surface-variant/40'}`}>
+                          {cell ? `${cell.value.toFixed(0)}/${cell.qty}` : '—'}
+                        </td>
+                      )
+                    })}
+                    <td className="px-4 py-2 text-right font-tabular-nums text-body-sm font-bold bg-primary/5 whitespace-nowrap">
+                      {fmt(r.totalValue)} / {r.totalQty}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {trackingFiltered.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-outline-variant/30">
+                    <td className="sticky left-0 bg-surface-container-low z-10 px-4 py-2.5 font-bold text-body-sm">Total</td>
+                    {Array.from({ length: trackingDaysInMonth }, (_, i) => {
+                      const dayTotal = trackingFiltered.reduce((sum, r) => sum + (r.days[i]?.value ?? 0), 0)
+                      const dayQty   = trackingFiltered.reduce((sum, r) => sum + (r.days[i]?.qty ?? 0), 0)
+                      const dow = new Date(year, month - 1, i + 1).getDay()
+                      const isWeekend = dow === 0 || dow === 6
+                      return (
+                        <td key={i} className={`px-2.5 py-2.5 text-center font-tabular-nums text-[11px] font-bold whitespace-nowrap ${isWeekend ? 'bg-secondary/10' : 'bg-surface-container-low'}`}>
+                          {dayTotal > 0 || dayQty > 0 ? `${dayTotal.toFixed(0)}/${dayQty}` : '—'}
+                        </td>
+                      )
+                    })}
+                    <td className="px-4 py-2.5 text-right font-tabular-nums text-body-sm font-bold bg-primary/10 whitespace-nowrap">
+                      {fmt(trackingFiltered.reduce((s, r) => s + r.totalValue, 0))} / {trackingFiltered.reduce((s, r) => s + r.totalQty, 0)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </GlassCard>
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════

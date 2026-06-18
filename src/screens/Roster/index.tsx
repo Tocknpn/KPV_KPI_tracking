@@ -262,7 +262,6 @@ export default function Roster() {
   const [filterSup, setFilterSup]       = useState<number | 'all'>('all')
   const [filterType, setFilterType]     = useState<'all' | 'b2c' | 'b2b'>('all')
   const [search, setSearch]             = useState('')
-  const [showInactive, setShowInactive] = useState(false)
 
   function showToast(msg: string) {
     setToast(msg)
@@ -330,7 +329,7 @@ export default function Roster() {
   }
 
   const filteredRoster = roster.filter(r => {
-    if (!showInactive && r.active === 0) return false
+    if (r.active === 0) return false
     if (filterBranch !== 'all' && r.branch_id !== filterBranch) return false
     if (filterSup !== 'all' && r.supervisor_id !== filterSup) return false
     if (filterType !== 'all' && r.staff_type !== filterType) return false
@@ -473,14 +472,6 @@ export default function Roster() {
             placeholder="Search name or rep code..."
             className="w-full bg-surface-container rounded-lg pl-8 pr-3 py-2 text-body-sm outline-none border-none" />
         </div>
-
-        <label className="flex items-center gap-2 cursor-pointer text-body-sm text-on-surface-variant select-none">
-          <button onClick={() => setShowInactive(v => !v)}
-            className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${showInactive ? 'bg-primary' : 'bg-surface-container-highest'}`}>
-            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${showInactive ? 'translate-x-5' : 'translate-x-0.5'}`} />
-          </button>
-          Show inactive
-        </label>
 
         <div className="ml-auto flex gap-2">
           <button onClick={downloadTemplate} disabled={dlTemplate}
@@ -630,7 +621,7 @@ export default function Roster() {
         <div className="px-5 py-3 bg-surface-container-low/20 border-t border-outline-variant/10 flex items-center justify-between">
           <p className="text-[11px] text-on-surface-variant">
             Showing {filteredRoster.length} of {roster.length} reps
-            {!showInactive && roster.filter(r => r.active === 0).length > 0 && ` · ${roster.filter(r => r.active === 0).length} inactive hidden`}
+            {roster.filter(r => r.active === 0).length > 0 && ` · ${roster.filter(r => r.active === 0).length} inactive hidden`}
           </p>
           <p className="text-[10px] text-on-surface-variant/60 italic">Changes auto-push to Google Sheets Roster tab</p>
         </div>

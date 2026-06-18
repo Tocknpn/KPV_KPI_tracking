@@ -119,6 +119,8 @@ contextBridge.exposeInMainWorld('api', {
   // ── Reports ───────────────────────────────────────────────────────────
   getMonthlyReport: (token: string, branchIds: number[], year: number, month: number, dateFrom: string, dateTo: string, supervisorId?: number) =>
     ipcRenderer.invoke('report:monthly', token, branchIds, year, month, dateFrom, dateTo, supervisorId),
+  getDailyTracking: (token: string, branchIds: number[], year: number, month: number) =>
+    ipcRenderer.invoke('report:dailyTracking', token, branchIds, year, month),
   getDashboardStats: (token: string, branchIds: number[], year: number, month: number, dateFrom: string, dateTo: string) =>
     ipcRenderer.invoke('report:dashboard', token, branchIds, year, month, dateFrom, dateTo),
   getExecutiveReport: (token: string, year: number, month: number, dateFrom: string, dateTo: string) =>
