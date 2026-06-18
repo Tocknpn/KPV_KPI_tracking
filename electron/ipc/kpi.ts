@@ -2,7 +2,10 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin } from './auth'
-import { pushAllConfigIfConfigured, pushMonthlyTargetsIfConfigured } from './sheets'
+import {
+  pushMonthlyTargetsIfConfigured, pushKpiRatesIfConfigured, pushQtyTiersIfConfigured,
+  pushBranchesIfConfigured, pushSettingsIfConfigured,
+} from './sheets'
 import type { Database } from 'sql.js'
 
 export function computeKpiScore(
@@ -138,7 +141,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
           .run(configId, t.thresholdPct, t.score, i + 1)
       })
     })
-    pushAllConfigIfConfigured(db).catch(() => {})
+    pushQtyTiersIfConfigured(db).catch(() => {})
     return { success: true, id: configId! }
   })
 
@@ -207,7 +210,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
         prepare(db, `INSERT INTO kpi_metric_type_rates (metric_id, branch_id, staff_type, year_month, points_per_unit) VALUES (?,?,?,?,?)`).run(metricId, branchId, staffType, ym, pointsPerUnit)
       }
     })
-    pushAllConfigIfConfigured(db).catch(() => {})
+    pushKpiRatesIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
@@ -269,7 +272,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
           .run(configId, t.thresholdPct, t.score, i + 1)
       })
     })
-    pushAllConfigIfConfigured(db).catch(() => {})
+    pushQtyTiersIfConfigured(db).catch(() => {})
     return { success: true, configId: configId! }
   })
 
@@ -277,7 +280,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     requireAdmin(token)
     const db = getDb()
     prepare(db, `UPDATE branches SET kpi_point_target = ? WHERE id = ?`).run(target, branchId)
-    pushAllConfigIfConfigured(db).catch(() => {})
+    pushBranchesIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
@@ -290,7 +293,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     const db = getDb()
     prepare(db, `UPDATE branches SET target_b2c_default=?, target_b2b_default=?, kpi_point_target=? WHERE id=?`)
       .run(targetB2c, targetB2b, Math.round((targetB2c + targetB2b) / 2), branchId)
-    pushAllConfigIfConfigured(db).catch(() => {})
+    pushBranchesIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
@@ -352,7 +355,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     const db = getDb()
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('kpi_total_base', ?)`  ).run(String(base))
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('kpi_total_weight', ?)`).run(String(weight))
-    pushAllConfigIfConfigured(db).catch(() => {})
+    pushSettingsIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
@@ -372,7 +375,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     requireAdmin(token)
     const db = getDb()
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('sup_kpi_pct', ?)`).run(String(pct))
-    pushAllConfigIfConfigured(db).catch(() => {})
+    pushSettingsIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
@@ -436,7 +439,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
         prepare(db, `INSERT INTO kpi_metric_type_rates (metric_id, branch_id, staff_type, year_month, points_per_unit) VALUES (?,?,?,NULL,?)`).run(metricId, branchId, staffType, pointsPerUnit)
       }
     })
-    pushAllConfigIfConfigured(db).catch(() => {})
+    pushKpiRatesIfConfigured(db).catch(() => {})
     return { success: true }
   })
 
@@ -480,7 +483,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
           .run(configId, t.thresholdPct, t.score, i + 1)
       })
     })
-    pushAllConfigIfConfigured(db).catch(() => {})
+    pushQtyTiersIfConfigured(db).catch(() => {})
     return { success: true, configId: configId! }
   })
 }

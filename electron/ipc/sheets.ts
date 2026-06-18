@@ -369,6 +369,54 @@ export async function pushMonthlyTargetsIfConfigured(db: Database): Promise<void
   } catch { /* Sheets unavailable — silently skip */ }
 }
 
+// ── Push only the KPIRates tab — exported for kpi.ts ─────────────────────────
+export async function pushKpiRatesIfConfigured(db: Database): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+    await pushKpiRates(db, sheets, sheetsId)
+  } catch { /* Sheets unavailable — silently skip */ }
+}
+
+// ── Push only the QtyTiers tab — exported for kpi.ts ─────────────────────────
+export async function pushQtyTiersIfConfigured(db: Database): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+    await pushQtyTiers(db, sheets, sheetsId)
+  } catch { /* Sheets unavailable — silently skip */ }
+}
+
+// ── Push only the Branches tab — exported for kpi.ts ─────────────────────────
+export async function pushBranchesIfConfigured(db: Database): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+    await pushBranches(db, sheets, sheetsId)
+  } catch { /* Sheets unavailable — silently skip */ }
+}
+
+// ── Push only the Settings tab — exported for kpi.ts ─────────────────────────
+export async function pushSettingsIfConfigured(db: Database): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+    await pushSettings(db, sheets, sheetsId)
+  } catch { /* Sheets unavailable — silently skip */ }
+}
+
 // ── Push all config tabs — exported for use in kpi.ts, upload.ts ──────────────
 export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
   const sheetsId = getSetting('sheets_id')
@@ -692,29 +740,36 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       const sheets = google.sheets({ version: 'v4', auth })
       await sheets.spreadsheets.get({ spreadsheetId: sheetsId, fields: 'properties.title' }) // throws if unreachable/unshared
 
-      // Switching to a DIFFERENT database — wipe this device's local data first. pullAllFromCloud
-      // only upserts rows that exist in the new sheet; without a wipe, any Test-database rep_code/
-      // username that doesn't also exist in Production (or vice versa) would linger forever,
-      // silently mixing the two databases in one local file. The seeded admin account survives
-      // this (re-seeded if missing) so the device can never end up with zero way to log in.
+      // Wipe this device's local data before pulling — pullAllFromCloud only upserts rows
+      // that exist in the new sheet, it never deletes. Without this, any local seed/test
+      // data (or a prior database's rep_code/username that doesn't exist in the new one)
+      // lingers forever, silently mixing two datasets in one local file. The seeded admin
+      // account survives this (re-seeded if missing) so the device can never end up with
+      // zero way to log in.
+      // Runs unconditionally, not just "if already configured" — seedDatabase() always
+      // seeds test accounts/rates/tiers on a brand-new install too, so a fresh reinstall
+      // has just as much to wipe as a database switch on an already-running device.
       const db = getDb()
-      const wasAlreadyConfigured = !!(getSetting('sheets_id') && getSetting('service_account_path'))
-      if (wasAlreadyConfigured) {
-        transaction(db, () => {
-          prepare(db, `DELETE FROM daily_entries`).run()
-          prepare(db, `DELETE FROM targets`).run()
-          prepare(db, `DELETE FROM staff_monthly_targets`).run()
-          prepare(db, `DELETE FROM commission_configs`).run()
-          prepare(db, `DELETE FROM roster_monthly`).run()
-          prepare(db, `DELETE FROM upload_logs`).run()
-          prepare(db, `DELETE FROM audit_logs`).run()
-          prepare(db, `DELETE FROM sessions`).run()
-          prepare(db, `DELETE FROM user_permissions`).run()
-          prepare(db, `DELETE FROM salesmen`).run()
-          prepare(db, `DELETE FROM supervisors`).run()
-          prepare(db, `DELETE FROM users WHERE username != 'admin'`).run()
-        })
-      }
+      transaction(db, () => {
+        prepare(db, `DELETE FROM daily_entries`).run()
+        prepare(db, `DELETE FROM targets`).run()
+        prepare(db, `DELETE FROM staff_monthly_targets`).run()
+        prepare(db, `DELETE FROM commission_configs`).run()
+        prepare(db, `DELETE FROM roster_monthly`).run()
+        prepare(db, `DELETE FROM upload_logs`).run()
+        prepare(db, `DELETE FROM audit_logs`).run()
+        prepare(db, `DELETE FROM sessions`).run()
+        prepare(db, `DELETE FROM user_permissions`).run()
+        prepare(db, `DELETE FROM salesmen`).run()
+        prepare(db, `DELETE FROM supervisors`).run()
+        prepare(db, `DELETE FROM users WHERE username != 'admin'`).run()
+        prepare(db, `DELETE FROM kpi_monthly_submissions`).run()
+        prepare(db, `DELETE FROM branch_kpi_monthly_targets`).run()
+        prepare(db, `DELETE FROM kpi_metric_type_rates`).run()
+        prepare(db, `DELETE FROM kpi_tiers`).run()
+        prepare(db, `DELETE FROM kpi_tier_configs`).run()
+        prepare(db, `UPDATE branches SET kpi_point_target=0, target_b2c_default=0, target_b2b_default=0`).run()
+      })
 
       // Persist sheets_id/service_account_path only AFTER a successful pull — otherwise a
       // pull failure (network drop mid-sync, bad tab, etc.) leaves the device marked

@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin, logAudit } from './auth'
-import { pushAllConfigIfConfigured, syncEntriesToCloudIfConfigured } from './sheets'
+import { pushRosterIfConfigured, syncEntriesToCloudIfConfigured } from './sheets'
 import { snapshotSalesman, publishMonth, publishMonthFromDate } from '../db/history'
 
 export interface UploadRowResult {
@@ -272,7 +272,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           else { const n = new Date(); publishMonth(db, n.getFullYear(), n.getMonth() + 1) }
         }
       })
-      pushAllConfigIfConfigured(db).catch(() => {})
+      pushRosterIfConfigured(db).catch(() => {})
       return { success: true, created, updated, skipped: skipped.length, skippedCodes: skipped }
     } catch (e: unknown) {
       return { success: false, error: e instanceof Error ? e.message : String(e) }

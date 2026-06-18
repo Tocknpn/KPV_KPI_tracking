@@ -54,7 +54,7 @@ Either way, **passwords are stored in plaintext on the `Users` Sheet tab** (a de
 
 **Do this once, on one device, right before go-live — not on all 30 devices.** After the wipe + a push, every other device picks up the clean state on next login.
 
-What gets wiped: all daily entries, targets, commission configs, roster history, upload logs, audit logs, sessions, and every non-admin user — i.e. everything that's "sample data" or stale demo accounts. What's kept: the 4 real branches, KPI rates/tiers (your real scoring rules), and the `admin` account.
+What gets wiped: all daily entries, targets, commission configs, roster history, upload logs, audit logs, sessions, every non-admin user, KPI rates/tiers, monthly branch targets, and HR's monthly confirmation history — i.e. everything that's "sample data" or stale demo setup. What's kept: the 4 real branches (their point targets reset to 0 until re-set) and the `admin` account. This is the same wipe that runs every time the database connection on the Login screen is changed (or reconnected) — not a separate one-off script.
 
 This is a destructive, irreversible action on whichever device you run it on. **Tell me when you're ready for go-live and I'll run it with you watching** — the wipe script also pushes the cleared state straight to the Sheet as part of the same step (there's no "push everything" button in the app anymore — it was removed — it could push leftover test/seed data over the real Sheet with no guardrail), so every other device inherits the clean state on next login.
 
