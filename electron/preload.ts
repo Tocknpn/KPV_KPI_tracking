@@ -165,6 +165,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('upload:getDailyBatches', token, branchId),
   deleteDailyUploadBatch: (token: string, uploadLogId: number) =>
     ipcRenderer.invoke('upload:deleteDailyBatch', token, uploadLogId),
+  countDailyEntriesByDate: (token: string, branchId: number, dateFrom: string, dateTo: string) =>
+    ipcRenderer.invoke('upload:countDailyEntriesByDate', token, branchId, dateFrom, dateTo),
+  deleteDailyEntriesByDate: (token: string, branchId: number, dateFrom: string, dateTo: string) =>
+    ipcRenderer.invoke('upload:deleteDailyEntriesByDate', token, branchId, dateFrom, dateTo),
   getSalesmenForTemplate: (token: string, branchId: number | null) =>
     ipcRenderer.invoke('upload:getSalesmenForTemplate', token, branchId),
   uploadRoster: (token: string, rows: unknown[]) =>

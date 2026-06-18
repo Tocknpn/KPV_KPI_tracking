@@ -183,6 +183,35 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     return { success: true, deletedEntries: deleted.changes ?? 0 }
   })
 
+  // ── Accountant Manager: preview/delete daily entries for one branch + a specific date
+  // range — independent of which upload batch they came from. A single upload often spans
+  // many dates/months at once (e.g. a "fix everything since May" file), so deleting by
+  // upload_log_id alone can't reopen just one bad day without also wiping every other date
+  // that happened to be in the same file.
+  ipcMain.handle('upload:countDailyEntriesByDate', async (_e, token: string, branchId: number, dateFrom: string, dateTo: string) => {
+    const user = requireAuth(token)
+    if (!['accountant_manager', 'admin'].includes(user.role)) throw new Error('Forbidden')
+    const row = prepare(db, `SELECT COUNT(*) AS cnt FROM daily_entries WHERE branch_id = ? AND entry_date >= ? AND entry_date <= ?`)
+      .get(branchId, dateFrom, dateTo) as { cnt: number }
+    return row.cnt
+  })
+
+  ipcMain.handle('upload:deleteDailyEntriesByDate', async (_e, token: string, branchId: number, dateFrom: string, dateTo: string) => {
+    const user = requireAuth(token)
+    if (!['accountant_manager', 'admin'].includes(user.role)) throw new Error('Forbidden')
+    const branch = prepare(db, `SELECT name FROM branches WHERE id = ?`).get(branchId) as { name: string } | undefined
+    if (!branch) return { success: false, error: 'Branch not found.' }
+
+    const deleted = prepare(db, `DELETE FROM daily_entries WHERE branch_id = ? AND entry_date >= ? AND entry_date <= ?`)
+      .run(branchId, dateFrom, dateTo)
+    const period = dateFrom === dateTo ? dateFrom : `${dateFrom} → ${dateTo}`
+    logAudit(db, user.id, user.username, user.role, 'sales_upload_deleted',
+      `Cleared ${branch.name} entries for ${period} (${deleted.changes ?? 0} entries) — open for resubmission`,
+      'daily_entries', `${branchId}:${dateFrom}..${dateTo}`, branchId)
+    syncEntriesToCloudIfConfigured(db).catch(() => {})
+    return { success: true, deletedEntries: deleted.changes ?? 0 }
+  })
+
   // ── Process target upload (rep_code based) ───────────────────────────
   ipcMain.handle('upload:targets', async (_e, token: string, rows: TargetRow[], meta: UploadLogEntry) => {
     const user = requireAuth(token)

@@ -47,8 +47,10 @@ function progressBar(value: number, total: number, color: string) {
   )
 }
 
+function todayISO() { return new Date().toISOString().slice(0, 10) }
+
 export default function UploadHistory() {
-  const { token, user } = useAuthStore()
+  const { token, user, branches } = useAuthStore()
   const { selectedYear, selectedMonth, setSelectedPeriod } = useAppStore()
 
   const [coverage, setCoverage] = useState<CoverageRow[]>([])
@@ -61,6 +63,40 @@ export default function UploadHistory() {
   const [batches, setBatches] = useState<DailyBatch[]>([])
   const [batchesLoading, setBatchesLoading] = useState(false)
   const [clearingId, setClearingId] = useState<number | null>(null)
+
+  // ── Delete by branch + exact date range — independent of which upload batch a day's
+  // entries came from, so one bad day can be reopened without wiping an entire multi-day
+  // upload file (see "Sales Upload Records" table above for the all-or-nothing batch delete).
+  const [dateDelBranch, setDateDelBranch] = useState<number | ''>('')
+  const [dateDelFrom, setDateDelFrom]     = useState(todayISO())
+  const [dateDelTo, setDateDelTo]         = useState(todayISO())
+  const [dateDelCount, setDateDelCount]   = useState<number | null>(null)
+  const [dateDelChecking, setDateDelChecking] = useState(false)
+  const [dateDelBusy, setDateDelBusy]     = useState(false)
+
+  useEffect(() => {
+    if (!token || !isApprover || !dateDelBranch || !dateDelFrom || !dateDelTo || dateDelFrom > dateDelTo) {
+      setDateDelCount(null)
+      return
+    }
+    setDateDelChecking(true)
+    window.api.countDailyEntriesByDate(token, dateDelBranch, dateDelFrom, dateDelTo)
+      .then(setDateDelCount)
+      .finally(() => setDateDelChecking(false))
+  }, [token, isApprover, dateDelBranch, dateDelFrom, dateDelTo])
+
+  async function deleteByDate() {
+    if (!token || !dateDelBranch || !dateDelCount) return
+    const branchName = branches.find(b => b.id === dateDelBranch)?.name ?? 'this branch'
+    const period = dateDelFrom === dateDelTo ? dateDelFrom : `${dateDelFrom} → ${dateDelTo}`
+    if (!window.confirm(`Delete ${dateDelCount} entries for ${branchName}, ${period}? This re-opens that date for resubmission and cannot be undone.`)) return
+    setDateDelBusy(true)
+    try {
+      const res = await window.api.deleteDailyEntriesByDate(token, dateDelBranch, dateDelFrom, dateDelTo)
+      if (res.success) { setDateDelCount(null); loadBatches(); loadHistory() }
+      else window.alert(res.error ?? 'Failed to delete entries.')
+    } finally { setDateDelBusy(false) }
+  }
 
   async function loadBatches() {
     if (!token || !isApprover) return
@@ -145,6 +181,36 @@ export default function UploadHistory() {
               Each row is one Accountant Officer upload batch. Delete a batch to clear its entries and let the officer resubmit corrected data.
             </p>
           </div>
+
+          {/* Delete a single date instead of a whole batch — a batch can span many days/
+              months at once, so this is the only way to reopen just one bad day. */}
+          <div className="p-5 border-b border-outline-variant/10 bg-surface-container-low/20">
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">Delete by Branch + Date</p>
+            <div className="flex flex-wrap gap-3 items-end">
+              <select value={dateDelBranch} onChange={e => setDateDelBranch(e.target.value ? Number(e.target.value) : '')}
+                className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none">
+                <option value="">— Select Branch —</option>
+                {branches.map(b => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
+              </select>
+              <div>
+                <label className="text-[10px] text-on-surface-variant uppercase block mb-1">From</label>
+                <input type="date" value={dateDelFrom} onChange={e => setDateDelFrom(e.target.value)}
+                  className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none" />
+              </div>
+              <div>
+                <label className="text-[10px] text-on-surface-variant uppercase block mb-1">To</label>
+                <input type="date" value={dateDelTo} onChange={e => setDateDelTo(e.target.value)}
+                  className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none" />
+              </div>
+              <button onClick={deleteByDate} disabled={!dateDelBranch || !dateDelCount || dateDelBusy || dateDelChecking}
+                className="px-4 py-2 rounded-lg bg-error text-white text-[12px] font-bold hover:opacity-90 disabled:opacity-40 transition-all">
+                {dateDelBusy ? 'Deleting…' : dateDelChecking ? 'Checking…'
+                  : dateDelCount === null ? 'Delete & Allow Resubmit'
+                  : dateDelCount === 0 ? 'No Entries Found' : `Delete ${dateDelCount} Entries`}
+              </button>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
