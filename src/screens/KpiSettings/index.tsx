@@ -31,6 +31,10 @@ export default function KpiSettings() {
   // values every month silently falls back to, instead of this month's specific override.
   const [editingDefaults, setEditingDefaults] = useState(false)
   const [monthSubmitted, setMonthSubmitted] = useState(true) // assume fine until checked, avoids a flash of the warning on every load
+  // Branch Point Target defaults — part of "Edit Defaults" same as rates/tiers, just backed
+  // by branches.kpi_point_target directly (already the standing default) instead of a
+  // year_month/effective_to NULL row, since a flat per-branch number has no month concept.
+  const [branchTargetDefaults, setBranchTargetDefaults] = useState<Record<number, string>>({})
   // Monthly branch KPI targets
   const [monthlyTargets, setMonthlyTargets] = useState<Array<{
     id: number; name: string; code: string; kpi_point_target: number
@@ -90,6 +94,13 @@ export default function KpiSettings() {
     }
   }, [token, selectedBranch, globalYear, globalMonth, editingDefaults])
 
+  // Seed the Branch Point Target defaults editor from the current branches list whenever
+  // Edit Defaults opens — branches already carries kpi_point_target, no extra fetch needed.
+  useEffect(() => {
+    if (!editingDefaults) return
+    setBranchTargetDefaults(Object.fromEntries(branches.map(b => [b.id, String(b.kpi_point_target)])))
+  }, [editingDefaults, branches])
+
   // Has HR confirmed this month's KPI setup yet? Purely informational — scoring already
   // works via the existing fallback chain regardless, this just flags an unconfirmed month.
   useEffect(() => {
@@ -129,8 +140,10 @@ export default function KpiSettings() {
     window.api.getMonthlyBranchTargets(token, globalYear, globalMonth).then(data => {
       setMonthlyTargets(data)
       setTargetEdits(Object.fromEntries(data.map(b => [b.id, String(b.effective_target)])))
-      setTargetB2cEdits(Object.fromEntries(data.map(b => [b.id, String(b.target_b2c ?? '')])))
-      setTargetB2bEdits(Object.fromEntries(data.map(b => [b.id, String(b.target_b2b ?? '')])))
+      // B2C/B2B are required every month now — pre-fill from the overall target (the
+      // shared default) when nothing's been explicitly set yet, instead of leaving blank.
+      setTargetB2cEdits(Object.fromEntries(data.map(b => [b.id, String(b.target_b2c ?? b.effective_target)])))
+      setTargetB2bEdits(Object.fromEntries(data.map(b => [b.id, String(b.target_b2b ?? b.effective_target)])))
       setDirtyTargets(false)
     })
   }, [token, globalYear, globalMonth])
@@ -141,8 +154,10 @@ export default function KpiSettings() {
     const targets = monthlyTargets.map(b => ({
       branchId: b.id,
       target: parseFloat(targetEdits[b.id] ?? '') || b.effective_target,
-      targetB2c: targetB2cEdits[b.id] ? parseFloat(targetB2cEdits[b.id]) || null : null,
-      targetB2b: targetB2bEdits[b.id] ? parseFloat(targetB2bEdits[b.id]) || null : null,
+      // Required fields now — always resolve to a real number, falling back to the overall
+      // target rather than null, since "leave blank to inherit overall" is no longer the model.
+      targetB2c: parseFloat(targetB2cEdits[b.id] ?? '') || b.effective_target,
+      targetB2b: parseFloat(targetB2bEdits[b.id] ?? '') || b.effective_target,
     }))
     await window.api.saveMonthlyBranchTargets(token, globalYear, globalMonth, targets)
     const fresh = await window.api.getMonthlyBranchTargets(token, globalYear, globalMonth)
@@ -159,10 +174,18 @@ export default function KpiSettings() {
     setSavingAll(true)
     try {
       if (editingDefaults) {
-        // Defaults aren't tied to a month — just the standing rates/tiers Admin maintains.
+        // Defaults aren't tied to a month — just the standing rates/tiers/targets Admin
+        // maintains. Covers all three KPI-scoring tables that have a "standing" concept —
+        // Commission has none (flagged separately), so it stays out of Edit Defaults.
         if (selectedBranch !== null) {
           await window.api.saveDefaultMetricRates(token, selectedBranch, branchRates)
           await window.api.saveDefaultQtyTiers(token, selectedBranch, tiers.map(t => ({ thresholdPct: t.threshold_pct, score: t.score })))
+        }
+        for (const b of branches) {
+          const val = parseFloat(branchTargetDefaults[b.id] ?? '')
+          if (!isNaN(val) && val > 0 && val !== b.kpi_point_target) {
+            await window.api.saveBranchKpiTarget(token, b.id, val)
+          }
         }
         setDirtyMult(false)
         showToast('Defaults saved.')
@@ -206,6 +229,10 @@ export default function KpiSettings() {
   async function useDefaults() {
     if (!token) return
     setTargetEdits(Object.fromEntries(monthlyTargets.map(b => [b.id, String(b.kpi_point_target)])))
+    // B2C/B2B required now too — default both to the same overall target, per the "one big
+    // number, B2C/B2B only diverge when this month genuinely needs it" simplification.
+    setTargetB2cEdits(Object.fromEntries(monthlyTargets.map(b => [b.id, String(b.kpi_point_target)])))
+    setTargetB2bEdits(Object.fromEntries(monthlyTargets.map(b => [b.id, String(b.kpi_point_target)])))
     setDirtyTargets(true)
     if (selectedBranch !== null) {
       const [rates, tierResult] = await Promise.all([
@@ -396,6 +423,38 @@ export default function KpiSettings() {
         </div>
       </GlassCard>}
 
+      {/* Branch Point Target Defaults — only shown in Edit Defaults mode. Backed directly by
+          branches.kpi_point_target (already the standing default every month falls back to),
+          not a separate table — same number Monthly Targets' "Use Defaults" pulls from. */}
+      {editingDefaults && (
+        <GlassCard elevated className="p-5 mb-6">
+          <h4 className="font-headline-md text-on-surface flex items-center gap-2 mb-1">
+            <span className="material-symbols-outlined text-primary">flag</span>
+            Branch Point Target Defaults
+          </h4>
+          <p className="text-body-sm text-on-surface-variant mb-4">
+            The standing target per branch — what every month uses unless overridden, and what "Use Defaults" fills in below.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {branches.map(b => (
+              <div key={b.id} className="rounded-xl p-4 bg-surface-container border border-transparent">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">{b.code}</div>
+                  <p className="font-label-md text-label-md text-on-surface">{b.name}</p>
+                </div>
+                <label className="text-[10px] text-on-surface-variant uppercase font-bold block mb-1">Target (pts/person)</label>
+                <input
+                  type="number" min="100" step="100"
+                  value={branchTargetDefaults[b.id] ?? ''}
+                  onChange={e => setBranchTargetDefaults(prev => ({ ...prev, [b.id]: e.target.value }))}
+                  className="w-full bg-white border-b-2 border-primary px-2 py-1.5 text-body-sm outline-none font-tabular-nums font-bold text-primary"
+                />
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      )}
+
       {/* Monthly Branch KPI Point Targets — not part of Defaults, same reason as above */}
       {!editingDefaults && <GlassCard elevated className="p-5 mb-6">
         <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
@@ -449,19 +508,17 @@ export default function KpiSettings() {
                 </p>
                 <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-outline-variant/20">
                   <div>
-                    <label className="text-[9px] text-secondary uppercase font-bold block mb-1">B2C Target</label>
-                    <input type="number" min="0" step="100"
-                      value={targetB2cEdits[b.id] ?? ''}
+                    <label className="text-[9px] text-secondary uppercase font-bold block mb-1">B2C Target *</label>
+                    <input type="number" min="1" step="100" required
+                      value={targetB2cEdits[b.id] ?? b.effective_target}
                       onChange={e => { setTargetB2cEdits(prev => ({ ...prev, [b.id]: e.target.value })); setDirtyTargets(true) }}
-                      placeholder="Same as overall"
                       className="w-full bg-white border-b border-secondary/40 px-1.5 py-1 text-[11px] outline-none font-tabular-nums text-secondary" />
                   </div>
                   <div>
-                    <label className="text-[9px] text-tertiary uppercase font-bold block mb-1">B2B Target</label>
-                    <input type="number" min="0" step="100"
-                      value={targetB2bEdits[b.id] ?? ''}
+                    <label className="text-[9px] text-tertiary uppercase font-bold block mb-1">B2B Target *</label>
+                    <input type="number" min="1" step="100" required
+                      value={targetB2bEdits[b.id] ?? b.effective_target}
                       onChange={e => { setTargetB2bEdits(prev => ({ ...prev, [b.id]: e.target.value })); setDirtyTargets(true) }}
-                      placeholder="Same as overall"
                       className="w-full bg-white border-b border-tertiary/40 px-1.5 py-1 text-[11px] outline-none font-tabular-nums text-tertiary" />
                   </div>
                 </div>
@@ -471,7 +528,7 @@ export default function KpiSettings() {
         </div>
 
         <p className="text-[11px] text-on-surface-variant italic">
-          Branches without a monthly override use their default target
+          B2C / B2B Target are required every month — default to the overall target above unless this branch genuinely needs them to differ this month
         </p>
       </GlassCard>}
 

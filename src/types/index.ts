@@ -22,7 +22,7 @@ export const MENU_LABELS: Record<MenuKey, string> = {
 }
 
 export const ROLE_DEFAULTS: Record<UserRole, MenuKey[]> = {
-  admin:              ['dashboard','kpi_report','sale_report','upload_history','upload_status','audit_log','user_management','settings'],
+  admin:              ['dashboard','kpi_report','sale_report','upload_history','upload_status','audit_log','user_management','settings','kpi_settings'],
   sales_sup:          ['dashboard','kpi_report','sale_report','upload_status'],
   accountant_officer: ['daily_entry','sale_report','upload_history','upload_status'],
   accountant_manager: ['sale_report','upload_history','upload_status','audit_log'],
