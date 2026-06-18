@@ -6,7 +6,8 @@ import { MonthDropdown, DateRangeBar } from '../../components/ui/PeriodFilter'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import { getDefaultDateRange } from '../../utils/dates'
-import { downloadCSV } from '../../utils/csv'
+import { generateRowsXLSX, downloadXLSX } from '../../utils/xlsx'
+import { exportElementToPdf } from '../../utils/pdf'
 import type { MonthlyReportRow, TeamPerformanceRow, ExecutiveBranchRow } from '../../types'
 import { RepProfileModal, SupProfileModal } from './IndividualProfileModal'
 
@@ -34,16 +35,6 @@ function fmt(n: number, d = 1) { return n.toLocaleString('en-US', { minimumFract
 function fmtPct(n: number) { return `${fmt(n, 1)}%` }
 function fmtPts(n: number) { return n.toLocaleString('en-US', { maximumFractionDigits: 0 }) }
 function fmtLak(n: number) { return n.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' ₭' }
-
-function toCSV(rows: Array<Record<string, string | number>>): string {
-  if (!rows.length) return ''
-  const headers = Object.keys(rows[0])
-  const esc = (v: string | number) => {
-    const s = String(v ?? '')
-    return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-  }
-  return [headers.join(','), ...rows.map(r => headers.map(h => esc(r[h])).join(','))].join('\n')
-}
 
 function kpiColor(pct: number) {
   if (pct >= 80)  return 'text-green-600'
@@ -261,6 +252,21 @@ export default function Reports() {
   // ── Toast ──────────────────────────────────────────────────────────────
   const [toast, setToast] = useState('')
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3500) }
+
+  // ── Export ─────────────────────────────────────────────────────────────
+  const reportRef = useRef<HTMLDivElement>(null)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [exportingPdf, setExportingPdf] = useState(false)
+
+  useEffect(() => {
+    if (!showExportMenu) return
+    function onClickOutside(e: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) setShowExportMenu(false)
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [showExportMenu])
 
   // ── Scope helpers ──────────────────────────────────────────────────────
   const isBranchScoped = user?.role === 'sales_sup' || user?.role === 'branch_manager' || user?.role === 'accountant_officer'
@@ -519,14 +525,25 @@ export default function Reports() {
   const filteredExecRows = effectiveBranchIds.length === 0
     ? execRows
     : execRows.filter(r => effectiveBranchIds.includes(r.branch_id))
-  const execTotalScore  = filteredExecRows.reduce((s, r) => s + r.kpi_total_score, 0)
-  const execTotalTarget = filteredExecRows.reduce((s, r) => s + r.kpi_point_target, 0)
+  // Re-derive score/target/pct per the B2C/B2B chips — report:executive returns both
+  // combined and per-type numbers per branch; recombine here per whatever's selected.
+  const showB2c = typeFilter.length === 0 || typeFilter.includes('b2c')
+  const showB2b = typeFilter.length === 0 || typeFilter.includes('b2b')
+  const typeFilteredExecRows = filteredExecRows.map(r => {
+    const score       = (showB2c ? r.b2c_score : 0) + (showB2b ? r.b2b_score : 0)
+    const target       = (showB2c ? r.b2c_target : 0) + (showB2b ? r.b2b_target : 0)
+    const personCount = (showB2c ? r.b2c_person_count : 0) + (showB2b ? r.b2b_person_count : 0)
+    const pct = target > 0 ? (score / target) * 100 : 0
+    return { ...r, kpi_total_score: score, kpi_point_target: target, person_count: personCount, kpi_pct: pct }
+  })
+  const execTotalScore  = typeFilteredExecRows.reduce((s, r) => s + r.kpi_total_score, 0)
+  const execTotalTarget = typeFilteredExecRows.reduce((s, r) => s + r.kpi_point_target, 0)
   const execOverallPct  = execTotalTarget > 0 ? (execTotalScore / execTotalTarget) * 100 : 0
-  const execTotalPeople = filteredExecRows.reduce((s, r) => s + r.person_count, 0)
-  const execRanked      = [...filteredExecRows].sort((a, b) => b.kpi_pct - a.kpi_pct)
+  const execTotalPeople = typeFilteredExecRows.reduce((s, r) => s + r.person_count, 0)
+  const execRanked      = [...typeFilteredExecRows].sort((a, b) => b.kpi_pct - a.kpi_pct)
 
   // ── Export current tab's report results (not raw data) ─────────────────
-  function exportCurrentTab() {
+  function buildExportRows(): { rows: Array<Record<string, string | number>>; filename: string } {
     let rows: Array<Record<string, string | number>> = []
     let filename = 'report'
 
@@ -579,8 +596,24 @@ export default function Reports() {
       }))
     }
 
+    return { rows, filename }
+  }
+
+  function exportExcel() {
+    const { rows, filename } = buildExportRows()
     if (!rows.length) return
-    downloadCSV(`${filename}.csv`, toCSV(rows))
+    downloadXLSX(`${filename}.xlsx`, generateRowsXLSX(rows, filename))
+  }
+
+  async function exportPdf() {
+    if (!reportRef.current) return
+    const { filename } = buildExportRows()
+    setExportingPdf(true)
+    try {
+      await exportElementToPdf(reportRef.current, filename)
+    } finally {
+      setExportingPdf(false)
+    }
   }
 
   async function handlePullConfigs() {
@@ -639,11 +672,29 @@ export default function Reports() {
         )}
         <div className="ml-auto flex items-center gap-3">
           <TypeMultiChips value={typeFilter} onChange={setTypeFilter} />
-          <button onClick={exportCurrentTab}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-container text-on-surface text-body-sm hover:bg-surface-container-high transition-colors border border-white/20">
-            <span className="material-symbols-outlined text-sm text-primary">download</span>
-            Export
-          </button>
+          <div className="relative" ref={exportMenuRef}>
+            <button onClick={() => setShowExportMenu(v => !v)} disabled={exportingPdf}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-container text-on-surface text-body-sm hover:bg-surface-container-high transition-colors border border-white/20 disabled:opacity-60">
+              <span className={`material-symbols-outlined text-sm text-primary ${exportingPdf ? 'animate-spin-slow' : ''}`}>
+                {exportingPdf ? 'sync' : 'download'}
+              </span>
+              {exportingPdf ? 'Generating PDF...' : 'Export'}
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-glass-elevated border border-white/80 overflow-hidden z-[110]">
+                <button onClick={() => { setShowExportMenu(false); exportExcel() }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-body-sm text-on-surface hover:bg-surface-container transition-colors">
+                  <span className="material-symbols-outlined text-sm text-tertiary">grid_on</span>
+                  Excel (.xlsx)
+                </button>
+                <button onClick={() => { setShowExportMenu(false); exportPdf() }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-body-sm text-on-surface hover:bg-surface-container transition-colors border-t border-outline-variant/15">
+                  <span className="material-symbols-outlined text-sm text-error">picture_as_pdf</span>
+                  PDF (snapshot)
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -660,6 +711,9 @@ export default function Reports() {
           ))}
         </div>
       </div>
+
+      {/* PDF export snapshots everything inside this ref — current tab only */}
+      <div ref={reportRef}>
 
       {/* ═══════════════════════════════════════════════════════════════════
           TAB: Company Overview
@@ -680,7 +734,7 @@ export default function Reports() {
                   {/* Left: KPI summary text + gauge, vertically centered together */}
                   <div className="col-span-12 lg:col-span-6 flex items-center gap-8">
                     <div className="flex-1 min-w-0">
-                      <span className="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-[10px] uppercase tracking-widest mb-3 inline-block">
+                      <span className="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-[12px] uppercase tracking-widest mb-3 inline-block">
                         KPI Score — {MONTHS[month - 1]} {year}
                       </span>
                       {/* Current % → Est. month end */}
@@ -691,13 +745,13 @@ export default function Reports() {
                           <p className={`font-bold text-[32px] tabular-nums leading-none ${calcEomPct(execOverallPct) >= 100 ? 'text-green-600' : 'text-tertiary'}`}>
                             {fmtPct(calcEomPct(execOverallPct))}
                           </p>
-                          <p className="text-[10px] text-on-surface-variant/60 mt-0.5 uppercase tracking-wide">est. month end</p>
+                          <p className="text-[12px] text-on-surface-variant/60 mt-0.5 uppercase tracking-wide">est. month end</p>
                         </div>
                       </div>
                       <p className="text-on-surface-variant text-body-md mt-2">
                         {fmtPts(execTotalScore)} of {fmtPts(execTotalTarget)} pts across {execTotalPeople} staff
                       </p>
-                      <p className="text-[11px] text-on-surface-variant/50 mt-0.5 font-mono">{dateFrom} → {dateTo} · day {dayOfMonth} of {daysInMonth}</p>
+                      <p className="text-[13px] text-on-surface-variant/50 mt-0.5 font-mono">{dateFrom} → {dateTo} · day {dayOfMonth} of {daysInMonth}</p>
                     </div>
                     <div className="shrink-0 flex items-center justify-center">
                       <RadialGauge pct={Math.min(execOverallPct, 100)} label="Overall KPI" size={140} color="#004f96" />
@@ -713,13 +767,13 @@ export default function Reports() {
                       const color  = kpiHex(r.kpi_pct)
                       return (
                         <div key={r.branch_id} className="flex items-center gap-4 py-1.5 border-b border-outline-variant/15 last:border-b-0">
-                          <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0" style={{ background: color }}>
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0" style={{ background: color }}>
                             {r.code}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-baseline justify-between gap-2 mb-1">
-                              <p className="font-medium text-on-surface text-[13px] truncate">{r.branch_name}</p>
-                              <span className="text-[11px] whitespace-nowrap">
+                              <p className="font-medium text-on-surface text-[15px] truncate">{r.branch_name}</p>
+                              <span className="text-[13px] whitespace-nowrap">
                                 <span className="font-bold tabular-nums" style={{ color }}>{fmtPct(r.kpi_pct)}</span>
                                 <span className="text-on-surface-variant"> → <span className={eom >= 100 ? 'text-green-600 font-bold' : 'text-tertiary font-semibold'}>{fmtPct(eom)}</span> est.</span>
                               </span>
@@ -730,7 +784,7 @@ export default function Reports() {
                             <div className="h-1 w-full bg-surface-container-highest rounded-full overflow-hidden mb-1">
                               <div className="h-full rounded-full transition-all duration-700 opacity-40" style={{ width: `${eomCap}%`, background: color }} />
                             </div>
-                            <p className="text-[10px] text-on-surface-variant">
+                            <p className="text-[12px] text-on-surface-variant">
                               {fmtPts(r.kpi_total_score)} pts · {r.person_count} staff · Target: {fmtPts(r.per_person_target)} pts/person
                             </p>
                           </div>
@@ -1280,6 +1334,7 @@ export default function Reports() {
         )}
       </>)}
 
+      </div>
     </AppShell>
   )
 }

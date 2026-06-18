@@ -177,6 +177,8 @@ export interface ExecutiveBranchRow {
   per_person_target: number
   kpi_pct: number
   person_count: number
+  b2c_score: number; b2c_target: number; b2c_person_count: number
+  b2b_score: number; b2b_target: number; b2b_person_count: number
 }
 
 export interface Supervisor {

@@ -8,7 +8,7 @@ interface Props {
   subLabel?: string     // extra line shown below label (e.g. actual points)
 }
 
-export function RadialGauge({ pct, size = 128, strokeWidth = 8, color = '#004f96', label, gold = false, subLabel }: Props) {
+export function RadialGauge({ pct, size = 128, strokeWidth = 14, color = '#004f96', label, gold = false, subLabel }: Props) {
   const clamped = Math.min(Math.max(pct, 0), 100)
   const r = (size / 2) - strokeWidth
   const circumference = 2 * Math.PI * r

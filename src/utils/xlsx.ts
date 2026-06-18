@@ -221,6 +221,17 @@ export function generateSampleWorkbook(): Uint8Array {
   return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as Uint8Array
 }
 
+// ── Generic rows → XLSX (Reports screen exports) ────────────────────────────
+// XLSX over CSV here specifically because production data contains Lao script — CSV has
+// no encoding declaration and mangles non-Latin text when opened in Excel; XLSX is UTF-8
+// native and round-trips Lao characters correctly.
+export function generateRowsXLSX(rows: Array<Record<string, string | number>>, sheetName = 'Report'): Uint8Array {
+  const wb = XLSX.utils.book_new()
+  const ws = XLSX.utils.json_to_sheet(rows)
+  XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31)) // sheet names cap at 31 chars
+  return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as Uint8Array
+}
+
 // ── Download XLSX blob ─────────────────────────────────────────────────────
 export function downloadXLSX(filename: string, data: Uint8Array): void {
   const blob = new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })

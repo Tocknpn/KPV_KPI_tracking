@@ -274,15 +274,21 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
         GROUP BY de.salesman_id, de.staff_type
       `).all(b.id, dateFrom, dateTo) as Array<{ salesman_id: number; staff_type: string; actual_jewelry: number; actual_bar: number; actual_qty: number }>
 
+      // Split by staff_type as we go — the Company Overview tab's B2C/B2B filter needs a
+      // real per-type score/target, not just a per-type headcount applied to a combined score.
       let js = 0, bs = 0, qs = 0
       let totalJewelry = 0, totalBar = 0, totalQty = 0
+      let b2cScore = 0, b2bScore = 0
       for (const r of repRows) {
-        js += computeKpiScore(db, 1, b.id, r.actual_jewelry, 0, dateTo, r.staff_type).score
-        bs += computeKpiScore(db, 2, b.id, r.actual_bar,     0, dateTo, r.staff_type).score
-        qs += computeKpiScore(db, 3, b.id, r.actual_qty,     0, dateTo, r.staff_type).score
+        const rj = computeKpiScore(db, 1, b.id, r.actual_jewelry, 0, dateTo, r.staff_type).score
+        const rb = computeKpiScore(db, 2, b.id, r.actual_bar,     0, dateTo, r.staff_type).score
+        const rq = computeKpiScore(db, 3, b.id, r.actual_qty,     0, dateTo, r.staff_type).score
+        js += rj; bs += rb; qs += rq
         totalJewelry += r.actual_jewelry
         totalBar     += r.actual_bar
         totalQty     += r.actual_qty
+        if (r.staff_type === 'b2c') b2cScore += rj + rb + rq
+        else if (r.staff_type === 'b2b') b2bScore += rj + rb + rq
       }
       const kpiTotalScore = js + bs + qs
 
@@ -295,7 +301,9 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       const b2bTarget = getBranchPointTarget(db, b.id, year, month, 'b2b')
       const personCount     = b2cCount + b2bCount
       const perPersonTarget = getBranchPointTarget(db, b.id, year, month)
-      const kpiPointTarget  = b2cCount * b2cTarget + b2bCount * b2bTarget
+      const b2cPointTarget  = b2cCount * b2cTarget
+      const b2bPointTarget  = b2bCount * b2bTarget
+      const kpiPointTarget  = b2cPointTarget + b2bPointTarget
       const kpiPct          = kpiPointTarget > 0 ? (kpiTotalScore / kpiPointTarget) * 100 : 0
 
       return {
@@ -306,6 +314,8 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
         kpi_score_jewelry: js, kpi_score_bar: bs, kpi_score_qty: qs,
         kpi_total_score: kpiTotalScore, kpi_point_target: kpiPointTarget,
         per_person_target: perPersonTarget, kpi_pct: kpiPct, person_count: personCount,
+        b2c_score: b2cScore, b2c_target: b2cPointTarget, b2c_person_count: b2cCount,
+        b2b_score: b2bScore, b2b_target: b2bPointTarget, b2b_person_count: b2bCount,
       }
     })
   })
