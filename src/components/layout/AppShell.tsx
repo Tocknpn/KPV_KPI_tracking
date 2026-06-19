@@ -5,15 +5,17 @@ import { TopBar } from './TopBar'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import { getHomeRoute } from '../../config/navigation'
-import type { UserRole } from '../../types'
+import { ROLE_DEFAULTS } from '../../types'
+import type { UserRole, MenuKey } from '../../types'
 
 interface Props {
   children: ReactNode
   title: string
   allowedRoles?: UserRole[]
+  requiredPermission?: MenuKey
 }
 
-export function AppShell({ children, title, allowedRoles }: Props) {
+export function AppShell({ children, title, allowedRoles, requiredPermission }: Props) {
   const { token, user, permissions, setPermissions, clearSession, setBranches } = useAuthStore()
   const { setUnsyncedCount, sidebarCollapsed } = useAppStore()
 
@@ -23,6 +25,15 @@ export function AppShell({ children, title, allowedRoles }: Props) {
     // accountant_manager, hr_support) — bounce to their own first menu item, not a hardcoded
     // route they may not have access to.
     return <Navigate to={getHomeRoute(permissions)} replace />
+  }
+  if (requiredPermission) {
+    // Mirrors Sidebar's effectivePermissions fallback — permissions is empty for an instant
+    // on first load before getMyPermissions resolves, so fall back to role defaults rather
+    // than bouncing a legitimately-permitted user before their permissions have loaded.
+    const effectivePermissions = permissions.length > 0 ? permissions : (ROLE_DEFAULTS[user.role] ?? [])
+    if (!effectivePermissions.includes(requiredPermission)) {
+      return <Navigate to={getHomeRoute(permissions)} replace />
+    }
   }
 
   useEffect(() => {

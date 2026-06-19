@@ -320,6 +320,14 @@ export default function Roster() {
     loadRoster()
   }
 
+  async function handlePermanentDelete(rep: RosterRow) {
+    if (!token) return
+    if (!confirm(`Permanently delete "${rep.full_name}"? This cannot be undone — use Reactivate instead if you might need this rep back.`)) return
+    const res = await window.api.permanentlyDeleteRosterRep(token, rep.id)
+    if (res.success) { showToast(`"${rep.full_name}" permanently deleted.`); loadRoster() }
+    else showToast(res.error ?? 'Delete failed.')
+  }
+
   async function downloadTemplate() {
     if (!token) return
     setDlTemplate(true)
@@ -681,10 +689,16 @@ export default function Roster() {
                             <span className="material-symbols-outlined text-sm">person_off</span>
                           </button>
                         ) : (
-                          <button onClick={() => handleReactivate(rep)}
-                            className="p-1.5 text-tertiary hover:bg-tertiary/10 rounded-lg transition-colors" title="Reactivate">
-                            <span className="material-symbols-outlined text-sm">person_check</span>
-                          </button>
+                          <>
+                            <button onClick={() => handleReactivate(rep)}
+                              className="p-1.5 text-tertiary hover:bg-tertiary/10 rounded-lg transition-colors" title="Reactivate">
+                              <span className="material-symbols-outlined text-sm">person_check</span>
+                            </button>
+                            <button onClick={() => handlePermanentDelete(rep)}
+                              className="p-1.5 text-error hover:bg-error-container/30 rounded-lg transition-colors" title="Permanently delete">
+                              <span className="material-symbols-outlined text-sm">delete_forever</span>
+                            </button>
+                          </>
                         )}
                       </div>
                     )}

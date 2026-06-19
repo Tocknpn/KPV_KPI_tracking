@@ -118,6 +118,7 @@ interface Window {
     saveRosterRep(token: string, data: unknown, year?: number, month?: number): Promise<{ success: boolean; id?: number }>
     deactivateRosterRep(token: string, id: number, year?: number, month?: number): Promise<{ success: boolean }>
     reactivateRosterRep(token: string, id: number, year?: number, month?: number): Promise<{ success: boolean }>
+    permanentlyDeleteRosterRep(token: string, id: number): Promise<{ success: boolean; error?: string }>
     uploadRoster(token: string, rows: unknown[]): Promise<{ success: boolean; created?: number; updated?: number; skipped?: number; skippedCodes?: string[]; error?: string }>
     getRosterTemplate(token: string): Promise<Array<Record<string, unknown>>>
     forceSyncAll(token: string): Promise<{ success: boolean; count?: number; message?: string; error?: string }>

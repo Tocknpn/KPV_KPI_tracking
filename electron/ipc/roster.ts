@@ -174,4 +174,31 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
     logAudit(db, user.id, user.username, user.role, 'roster_rep_reactivate', repLabel, 'salesman', String(id))
     return { success: true }
   })
+
+  // True hard delete — deactivate above only flips active=0. Same reasoning as
+  // auth:permanentlyDeleteUser: salesmen.id is a NOT NULL FK on daily_entries with no
+  // cascade, so a rep with any uploaded entries can't be hard-deleted without destroying
+  // that history — refuse and point at Deactivate instead. roster_monthly rows (pure
+  // history, no entries reference them) are cleared as part of the delete since they'd
+  // otherwise dangle on a salesman_id that no longer exists.
+  ipcMain.handle('roster:permanentlyDelete', async (_e, token: string, id: number) => {
+    const user = requireRosterManager(token)
+    const db = getDb()
+    const rep = prepare(db, `SELECT rep_code, full_name FROM salesmen WHERE id=?`).get(id) as { rep_code: string | null; full_name: string } | undefined
+    if (!rep) return { success: false, error: 'Rep not found.' }
+
+    const entries = prepare(db, `SELECT COUNT(*) AS n FROM daily_entries WHERE salesman_id = ?`).get(id) as { n: number }
+    if (entries.n > 0) {
+      return { success: false, error: `Cannot permanently delete — this rep has ${entries.n} uploaded entr${entries.n === 1 ? 'y' : 'ies'} on record. Deactivate instead to keep that history intact.` }
+    }
+
+    const repLabel = `${rep.rep_code ?? id} — ${rep.full_name}`
+    transaction(db, () => {
+      prepare(db, `DELETE FROM roster_monthly WHERE salesman_id = ?`).run(id)
+      prepare(db, `DELETE FROM salesmen WHERE id = ?`).run(id)
+    })
+    pushRosterIfConfigured(db).catch(() => {})
+    logAudit(db, user.id, user.username, user.role, 'roster_rep_delete', repLabel, 'salesman', String(id))
+    return { success: true }
+  })
 }

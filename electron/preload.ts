@@ -203,6 +203,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('roster:deactivate', token, id, year, month),
   reactivateRosterRep: (token: string, id: number, year?: number, month?: number) =>
     ipcRenderer.invoke('roster:reactivate', token, id, year, month),
+  permanentlyDeleteRosterRep: (token: string, id: number) =>
+    ipcRenderer.invoke('roster:permanentlyDelete', token, id),
 
   // Force full sync to Sheets (all entries + all config tabs)
   forceSyncAll: (token: string) =>

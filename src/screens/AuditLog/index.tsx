@@ -89,7 +89,7 @@ export default function AuditLog() {
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   return (
-    <AppShell title="Audit Log" allowedRoles={['admin']}>
+    <AppShell title="Audit Log" requiredPermission="audit_log">
       <div className="flex justify-between items-end mb-6">
         <div>
           <nav className="flex items-center gap-2 text-label-md text-on-surface-variant mb-2">

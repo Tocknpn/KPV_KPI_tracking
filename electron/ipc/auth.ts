@@ -67,6 +67,17 @@ export function requireAdmin(token: string) {
   return user
 }
 
+// Gate by effective menu permission (role default + per-user admin override) instead of a
+// fixed role list — lets an admin grant a menu (e.g. audit_log) to one specific user without
+// that user's whole role gaining it, and without a code change.
+export function requirePermission(token: string, menuKey: string) {
+  const user = requireAuth(token)
+  const db = getDb()
+  const permissions = computePermissions(db, user.id, user.role)
+  if (!permissions.includes(menuKey)) throw new Error('Forbidden')
+  return user
+}
+
 export function registerAuthHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('auth:login', async (_e, username: string, password: string) => {
     const db = getDb()
@@ -233,7 +244,7 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('audit:getLogs', async (_e, token: string, filters: {
     dateFrom?: string; dateTo?: string; username?: string; eventType?: string; limit?: number; offset?: number
   }) => {
-    requireAdmin(token)
+    requirePermission(token, 'audit_log')
     const db = getDb()
     const conditions: string[] = []
     const params: (string | number)[] = []
