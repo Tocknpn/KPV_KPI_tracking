@@ -766,7 +766,7 @@ export default function Roster() {
           <p className="text-[11px] text-on-surface-variant">
             Showing {filteredSup.length} of {supRoster.length} supervisors
           </p>
-          <p className="text-[10px] text-on-surface-variant/60 italic">Target = branch KPI Settings target for that supervisor's team type</p>
+          <p className="text-[10px] text-on-surface-variant/60 italic">Target = per-person target × rep count (sum of total reps target in team)</p>
         </div>
       </GlassCard>
       )}

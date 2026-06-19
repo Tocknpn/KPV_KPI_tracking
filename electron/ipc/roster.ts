@@ -45,15 +45,20 @@ function attachRepTargets(
   return { ...snapshot, rows }
 }
 
-// Supervisors have no individual override table — their monthly target is always the same
-// branch+staffType figure their team is held to (matches report:teamPerformance's math).
+// Supervisor target = per-person target × number of active reps on their team for that month
+// (matches report:teamPerformance's math: perPersonTarget * reps.length).
 function attachSupTargets(
   db: Database, snapshot: { published: boolean; rows: Record<string, unknown>[] }, year: number, month: number,
 ) {
-  const rows = snapshot.rows.map(r => ({
-    ...r,
-    point_target: getBranchPointTarget(db, r.branch_id as number, year, month, r.staff_type as string),
-  }))
+  const rows = snapshot.rows.map(r => {
+    const perPersonTarget = getBranchPointTarget(db, r.branch_id as number, year, month, r.staff_type as string)
+    // rep_count is already calculated by getSupervisorRosterExactMonth from roster_monthly
+    const repCount = (r.rep_count as number) ?? 0
+    return {
+      ...r,
+      point_target: perPersonTarget * repCount,
+    }
+  })
   return { ...snapshot, rows }
 }
 
