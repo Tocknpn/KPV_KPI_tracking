@@ -178,7 +178,9 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
     let supervisorFilter: number | null = null
 
     if (user.role === 'sales_sup') {
-      effectiveBranchIds = [user.branch_id ?? 1]
+      // Drop the live-branch filter — rosterMap below is already AS OF this month, so
+      // supervisor_id alone correctly scopes the team even after a later branch transfer.
+      effectiveBranchIds = []
       supervisorFilter   = user.supervisor_id
     } else if (user.role === 'branch_manager' || user.role === 'accountant_officer') {
       effectiveBranchIds = user.branch_id ? [user.branch_id] : branchIds

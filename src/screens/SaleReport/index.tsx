@@ -99,18 +99,15 @@ function PieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent, change 
 }) {
   if (midAngle == null || percent == null) return null
   const RADIAN = Math.PI / 180
-  const radius = innerRadius + (outerRadius - innerRadius) * 0.5
+  const radius = outerRadius + 20
   const x = cx + radius * Math.cos(-midAngle * RADIAN)
   const y = cy + radius * Math.sin(-midAngle * RADIAN)
 
   const pctStr = `${(percent * 100).toFixed(1)}%`
   const changeStr = change != null ? (change >= 0 ? `(+${change.toFixed(1)}%)` : `(${change.toFixed(1)}%)`) : ''
 
-  // Only show label if the slice is large enough (> 10%)
-  if (percent < 0.1) return null
-
   return (
-    <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="11" fontWeight="bold">
+    <text x={x} y={y} fill="#3a3a3a" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="11" fontWeight="bold">
       {pctStr} {changeStr}
     </text>
   )
@@ -705,7 +702,7 @@ export default function SaleReport() {
                   <p className="text-body-sm text-on-surface-variant mb-6">{MONTHS[month - 1]} {year} — vs {lmLabel}</p>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {/* Jewelry Weight % Contribution */}
-                    <div>
+                    <div className="rounded-xl border border-outline-variant/20 p-4">
                       <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">Jewelry Weight % Contribution</h5>
                       <div className="h-80">
                         <ResponsiveContainer width="100%" height="100%">
@@ -719,7 +716,7 @@ export default function SaleReport() {
                               }))}
                               cx="50%"
                               cy="50%"
-                              labelLine={false}
+                              labelLine={{ stroke: '#9ca3af', strokeWidth: 1 }}
                               label={(props) => PieLabel({
                                 ...props,
                                 change: props.payload.change
@@ -751,7 +748,7 @@ export default function SaleReport() {
                     </div>
 
                     {/* Bar Weight % Contribution */}
-                    <div>
+                    <div className="rounded-xl border border-outline-variant/20 p-4">
                       <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">Bar Weight % Contribution</h5>
                       <div className="h-80">
                         <ResponsiveContainer width="100%" height="100%">
@@ -765,7 +762,7 @@ export default function SaleReport() {
                               }))}
                               cx="50%"
                               cy="50%"
-                              labelLine={false}
+                              labelLine={{ stroke: '#9ca3af', strokeWidth: 1 }}
                               label={(props) => PieLabel({
                                 ...props,
                                 change: props.payload.change
@@ -797,7 +794,7 @@ export default function SaleReport() {
                     </div>
 
                     {/* Total Weight % Contribution */}
-                    <div>
+                    <div className="rounded-xl border border-outline-variant/20 p-4">
                       <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">Total Weight % Contribution</h5>
                       <div className="h-80">
                         <ResponsiveContainer width="100%" height="100%">
@@ -811,7 +808,7 @@ export default function SaleReport() {
                               }))}
                               cx="50%"
                               cy="50%"
-                              labelLine={false}
+                              labelLine={{ stroke: '#9ca3af', strokeWidth: 1 }}
                               label={(props) => PieLabel({
                                 ...props,
                                 change: props.payload.change

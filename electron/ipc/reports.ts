@@ -170,7 +170,10 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     let effectiveSupervisorId: number | null = supervisorId ?? null
 
     if (user.role === 'sales_sup') {
-      effectiveBranchIds = [user.branch_id ?? branchIds[0] ?? 1]
+      // No branch filter here — roster_monthly.branch_id for the resolved month is already
+      // correct AS OF that month. Filtering by user.branch_id (today's branch) too would AND
+      // a live value against a historical one, wrongly blanking past months after a transfer.
+      effectiveBranchIds = []
       effectiveSupervisorId = user.supervisor_id
     } else if (user.role === 'branch_manager' || user.role === 'accountant_officer') {
       effectiveBranchIds = user.branch_id ? [user.branch_id] : branchIds
@@ -265,7 +268,9 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     let effectiveSupervisorId: number | null = null
 
     if (user.role === 'sales_sup') {
-      effectiveBranchIds = [user.branch_id ?? branchIds[0] ?? 1]
+      // Same reasoning as report:monthly — drop the live-branch filter, supervisor_id
+      // alone (matched against that month's roster_monthly) is the correct historical scope.
+      effectiveBranchIds = []
       effectiveSupervisorId = user.supervisor_id
     } else if (user.role === 'branch_manager' || user.role === 'accountant_officer') {
       effectiveBranchIds = user.branch_id ? [user.branch_id] : branchIds
@@ -414,7 +419,8 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const user = requireAuth(token)
     const db = getDb()
 
-    // branch_manager: always scope to their branch
+    // branch_manager: always scope to their branch. sales_sup: scope to ONLY their own
+    // supervisor record — without this they'd see every supervisor/team in the branch.
     const effectiveBranchIds = user.role === 'branch_manager' && user.branch_id
       ? [user.branch_id]
       : branchIds
@@ -423,13 +429,20 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const supKpiPct = parseFloat(pctRow?.value ?? '30')
 
     const { sql: bSql, params: bParams } = buildSalesmenBranchFilter(effectiveBranchIds)
-    const supervisors = prepare(db, `
-      SELECT sv.id, sv.full_name, sv.nickname, sv.branch_id, sv.staff_type, b.name AS branch_name
-      FROM supervisors sv
-      JOIN branches b ON b.id = sv.branch_id
-      WHERE sv.active = 1 ${effectiveBranchIds.length > 0 ? `AND sv.branch_id IN (${effectiveBranchIds.map(() => '?').join(',')})` : ''}
-      ORDER BY sv.branch_id, sv.full_name
-    `).all(...bParams) as Array<{ id: number; full_name: string; nickname: string; branch_id: number; staff_type: string; branch_name: string }>
+    const supervisors = user.role === 'sales_sup'
+      ? prepare(db, `
+          SELECT sv.id, sv.full_name, sv.nickname, sv.branch_id, sv.staff_type, b.name AS branch_name
+          FROM supervisors sv
+          JOIN branches b ON b.id = sv.branch_id
+          WHERE sv.id = ?
+        `).all(user.supervisor_id) as Array<{ id: number; full_name: string; nickname: string; branch_id: number; staff_type: string; branch_name: string }>
+      : prepare(db, `
+          SELECT sv.id, sv.full_name, sv.nickname, sv.branch_id, sv.staff_type, b.name AS branch_name
+          FROM supervisors sv
+          JOIN branches b ON b.id = sv.branch_id
+          WHERE sv.active = 1 ${effectiveBranchIds.length > 0 ? `AND sv.branch_id IN (${effectiveBranchIds.map(() => '?').join(',')})` : ''}
+          ORDER BY sv.branch_id, sv.full_name
+        `).all(...bParams) as Array<{ id: number; full_name: string; nickname: string; branch_id: number; staff_type: string; branch_name: string }>
 
     // Team membership AS OF this month — not today's roster — so a rep who later
     // transfers off this team or deactivates doesn't change a past month's headcount.

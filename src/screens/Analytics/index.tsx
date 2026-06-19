@@ -123,8 +123,18 @@ export default function Analytics() {
                     innerRadius={52}
                     paddingAngle={3}
                     dataKey="value"
-                    label={({ value }) => `${value}%`}
-                    labelLine={false}
+                    label={({ cx, cy, midAngle, outerRadius, value }) => {
+                      const RADIAN = Math.PI / 180
+                      const radius = outerRadius + 20
+                      const x = cx + radius * Math.cos(-midAngle * RADIAN)
+                      const y = cy + radius * Math.sin(-midAngle * RADIAN)
+                      return (
+                        <text x={x} y={y} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={12} fontWeight={600} fill="#3a3a3a">
+                          {value}%
+                        </text>
+                      )
+                    }}
+                    labelLine={{ stroke: '#9ca3af', strokeWidth: 1 }}
                   >
                     {pieData.map((_e, i) => (
                       <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />

@@ -417,8 +417,14 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
       total:   wow(curWk.total,   prevWk.total),
     }
 
-    // Per-branch weekly totals for the same 6 weeks, pivoted for clustered chart
-    const allBranches = prepare(db, `SELECT id, name, code FROM branches ORDER BY id`).all() as Array<{ id: number; name: string; code: string }>
+    // Per-branch weekly totals for the same 6 weeks, pivoted for clustered chart.
+    // branchIds is already role-scoped above (line 85-87) — must respect it here too, or a
+    // scoped role (sales_sup/branch_manager/accountant_officer) sees every branch's chart.
+    const allBranches = prepare(db, `
+      SELECT id, name, code FROM branches
+      ${branchIds.length > 0 ? `WHERE id IN (${branchIds.map(() => '?').join(',')})` : ''}
+      ORDER BY id
+    `).all(...branchIds) as Array<{ id: number; name: string; code: string }>
     const weeklyByBranch = calWeeks.map((w, i) => {
       const row: Record<string, string | number | boolean> = { label: weekLabel(w.start), week_start: w.start, isCurrent: i === calWeeks.length - 1 }
       for (const b of allBranches) {
