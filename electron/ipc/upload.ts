@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin, logAudit } from './auth'
-import { pushRosterIfConfigured, syncEntriesToCloudIfConfigured } from './sheets'
+import { pushRosterIfConfigured, syncEntriesToCloudIfConfigured, deleteEntriesFromCloud } from './sheets'
 import { snapshotSalesman, snapshotSupervisor, publishMonth, publishMonthFromDate, getRosterMapAsOf } from '../db/history'
 
 export interface UploadRowResult {
@@ -176,9 +176,22 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
       { id: number; branch_id: number; filename: string } | undefined
     if (!batch) return { success: false, error: 'Upload batch not found.' }
 
+    // Fetch entries to delete before erasing them from SQLite
+    const entriesToDelete = prepare(db, `
+      SELECT de.entry_date, b.code AS branch_code, s.rep_code
+      FROM daily_entries de
+      JOIN branches b ON b.id = de.branch_id
+      JOIN salesmen s ON s.id = de.salesman_id
+      WHERE de.upload_log_id = ?
+    `).all() as Array<{ entry_date: string; branch_code: string; rep_code: string }>
+
     const deleted = prepare(db, `DELETE FROM daily_entries WHERE upload_log_id = ?`).run(uploadLogId)
     logAudit(db, user.id, user.username, user.role, 'sales_upload_deleted',
       `Cleared "${batch.filename}" (${deleted.changes ?? 0} entries) — open for resubmission`, 'upload_log', String(uploadLogId), batch.branch_id)
+
+    if (entriesToDelete.length) {
+      await deleteEntriesFromCloud(db, entriesToDelete).catch(() => {})
+    }
     syncEntriesToCloudIfConfigured(db).catch(() => {})
     return { success: true, deletedEntries: deleted.changes ?? 0 }
   })
@@ -202,12 +215,25 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     const branch = prepare(db, `SELECT name FROM branches WHERE id = ?`).get(branchId) as { name: string } | undefined
     if (!branch) return { success: false, error: 'Branch not found.' }
 
+    // Fetch entries to delete before erasing them from SQLite
+    const entriesToDelete = prepare(db, `
+      SELECT de.entry_date, b.code AS branch_code, s.rep_code
+      FROM daily_entries de
+      JOIN branches b ON b.id = de.branch_id
+      JOIN salesmen s ON s.id = de.salesman_id
+      WHERE de.branch_id = ? AND de.entry_date >= ? AND de.entry_date <= ?
+    `).all() as Array<{ entry_date: string; branch_code: string; rep_code: string }>
+
     const deleted = prepare(db, `DELETE FROM daily_entries WHERE branch_id = ? AND entry_date >= ? AND entry_date <= ?`)
       .run(branchId, dateFrom, dateTo)
     const period = dateFrom === dateTo ? dateFrom : `${dateFrom} → ${dateTo}`
     logAudit(db, user.id, user.username, user.role, 'sales_upload_deleted',
       `Cleared ${branch.name} entries for ${period} (${deleted.changes ?? 0} entries) — open for resubmission`,
       'daily_entries', `${branchId}:${dateFrom}..${dateTo}`, branchId)
+
+    if (entriesToDelete.length) {
+      await deleteEntriesFromCloud(db, entriesToDelete).catch(() => {})
+    }
     syncEntriesToCloudIfConfigured(db).catch(() => {})
     return { success: true, deletedEntries: deleted.changes ?? 0 }
   })

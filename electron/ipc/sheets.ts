@@ -368,6 +368,60 @@ export async function syncEntriesToCloudIfConfigured(db: Database): Promise<void
   } catch { /* Sheets unavailable — silently skip */ }
 }
 
+// ── Delete matching daily entries from Google Sheets ───────────────────────
+export async function deleteEntriesFromCloud(
+  db: Database,
+  entriesToDelete: Array<{ entry_date: string; branch_code: string; rep_code: string }>
+): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath || !entriesToDelete.length) return
+
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+
+    // Fetch all current rows from the Entries sheet
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A:G' })
+    const allRows = res.data.values ?? []
+    if (allRows.length <= 1) return // only header or empty
+
+    const header = allRows[0]
+    const dataRows = allRows.slice(1)
+
+    // Create a lookup set for fast O(1) checking
+    const deleteKeys = new Set(
+      entriesToDelete.map(e => `${e.entry_date}|${e.branch_code}|${e.rep_code ?? ''}`)
+    )
+
+    // Filter out rows to delete
+    const remainingRows = dataRows.filter(row => {
+      const [date, branch, repCode] = row
+      const key = `${date}|${branch}|${repCode ?? ''}`
+      return !deleteKeys.has(key)
+    })
+
+    // If any rows were actually filtered out, rewrite the Entries sheet
+    if (remainingRows.length < dataRows.length) {
+      // Clear the Entries range first
+      await sheets.spreadsheets.values.clear({ spreadsheetId: sheetsId, range: 'Entries!A:G' })
+      // Update with the header and remaining rows
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: sheetsId,
+        range: 'Entries!A1',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [header, ...remainingRows] },
+      })
+
+      const deletedCount = dataRows.length - remainingRows.length
+      prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('delete', ?, 'success')`).run(deletedCount)
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    prepare(db, `INSERT INTO sync_logs (direction, records_count, status, error_message) VALUES ('delete', 0, 'error', ?)`).run(msg)
+  }
+}
+
 // ── Push only the Roster tab — exported for roster.ts ────────────────────────
 export async function pushRosterIfConfigured(db: Database): Promise<void> {
   const sheetsId = getSetting('sheets_id')
