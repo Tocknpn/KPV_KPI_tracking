@@ -714,7 +714,7 @@ export default function SaleReport() {
                               data={d.byBranch.map(b => ({
                                 name: b.branch_name,
                                 branchCode: b.branch_code,
-                                value: b.jewelry_contrib,
+                                value: b.jewelry,
                                 change: b.jewelry_contrib_change
                               }))}
                               cx="50%"
@@ -739,7 +739,7 @@ export default function SaleReport() {
                                 const change = props.payload.change
                                 const changeStr = change != null ? (change >= 0 ? `(+${change.toFixed(1)}%)` : `(${change.toFixed(1)}%)`) : 'N/A'
                                 return [
-                                  `${value.toFixed(1)}% ${changeStr}`,
+                                  `${fmt(value, 1)} Baht`,
                                   props.payload.branchCode
                                 ]
                               }}
@@ -760,7 +760,7 @@ export default function SaleReport() {
                               data={d.byBranch.map(b => ({
                                 name: b.branch_name,
                                 branchCode: b.branch_code,
-                                value: b.bar_contrib,
+                                value: b.bar,
                                 change: b.bar_contrib_change
                               }))}
                               cx="50%"
@@ -785,7 +785,7 @@ export default function SaleReport() {
                                 const change = props.payload.change
                                 const changeStr = change != null ? (change >= 0 ? `(+${change.toFixed(1)}%)` : `(${change.toFixed(1)}%)`) : 'N/A'
                                 return [
-                                  `${value.toFixed(1)}% ${changeStr}`,
+                                  `${fmt(value, 1)} Baht`,
                                   props.payload.branchCode
                                 ]
                               }}
@@ -806,7 +806,7 @@ export default function SaleReport() {
                               data={d.byBranch.map(b => ({
                                 name: b.branch_name,
                                 branchCode: b.branch_code,
-                                value: b.weight_contrib,
+                                value: b.total,
                                 change: b.weight_contrib_change
                               }))}
                               cx="50%"
@@ -831,7 +831,7 @@ export default function SaleReport() {
                                 const change = props.payload.change
                                 const changeStr = change != null ? (change >= 0 ? `(+${change.toFixed(1)}%)` : `(${change.toFixed(1)}%)`) : 'N/A'
                                 return [
-                                  `${value.toFixed(1)}% ${changeStr}`,
+                                  `${fmt(value, 1)} Baht`,
                                   props.payload.branchCode
                                 ]
                               }}
