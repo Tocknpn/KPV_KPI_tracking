@@ -12,3 +12,15 @@ export function getDefaultDateRange(year: number, month: number): { dateFrom: st
 export function dayOfMonthFrom(dateTo: string): number {
   return new Date(dateTo + 'T00:00:00').getDate()
 }
+
+// Laos/company timezone — every absolute timestamp shown in the app (audit log, upload
+// history, sync status) is forced to this zone instead of whatever timezone the device's
+// OS happens to be set to, so two devices in different locations show the same wall-clock
+// time for the same event. No DST in this zone, so this is safe year-round.
+const APP_TIMEZONE = 'Asia/Vientiane'
+
+export function fmtDateTime(iso: string | null, opts?: Intl.DateTimeFormatOptions): string {
+  if (!iso) return '—'
+  try { return new Date(iso).toLocaleString('en-GB', { timeZone: APP_TIMEZONE, ...opts }) }
+  catch { return iso }
+}

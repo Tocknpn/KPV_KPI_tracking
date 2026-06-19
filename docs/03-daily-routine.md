@@ -22,7 +22,12 @@ flowchart TD
    in one file — can upload sales for any branch.
 2. If an Officer made a mistake (wrong file, wrong numbers): go to Upload History, find their
    batch, **delete it**. This re-opens those exact rep/date rows for re-upload.
-3. Periodically check Audit Log for unexpected `sales_upload_deleted` events.
+3. If only one specific day is wrong inside a file that covered many dates, there's no need to
+   delete the whole batch — use the **Delete by Branch + Date** tool in the same "Sales Upload
+   Records — Approval" panel instead. Pick the branch and the exact date (or a date range), it
+   shows a live count of how many entries match, confirm, and just those daily entries are
+   removed regardless of which uploaded file created them.
+4. Periodically check Audit Log for unexpected `sales_upload_deleted` events.
 
 ## HR — once a month (start of the new month, before anyone uploads anything else)
 

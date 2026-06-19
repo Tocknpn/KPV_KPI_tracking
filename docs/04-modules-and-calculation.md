@@ -73,7 +73,9 @@ Supervisor Commission = (sum of their team's Rep Commission) × Supervisor Share
 
 ```
 Headcount       = number of active reps under this supervisor, this month (from Roster)
-Supervisor Target = Headcount × Branch Point Target Per Person (for that branch+type+month)
+Supervisor Target = sum of each rep's own Branch Point Target
+                     (their individual override if one is set, else the
+                      branch+type+month default — same fallback Rep KPI% already used)
 Supervisor Actual  = sum of all those reps' Total Score (from the formula above)
 Supervisor KPI %   = Supervisor Actual ÷ Supervisor Target × 100
 ```

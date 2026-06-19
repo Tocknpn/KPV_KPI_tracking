@@ -1,6 +1,6 @@
 # KPV Sales Performance — System Flowcharts
 
-> Version: **v1.7.41** — schema v20. Update this header + diagrams whenever app changes screens, roles, or data flow.
+> Version: **v1.7.88** — schema v20. Update this header + diagrams whenever app changes screens, roles, or data flow.
 
 Paste each diagram block into [mermaid.live](https://mermaid.live) to render.
 
@@ -17,12 +17,13 @@ flowchart TD
     AUTH -->|No| LOGIN
     AUTH -->|Yes| SYNC["Loading screen:\n'Connecting to Google Sheets…'\npulls latest data from cloud"]
     SYNC -->|success| UPTODATE["'Up to date.'"]
-    SYNC -->|fail / offline / not configured| STALE["'Could not sync — using last saved data.'\n(does not block login)"]
-    UPTODATE --> APP["App — role-scoped dashboard"]
-    STALE --> APP
+    SYNC -->|fail / offline / not configured| STALE["'Could not sync — using last saved data.'\n(does not block login)\nTopBar shows a persistent\n'Sheets not connected' / 'Sync failed' pill"]
+    UPTODATE --> HOME["Routed to the FIRST menu item\nthis user's role actually has\n(not always Dashboard)"]
+    STALE --> HOME
+    HOME --> APP["App — role-scoped screen\ne.g. Accountant Officer -> Daily Entry,\nAccountant Manager -> Sale Report,\nHR Support -> Roster"]
 ```
 
-Every login pulls fresh data first — a device that's been offline, or where someone else made a change on another device, never shows stale numbers without at least trying to catch up.
+Every login pulls fresh data first — a device that's been offline, or where someone else made a change on another device, never shows stale numbers without at least trying to catch up. The post-login landing screen is no longer hardcoded to Dashboard — roles without a Dashboard menu item (Accountant Officer, Accountant Manager, HR Support) used to silently land there anyway even though it wasn't in their sidebar; now they land on the first screen their own menu actually shows. The sync status pill (next to "Updated Xm ago", top-right of every screen) is visible to every role, so a device with no Settings access still gets a visible signal if sync isn't configured or last failed.
 
 ---
 
@@ -82,15 +83,20 @@ flowchart TD
     AM["Accountant Manager"] --> UH["Upload History →\n'Sales Upload Records — Approval'"]
     UH --> REVIEW["Reviews batches by branch/officer/date"]
     REVIEW --> DECIDE{"Bad batch needs\nresubmission?"}
-    DECIDE -->|Yes| DELETE["Delete & Allow Resubmit\n→ deletes only THIS batch's daily_entries rows"]
+    DECIDE -->|Yes, whole batch| DELETE["Delete & Allow Resubmit\n→ deletes only THIS batch's daily_entries rows"]
     DELETE --> AUDIT2["audit_logs: sales_upload_deleted"]
     AUDIT2 --> AO2["Officer re-uploads\ncorrected rows — now no conflict"]
     AO2 --> UP
 
+    DECIDE -->|Yes, just one day\nwithin a multi-date file| BYDATE["Delete by Branch + Date tool\nPick branch + exact date (or range)\nLive preview count shown"]
+    BYDATE --> CONFIRM["Confirm dialog"]
+    CONFIRM --> DELETE2["Deletes only daily_entries\nfor that branch + date(s)\n— independent of upload_log_id"]
+    DELETE2 --> AUDIT2
+
     DECIDE -->|No, batch is fine| DONE["No action needed"]
 ```
 
-Manual Entry was removed app-wide — Daily Entry is XLSX-upload-only now, for every role.
+Manual Entry was removed app-wide — Daily Entry is XLSX-upload-only now, for every role. The **Delete by Branch + Date** tool is separate from the per-batch **Delete & Allow Resubmit** button — it targets specific dates regardless of which uploaded file originally created those rows, useful when one uploaded file spanned many dates and only one day needs correcting.
 
 ---
 
@@ -104,15 +110,21 @@ flowchart TD
     COPY --> UPSERT
     UPSERT --> TABLE[("roster_monthly\nsalesman_id, year_month,\nbranch_id, supervisor_id,\nstaff_type, active")]
 
-    VIEW["Roster screen / report:monthly\nviewing month X"] --> RESOLVE["resolveYm(X) =\nMAX(year_month) <= X"]
+    VIEW["report:monthly / KPI Report\nviewing month X"] --> RESOLVE["resolveYm(X) =\nMAX(year_month) <= X"]
     RESOLVE --> TABLE
     TABLE --> SHOW["Shows that resolved month's\nfull snapshot — read-only,\nnever writes"]
+
+    ROSTERVIEW["Roster screen itself,\nviewing month X"] --> EXACT{"Does month X\nhave its own rows?"}
+    EXACT -->|Yes| TABLE
+    EXACT -->|No| EMPTY["Empty table:\n'No roster uploaded for {Month} {Year}'\n(no carry-forward on this screen)"]
 
     TABLE -.->|push| ROSTERSHEET["Google Sheets: Roster tab\n(one tab, Month column)"]
     ROSTERSHEET -.->|pull, re-hash/parse| TABLE
 ```
 
-A month nobody touched simply reads as whatever the last edited month said — no "confirm this month, nothing changed" step. Deactivating/transferring a rep next month never changes how a past month's report reads (§ Diagram 5).
+A month nobody touched simply reads as whatever the last edited month said for every report/calculation — no "confirm this month, nothing changed" step. **The Roster screen's own display is the one exception**: it shows an exact-month-only view so HR can see at a glance whether a month was actually uploaded, instead of silently inheriting an older month's data. Deactivating/transferring a rep next month never changes how a past month's report reads (§ Diagram 5).
+
+The Roster screen also has a **Sup tab** alongside the existing Reps tab — a read-only list of supervisors for the selected month (Sup Code, Name, Branch, Type, live Rep headcount, Target, Status), so HR can check both reps and supervisors are accounted for without leaving the screen. The Reps tab now also shows each rep's **Target** column (individual override if set, else branch+staff-type default), and the old "Show Inactive" toggle was removed — inactive reps are always hidden now.
 
 ---
 
@@ -150,11 +162,13 @@ flowchart TD
     PJ & PB & PQ --> TOTAL["Total KPI Points"]
     TOTAL --> KPIPCT["KPI % = Total Points ÷ Branch Point Target × 100"]
 
-    KPIPCT --> SUP["Supervisor score = team total × sup_kpi_pct%\n(default 30%, editable)"]
+    KPIPCT --> SUP["Supervisor score = team total × sup_kpi_pct%\n(default 30%, editable)\nTeam target falls back to branch target\nwhen no per-rep override exists\n(fixed: used to always show 0.0%)"]
     TOTAL --> COMM["Commission = jewelry×rate + bar×rate + qty×rate\n(LAK, per staff_type per month)"]
 ```
 
 Editing a rate today never rewrites how a past month already scored — that's why rates/tiers are `year_month`/`effective_from`-`effective_to` scoped instead of one eternal value.
+
+Clicking a rep or supervisor row on KPI Report opens a profile modal with a trend chart — one bar for Total Weight (Jewelry + Bar combined, grams) and one line for Quantity, in the same style regardless of which time view is selected (Month / Week / Day for reps; Month-only for supervisors). Month view previously showed a different chart shape (separate Jewelry/Bar bars plus a KPI% line) — now consistent across all views.
 
 ---
 
@@ -167,5 +181,11 @@ Editing a rate today never rewrites how a past month already scored — that's w
 | v1.7.x | 2026-06-17 | Roster redesigned to single `roster_monthly` table with carry-forward reads, replacing 3-table event-sourced design |
 | v1.7.40 | 2026-06-17 | `report:monthly` fixed to resolve reps/branch/target as-of the viewed month (was reading live roster — drifted when reps transferred/deactivated) |
 | v1.7.41 | 2026-06-17 | Login now pulls from Google Sheets before entering the app, with a loading screen |
+| v1.7.x | 2026-06-18/19 | Roster screen: added Sup tab, Target column on Reps tab, removed Show Inactive toggle, month filter no longer carries data forward (exact-month-only display) |
+| v1.7.x | 2026-06-18/19 | Upload History: added "Delete by Branch + Date" tool with live preview count, separate from per-batch Delete & Allow Resubmit |
+| v1.7.x | 2026-06-18/19 | Audit Log now also records Roster, KPI Settings, Commission config, and Supervisor changes |
+| v1.7.x | 2026-06-18/19 | KPI Report profile modal: trend chart unified to one Total Weight bar + one Quantity line across all time views; fixed Supervisor Team KPI % always showing 0.0% |
+| v1.7.x | 2026-06-18/19 | Post-login landing page now routes to the first menu item the user's role actually has, instead of always defaulting to Dashboard |
+| v1.7.x | 2026-06-18/19 | Sync status pill added next to "Updated Xm ago" on every screen, visible to all roles, for "not configured" / "last sync failed" |
 
 *Diagrams older than v1.7.x described a 4-role system (admin/branch_manager/supervisor/executive) and Manual Entry — fully replaced, kept only in version history above for context.*

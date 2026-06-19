@@ -4,6 +4,7 @@ import { GlassCard } from '../../components/ui/GlassCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
+import { fmtDateTime } from '../../utils/dates'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -22,17 +23,8 @@ interface LogRow {
   status: string; notes: string | null; uploaded_by: string
 }
 
-interface DailyBatch {
-  id: number; branch_id: number; branch_name: string; branch_code: string
-  user_id: number; uploaded_by: string; filename: string; records_count: number
-  date_from: string | null; date_to: string | null; status: string; notes: string | null
-  uploaded_at: string; active_entries: number
-}
-
 function fmtDate(iso: string | null) {
-  if (!iso) return '—'
-  try { return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) }
-  catch { return iso }
+  return fmtDateTime(iso, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
 function progressBar(value: number, total: number, color: string) {
@@ -60,13 +52,11 @@ export default function UploadHistory() {
   const [filterBranch, setFilterBranch] = useState<number | undefined>(undefined)
 
   const isApprover = user?.role === 'accountant_manager' || user?.role === 'admin'
-  const [batches, setBatches] = useState<DailyBatch[]>([])
-  const [batchesLoading, setBatchesLoading] = useState(false)
-  const [clearingId, setClearingId] = useState<number | null>(null)
 
   // ── Delete by branch + exact date range — independent of which upload batch a day's
   // entries came from, so one bad day can be reopened without wiping an entire multi-day
-  // upload file (see "Sales Upload Records" table above for the all-or-nothing batch delete).
+  // upload file. Replaces the old all-or-nothing per-batch delete (the same info now just
+  // lives in the Upload Log table below, no need for a separate duplicate listing).
   const [dateDelBranch, setDateDelBranch] = useState<number | ''>('')
   const [dateDelFrom, setDateDelFrom]     = useState(todayISO())
   const [dateDelTo, setDateDelTo]         = useState(todayISO())
@@ -93,29 +83,9 @@ export default function UploadHistory() {
     setDateDelBusy(true)
     try {
       const res = await window.api.deleteDailyEntriesByDate(token, dateDelBranch, dateDelFrom, dateDelTo)
-      if (res.success) { setDateDelCount(null); loadBatches(); loadHistory() }
+      if (res.success) { setDateDelCount(null); loadHistory() }
       else window.alert(res.error ?? 'Failed to delete entries.')
     } finally { setDateDelBusy(false) }
-  }
-
-  async function loadBatches() {
-    if (!token || !isApprover) return
-    setBatchesLoading(true)
-    try {
-      const data = await window.api.getDailyUploadBatches(token)
-      setBatches(data)
-    } finally { setBatchesLoading(false) }
-  }
-
-  async function clearBatch(batch: DailyBatch) {
-    if (!token) return
-    if (!window.confirm(`Delete "${batch.filename}" (${batch.active_entries} entries)? This re-opens those rep/dates for resubmission and cannot be undone.`)) return
-    setClearingId(batch.id)
-    try {
-      const res = await window.api.deleteDailyUploadBatch(token, batch.id)
-      if (res.success) { loadBatches(); loadHistory() }
-      else window.alert(res.error ?? 'Failed to delete upload batch.')
-    } finally { setClearingId(null) }
   }
 
   async function loadHistory() {
@@ -132,7 +102,6 @@ export default function UploadHistory() {
   }
 
   useEffect(() => { loadHistory() }, [token, selectedYear, selectedMonth, filterType, filterBranch])
-  useEffect(() => { loadBatches() }, [token, isApprover])
 
   const branchesWithEntries = coverage.filter(c => c.days_with_entries > 0).length
   const totalBranches       = coverage.length
@@ -171,90 +140,6 @@ export default function UploadHistory() {
             </p>
           </div>
         </div>
-      )}
-
-      {isApprover && (
-        <GlassCard elevated className="overflow-hidden mb-8">
-          <div className="p-5 border-b border-outline-variant/10">
-            <h3 className="font-headline-md text-headline-md text-on-surface">Sales Upload Records — Approval</h3>
-            <p className="text-body-sm text-on-surface-variant mt-1">
-              Each row is one Accountant Officer upload batch. Delete a batch to clear its entries and let the officer resubmit corrected data.
-            </p>
-          </div>
-
-          {/* Delete a single date instead of a whole batch — a batch can span many days/
-              months at once, so this is the only way to reopen just one bad day. */}
-          <div className="p-5 border-b border-outline-variant/10 bg-surface-container-low/20">
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">Delete by Branch + Date</p>
-            <div className="flex flex-wrap gap-3 items-end">
-              <select value={dateDelBranch} onChange={e => setDateDelBranch(e.target.value ? Number(e.target.value) : '')}
-                className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none">
-                <option value="">— Select Branch —</option>
-                {branches.map(b => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
-              </select>
-              <div>
-                <label className="text-[10px] text-on-surface-variant uppercase block mb-1">From</label>
-                <input type="date" value={dateDelFrom} onChange={e => setDateDelFrom(e.target.value)}
-                  className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none" />
-              </div>
-              <div>
-                <label className="text-[10px] text-on-surface-variant uppercase block mb-1">To</label>
-                <input type="date" value={dateDelTo} onChange={e => setDateDelTo(e.target.value)}
-                  className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none" />
-              </div>
-              <button onClick={deleteByDate} disabled={!dateDelBranch || !dateDelCount || dateDelBusy || dateDelChecking}
-                className="px-4 py-2 rounded-lg bg-error text-white text-[12px] font-bold hover:opacity-90 disabled:opacity-40 transition-all">
-                {dateDelBusy ? 'Deleting…' : dateDelChecking ? 'Checking…'
-                  : dateDelCount === null ? 'Delete & Allow Resubmit'
-                  : dateDelCount === 0 ? 'No Entries Found' : `Delete ${dateDelCount} Entries`}
-              </button>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-surface-container-low/50">
-                  {['Uploaded','Branch','Filename','Period','Entries','Uploaded By','Status',''].map(h => (
-                    <th key={h} className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant/10">
-                {batchesLoading ? (
-                  <tr><td colSpan={8} className="py-10 text-center text-on-surface-variant">
-                    <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>Loading...
-                  </td></tr>
-                ) : batches.length === 0 ? (
-                  <tr><td colSpan={8} className="py-10 text-center text-on-surface-variant text-body-sm">No daily upload batches yet.</td></tr>
-                ) : batches.map(b => (
-                  <tr key={b.id} className="hover:bg-surface-container/20 transition-colors">
-                    <td className="px-5 py-3 text-body-sm font-tabular-nums">{fmtDate(b.uploaded_at)}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center">{b.branch_code}</span>
-                        <span className="text-body-sm">{b.branch_name}</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-body-sm text-on-surface-variant max-w-[180px] truncate" title={b.filename}>{b.filename || '—'}</td>
-                    <td className="px-5 py-3 text-body-sm text-on-surface-variant">
-                      {b.date_from ? (b.date_from === b.date_to ? b.date_from : `${b.date_from} → ${b.date_to}`) : '—'}
-                    </td>
-                    <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{b.active_entries}</td>
-                    <td className="px-5 py-3 text-body-sm">{b.uploaded_by}</td>
-                    <td className="px-5 py-3"><StatusBadge label={b.status === 'success' ? 'OK' : 'Error'} variant={b.status === 'success' ? 'success' : 'error'} /></td>
-                    <td className="px-5 py-3 text-right">
-                      <button onClick={() => clearBatch(b)} disabled={clearingId === b.id || b.active_entries === 0}
-                        className="px-3 py-1.5 rounded-lg bg-error text-white text-[11px] font-bold hover:opacity-90 disabled:opacity-40 transition-all">
-                        {clearingId === b.id ? 'Clearing…' : 'Delete & Allow Resubmit'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </GlassCard>
       )}
 
       <GlassCard elevated className="overflow-hidden mb-8">
@@ -301,6 +186,43 @@ export default function UploadHistory() {
           </table>
         </div>
       </GlassCard>
+
+      {isApprover && (
+        <GlassCard elevated className="overflow-hidden mb-8">
+          <div className="p-5 border-b border-outline-variant/10">
+            <h3 className="font-headline-md text-headline-md text-on-surface">Sales Upload Records — Approval</h3>
+            <p className="text-body-sm text-on-surface-variant mt-1">
+              Pick a branch + date (or date range) to clear and reopen for resubmission — see Upload Log below for the full history.
+            </p>
+          </div>
+
+          <div className="p-5">
+            <div className="flex flex-wrap gap-3 items-end">
+              <select value={dateDelBranch} onChange={e => setDateDelBranch(e.target.value ? Number(e.target.value) : '')}
+                className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none">
+                <option value="">— Select Branch —</option>
+                {branches.map(b => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
+              </select>
+              <div>
+                <label className="text-[10px] text-on-surface-variant uppercase block mb-1">From</label>
+                <input type="date" value={dateDelFrom} onChange={e => setDateDelFrom(e.target.value)}
+                  className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none" />
+              </div>
+              <div>
+                <label className="text-[10px] text-on-surface-variant uppercase block mb-1">To</label>
+                <input type="date" value={dateDelTo} onChange={e => setDateDelTo(e.target.value)}
+                  className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none" />
+              </div>
+              <button onClick={deleteByDate} disabled={!dateDelBranch || !dateDelCount || dateDelBusy || dateDelChecking}
+                className="px-4 py-2 rounded-lg bg-error text-white text-[12px] font-bold hover:opacity-90 disabled:opacity-40 transition-all">
+                {dateDelBusy ? 'Deleting…' : dateDelChecking ? 'Checking…'
+                  : dateDelCount === null ? 'Delete & Allow Resubmit'
+                  : dateDelCount === 0 ? 'No Entries Found' : `Delete ${dateDelCount} Entries`}
+              </button>
+            </div>
+          </div>
+        </GlassCard>
+      )}
 
       <GlassCard elevated className="overflow-hidden">
         <div className="p-5 border-b border-outline-variant/10 flex justify-between items-center flex-wrap gap-3">

@@ -219,7 +219,7 @@ KPV sale performance tracking/
 | `users` | Login accounts. `password_hash` (bcrypt, used for login) + `password_plain` (plaintext, see §17) |
 | `sessions` | Auth tokens, 8-hour expiry |
 | `user_permissions` | Per-user menu overrides on top of `ROLE_DEFAULTS` (`user_id, menu_key, enabled`) |
-| `audit_logs` | login/logout/user changes/sales-upload-submit/sales-upload-delete events |
+| `audit_logs` | login/logout/user changes/sales-upload-submit/sales-upload-delete events, plus roster changes, KPI Settings changes, commission config changes, and supervisor changes (see §13's Audit Log row) |
 | `salesmen` | Sales reps. `branch_id/staff_type/supervisor_id/active` here = the **live/current** state (used by daily-upload matching, team listings). Has `rep_code` (unique) |
 | `supervisors` | Team supervisor records (separate from `users` login accounts) |
 | `roster_monthly` | **The roster source of truth** — one row per rep per month it changed. See [§10](#10-roster--how-it-actually-works) |
@@ -372,6 +372,8 @@ sup_score         = team_total_score × (sup_kpi_pct / 100)   — default 30%, e
 sup_kpi_pct_ach   = sup_score / branch_target × 100
 ```
 
+`branch_target` here is per-rep target summed across the team, same fallback chain as Rep KPI%: each rep's individual `staff_monthly_targets` override if set, else the branch+staff-type default. (Fixed a bug where Supervisor "Team KPI %" always showed 0.0% because this fallback wasn't applied — it now matches how Rep KPI% already worked.)
+
 ### Est. Month End
 
 ```
@@ -384,15 +386,17 @@ eomKpiPct = (current_kpi_pct / day_of_month) × days_in_month
 
 **One table, one Sheet tab.** `roster_monthly` has one row per rep per month it actually changed — columns: `salesman_id, year_month, branch_id, supervisor_id, staff_type, active`.
 
-### Reads carry forward automatically
+### Reads carry forward automatically — except the Roster screen's own display
 
-"Roster as of month X" resolves to the **nearest month ≤ X that has any rows** — a month nobody touched simply reads as whatever the last edited month said. No "confirm this month, nothing changed" step exists or is needed.
+"Roster as of month X" resolves to the **nearest month ≤ X that has any rows** — a month nobody touched simply reads as whatever the last edited month said. No "confirm this month, nothing changed" step exists or is needed for KPI/report calculations.
 
 ```
 resolveYm(year, month) = SELECT MAX(year_month) FROM roster_monthly WHERE year_month <= target
 ```
 
 This is a pure read — it never writes, so viewing a report never triggers a disk persist.
+
+**The Roster screen itself is the one exception.** Selecting a month with no rows shows an empty table ("No roster uploaded for {Month} {Year}") instead of silently falling back to the nearest earlier month's data — this forces HR to explicitly touch every month even if nothing changed, so what's on screen always reflects what was actually uploaded/edited for that exact month. The carry-forward safety net described above still applies everywhere else (KPI Report, Sale Report, branch target math) — only the Roster screen's own display opted out of it.
 
 ### Writes materialize the target month first
 
@@ -406,6 +410,14 @@ Editing/uploading for a month with no existing rows first **copies the nearest e
 ### Editing a specific month
 
 The Roster screen has a month/year picker; `roster:saveRep`/`deactivate`/`reactivate` now accept an explicit `year`/`month` and target that month specifically (previously a real bug existed where edits always silently wrote to *today's* month regardless of which month was being viewed — fixed as part of the v19 redesign).
+
+### Two tabs: Reps and Sup
+
+The Roster screen has a **Reps** tab (existing rep CRUD, unchanged) and a **Sup** tab (read-only list of supervisors for the selected month — Sup Code, Name, Branch, Type, live Rep headcount, Target, Status). The Sup tab lets HR check both reps and supervisors are accounted for in one place, without cross-referencing Team Performance.
+
+The Reps tab also shows a **Target** column — each rep's monthly KPI point target: their individual override from `staff_monthly_targets` if one is set, otherwise the branch+staff-type default.
+
+The old **Show Inactive** toggle was removed — inactive reps are now always hidden from the Reps tab list (a footer count still shows how many are hidden).
 
 ### Uploading
 
@@ -432,6 +444,8 @@ Accountant Officer uploads XLSX (own branch only)
 
 To fix a mistake, an **Accountant Manager** (or admin) goes to Upload History → "Sales Upload Records — Approval" panel, finds the bad batch, and clicks **Delete & Allow Resubmit** — this deletes every `daily_entries` row tagged with that `upload_log_id` (and only those), logs a `sales_upload_deleted` audit entry, then the Accountant Officer can re-upload corrected data for those exact rep/date slots.
 
+The same panel also has a **Delete by Branch + Date** tool, separate from the per-batch button above. Instead of targeting a whole upload batch, it lets an Accountant Manager pick one branch plus an exact date (or date range) and delete just the `daily_entries` rows for those dates — independent of which uploaded file originally created them. Useful when one uploaded file covered many dates/months and only a single day needs correcting. It shows a live preview count of how many entries match before deleting, gated behind a confirm dialog.
+
 Manual Entry (the old inline-editable table) was **removed entirely** as part of this — Daily Entry is XLSX-upload-only now, for every role.
 
 ---
@@ -455,6 +469,10 @@ Manual Entry (the old inline-editable table) was **removed entirely** as part of
 - `sheets:forceSyncAll` — full reset: clears `Entries` tab, marks every entry unsynced, re-pushes everything (entries + all config tabs). Use this after a schema/format change to wipe any stale-format rows out of the Sheet.
 - `sheets:pullFromCloud` (`pullAllFromCloud` internally) — pulls every tab back into the local DB. Each tab has **exactly one** canonical parser function (e.g. `pullCommissionConfigsFromSheet`, `pullRosterFromSheet`) shared between the dedicated pull buttons and the full pull — there used to be duplicate, subtly-different parsers for the same tab in two files, which silently corrupted data by reading columns in the wrong order. If you add a new push format, **grep for any other reader of that tab before assuming there's only one.**
 
+### Sync status indicator (every screen, every role)
+
+`TopBar` shows a small status pill next to the existing "Updated Xm ago" freshness timestamp: a red "Sheets not connected" pill (if this device has no Sheets config at all) or a red "Sync failed" pill (if the most recent automatic sync attempt failed). Fed by the startup sync result via the app store. This is visible to **every role**, not just Admin/HR — a device with no Settings access (e.g. Accountant Officer, Sales Supervisor) previously had no way to know data might be stale; now it gets a visible signal instead of silently-empty/stale data.
+
 ### CRITICAL Security Rule
 
 **The service account JSON file must never be committed to git.** `credentials/` is gitignored — never remove that entry. If it's ever accidentally committed: revoke the key in Google Cloud Console immediately, generate a new one, and scrub git history.
@@ -465,18 +483,18 @@ Manual Entry (the old inline-editable table) was **removed entirely** as part of
 
 | Route | Screen | Purpose |
 |-------|--------|---------|
-| `/login` | Login | Username + password |
+| `/login` | Login | Username + password. After login, routes to the **first menu item the user's own role actually has** (`getHomeRoute` walks `NAV_ITEMS` in order against the user's permissions) — not always Dashboard. Accountant Officer lands on Daily Entry, Accountant Manager lands on Sale Report, HR Support lands on Roster, since none of them have a Dashboard menu item. |
 | `/dashboard` | Dashboard | MTD KPI gauge, top performers, quick stats |
 | `/entry` | DailyEntry | XLSX upload only (Manual Entry removed) — see §11 for the approval flow |
-| `/reports` | Reports | Monthly performance table per rep; tabs for overview/supervisor/performance/commission/customer-type; rep/sup row → profile modal with trend chart |
+| `/reports` | Reports | Monthly performance table per rep; tabs for overview/supervisor/performance/commission/customer-type; rep/sup row → profile modal with trend chart (one Total Weight bar in grams, Jewelry+Bar combined, plus one Quantity line — same style across Month/Week/Day for reps and Month-only for supervisors) |
 | `/sale-report` | SaleReport | Period comparisons, by-branch/by-type breakdowns, weekly/daily trend charts, weekday %-contribution heatmap |
 | `/executive` | Executive | Company-wide KPI, branch comparison (legacy — most of this overlaps Reports now) |
 | `/kpi-settings` | KpiSettings | Per-branch Jewelry/Bar rates, Qty tiers, branch point targets, commission rates, KPI formula constants, score simulator |
 | `/upload-history` | UploadHistory | Branch coverage matrix, upload log, **Sales Upload Records — Approval** panel (accountant_manager/admin only, §11) |
-| `/roster` | Roster | Month-aware roster CRUD + XLSX upload — see §10 |
+| `/roster` | Roster | Reps tab (month-aware roster CRUD + XLSX upload, now shows a Target column) + Sup tab (read-only supervisor list for the month) — see §10 |
 | `/settings` | Settings | Google Sheets config + Force Full Sync, email config |
 | `/users` | UserManagement | User CRUD + per-user permission overrides |
-| `/audit-log` | AuditLog | Login/logout/user-change/sales-upload event log |
+| `/audit-log` | AuditLog | Event log — login/logout/user changes/sales-upload, plus roster, KPI Settings, commission config, and supervisor changes; filterable by event type |
 | `/analytics` | — | **Removed** — redirects to `/reports`. Screen file (`src/screens/Analytics/`) still exists but is unreachable dead code. |
 
 Menu visibility per role is `ROLE_DEFAULTS` (§8) — not a hardcoded per-route role list.
@@ -631,4 +649,4 @@ Add a `push*`/`pull*From Sheet` pair in `sheets.ts`, both reading/writing the **
 ---
 
 *SalesTrack Pro — KPV Gold & Jewelry Sales Performance System*
-*GuideBook last updated: 2026-06-17 · Schema v20 · App v1.7.39*
+*GuideBook last updated: 2026-06-19 · Schema v20 · App v1.7.88*

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
+import { fmtDateTime } from '../../utils/dates'
 
 const ZOOM_LEVELS = [
   { label: '100%', value: 1.0 },
@@ -102,7 +103,7 @@ export function TopBar({ title }: Props) {
         {lastSyncedAt && (
           <span
             className="text-[11px] text-on-surface-variant flex items-center gap-1"
-            title={`Last synced: ${new Date(lastSyncedAt).toLocaleString()}`}
+            title={`Last synced: ${fmtDateTime(lastSyncedAt)}`}
           >
             <span className="material-symbols-outlined text-[14px]">cloud_done</span>
             Updated {relativeTime(lastSyncedAt)}

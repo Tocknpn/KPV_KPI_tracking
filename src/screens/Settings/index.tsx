@@ -4,6 +4,7 @@ import { GlassCard } from '../../components/ui/GlassCard'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import { generateSampleWorkbook, downloadXLSX } from '../../utils/xlsx'
+import { fmtDateTime } from '../../utils/dates'
 import { ROLE_DEFAULTS } from '../../types'
 import type { SyncLog } from '../../types'
 import UserManagementContent from '../UserManagement'
@@ -160,7 +161,7 @@ export default function Settings() {
                 {lastSync && (
                   <div className="bg-surface-container rounded-lg p-3 text-body-sm">
                     <p className="text-on-surface-variant text-xs mb-1">Last successful sync</p>
-                    <p className="font-tabular-nums text-on-surface">{new Date(lastSync).toLocaleString()}</p>
+                    <p className="font-tabular-nums text-on-surface">{fmtDateTime(lastSync)}</p>
                   </div>
                 )}
 
@@ -187,7 +188,7 @@ export default function Settings() {
                     </span>
                     {lastSync && !isSyncing && (
                       <span className="text-[9px] opacity-70">
-                        {new Date(lastSync).toLocaleString()}
+                        {fmtDateTime(lastSync)}
                       </span>
                     )}
                   </button>
@@ -202,7 +203,7 @@ export default function Settings() {
                     </span>
                     {lastSync && !isSyncing && (
                       <span className="text-[9px] opacity-70">
-                        {new Date(lastSync).toLocaleString()}
+                        {fmtDateTime(lastSync)}
                       </span>
                     )}
                   </button>
@@ -239,7 +240,7 @@ export default function Settings() {
                     </div>
                     <div className="text-right">
                       <p className="text-[10px] text-on-surface tabular-nums">{log.records_count} records</p>
-                      <p className="text-[9px] text-on-surface-variant">{new Date(log.synced_at).toLocaleString()}</p>
+                      <p className="text-[9px] text-on-surface-variant">{fmtDateTime(log.synced_at)}</p>
                     </div>
                   </div>
                 ))}

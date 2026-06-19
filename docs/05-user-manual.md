@@ -6,6 +6,15 @@ Enter username + password, click Sign In. The app pulls the latest data from Goo
 automatically before letting you in — if there's no internet, it still lets you in using
 whatever was last saved on this device, with a small notice.
 
+After signing in, you land on the first menu item your own role actually has — not always
+Dashboard. For example, Accountant Officer lands on Daily Entry, Accountant Manager lands on
+Sale Report, and HR Support lands on Roster, since none of those roles have a Dashboard menu
+item.
+
+A small status indicator next to the "Updated Xm ago" timestamp (top-right of every screen)
+warns you if Google Sheets sync isn't set up on this device, or if the most recent automatic
+sync attempt failed — this shows for every role, even ones without access to Settings.
+
 ### Switching/connecting to a different Google Sheet (Test vs Production)
 
 Small icon, top-right corner of the Login screen, **always visible**. Click it, enter the
@@ -29,7 +38,22 @@ projection based on how much of the month has passed so far.
 4. If a row errors (wrong branch, duplicate date), it's listed — fix and re-upload just
    those rows.
 
+### Fixing a bad upload (Accountant Manager / Admin) — Upload History
+
+In Upload History's "Sales Upload Records — Approval" panel, you have two ways to fix a
+mistake:
+- **Delete & Allow Resubmit** (per batch) — deletes every entry from that one uploaded file,
+  letting the Officer re-upload corrected data for those exact rep/date slots.
+- **Delete by Branch + Date** — for when only one day inside a larger file is wrong. Pick the
+  branch and an exact date (or a date range), see a live preview count of matching entries,
+  confirm, and only those daily entries are deleted — regardless of which file originally
+  uploaded them.
+
 ## Roster (HR / HR Support / Top Manager)
+
+Two tabs: **Reps** and **Sup**.
+
+### Reps tab
 
 - **Add Rep** — manually add one rep.
 - **Upload Roster** — bulk upload a `.xlsx` with many reps at once. Every row needs an
@@ -37,8 +61,22 @@ projection based on how much of the month has passed so far.
   month picker.
 - **Template** button gives you a blank/pre-filled file in the exact format the upload
   expects, including the optional `Sup_Code` column (safer than matching by name).
-- Switching the month dropdown at the top shows the roster *as it was* that month, not just
-  today's.
+- A **Target** column shows each rep's monthly KPI point target — their individual override
+  if one's been set, otherwise the branch+staff-type default.
+- Inactive reps are always hidden from the list (a footer count shows how many are hidden) —
+  there's no "Show Inactive" toggle anymore.
+- Switching the month dropdown at the top shows the roster *exactly as uploaded/edited for
+  that month* — if nothing was ever uploaded for the selected month, the table shows empty
+  with "No roster uploaded for {Month} {Year}" instead of quietly showing an older month's
+  data. You must explicitly touch every month, even if it's unchanged from the month before.
+  (This only affects what this screen displays — KPI Report and other calculations still use
+  the nearest earlier month automatically.)
+
+### Sup tab
+
+Read-only list of supervisors for the selected month — Sup Code, Name, Branch, Type, live Rep
+headcount, Target, and Status. Use this to confirm both reps and supervisors are accounted for
+without leaving the Roster screen.
 
 ## KPI Settings (Admin sees Defaults / HR sees Monthly — different views, same screen)
 
@@ -64,3 +102,8 @@ projection based on how much of the month has passed so far.
 Pick a month and (if you're allowed to see more than one branch) a branch filter. Switch
 between B2C / B2B / All using the chips near the top. Export button gives you Excel or a PDF
 snapshot of whatever table is currently on screen.
+
+Clicking a rep or supervisor row opens a profile modal with a trend chart — one bar for Total
+Weight (Jewelry + Bar combined, in grams) and one line for Quantity. This is the same chart
+style no matter which time view you're on (Month / Week / Day for reps; Month-only for
+supervisors).

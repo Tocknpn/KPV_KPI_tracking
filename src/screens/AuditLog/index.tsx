@@ -3,6 +3,7 @@ import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useAuthStore } from '../../store/auth.store'
+import { fmtDateTime } from '../../utils/dates'
 
 interface AuditRow {
   id: number; occurred_at: string; username: string; role: string
@@ -51,8 +52,7 @@ const EVENT_COLORS: Record<string, 'success' | 'error' | 'info' | 'warning' | 'n
 const PAGE_SIZE = 50
 
 function fmtTs(iso: string) {
-  try { return new Date(iso).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' }) }
-  catch { return iso }
+  return fmtDateTime(iso, { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' })
 }
 
 export default function AuditLog() {
