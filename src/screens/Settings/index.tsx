@@ -13,7 +13,7 @@ type Tab = 'connection' | 'users'
 
 export default function Settings() {
   const { token, user, permissions } = useAuthStore()
-  const { setLastSyncedAt } = useAppStore()
+  const { setLastSyncedAt, unsyncedCount } = useAppStore()
 
   const role = user?.role ?? 'sales_sup'
   const effectivePermissions = permissions.length > 0 ? permissions : ROLE_DEFAULTS[role] ?? []
@@ -83,6 +83,11 @@ export default function Settings() {
 
   async function pullFromCloud() {
     if (!token) return
+    if (unsyncedCount > 0) {
+      if (!window.confirm(`You have ${unsyncedCount} unsynced local daily entries. We recommend pushing your changes first using "Push to Sheets" to avoid any data conflicts. Do you want to proceed with pulling anyway?`)) {
+        return
+      }
+    }
     setIsSyncing(true)
     const res = await window.api.pullFromCloud(token)
     if (res.success) showToast(res.message ?? `Pulled ${res.count} entries from Sheets.`)

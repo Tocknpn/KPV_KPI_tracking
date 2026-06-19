@@ -165,7 +165,7 @@ const PERF_COLS: Array<{ label: string; key: string }> = [
 // ── Dashboard ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { token, user, branches } = useAuthStore()
-  const { selectedBranchIds, setSelectedBranchIds } = useAppStore()
+  const { selectedBranchIds, setSelectedBranchIds, lastSyncedAt } = useAppStore()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [sortCol, setSortCol] = useState<string>('kpi_total_score')
@@ -206,7 +206,7 @@ export default function Dashboard() {
       .then(setStats)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [token, JSON.stringify(effectiveBranchIds), year, month, dateFrom, dateTo])
+  }, [token, JSON.stringify(effectiveBranchIds), year, month, dateFrom, dateTo, lastSyncedAt])
 
   const s = stats
 

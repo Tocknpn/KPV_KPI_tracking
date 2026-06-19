@@ -35,6 +35,22 @@ export function AppShell({ children, title, allowedRoles }: Props) {
     window.api.getMyPermissions(token)
       .then((p: string[]) => setPermissions(p))
       .catch(() => clearSession())
+
+    // Recommendation 3: Periodic background pull every 30 minutes to update multiple branches
+    const intervalId = setInterval(async () => {
+      try {
+        console.log('[Background Sync] Running periodic pull from Google Sheets...')
+        const res = await window.api.pullFromCloud(token)
+        if (res.success) {
+          window.api.getUnsyncedCount(token).then(setUnsyncedCount).catch(console.error)
+          useAppStore.getState().setLastSyncedAt(new Date().toISOString())
+        }
+      } catch (err) {
+        console.error('[Background Sync] Periodic pull failed:', err)
+      }
+    }, 30 * 60 * 1000)
+
+    return () => clearInterval(intervalId)
   }, [token])
 
   return (

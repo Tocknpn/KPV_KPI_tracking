@@ -43,7 +43,7 @@ function todayISO() { return new Date().toISOString().slice(0, 10) }
 
 export default function UploadHistory() {
   const { token, user, branches } = useAuthStore()
-  const { selectedYear, selectedMonth, setSelectedPeriod } = useAppStore()
+  const { selectedYear, selectedMonth, setSelectedPeriod, lastSyncedAt } = useAppStore()
 
   const [coverage, setCoverage] = useState<CoverageRow[]>([])
   const [logs, setLogs]         = useState<LogRow[]>([])
@@ -101,7 +101,7 @@ export default function UploadHistory() {
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { loadHistory() }, [token, selectedYear, selectedMonth, filterType, filterBranch])
+  useEffect(() => { loadHistory() }, [token, selectedYear, selectedMonth, filterType, filterBranch, lastSyncedAt])
 
   const branchesWithEntries = coverage.filter(c => c.days_with_entries > 0).length
   const totalBranches       = coverage.length

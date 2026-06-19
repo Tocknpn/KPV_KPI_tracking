@@ -226,7 +226,7 @@ function TypeMultiChips({ value, onChange }: { value: string[]; onChange: (v: st
 // ── Main screen ───────────────────────────────────────────────────────────
 export default function Reports() {
   const { token, user, branches } = useAuthStore()
-  const { selectedBranchIds, setSelectedBranchIds } = useAppStore()
+  const { selectedBranchIds, setSelectedBranchIds, lastSyncedAt } = useAppStore()
 
   // ── Shared date state ──────────────────────────────────────────────────
   const now = new Date()
@@ -377,7 +377,7 @@ export default function Reports() {
       .then(data => { setTrackingReps(data.reps); setTrackingDaysInMonth(data.daysInMonth); setTrackingPublished(data.published ?? true) })
       .catch(console.error)
       .finally(() => setTrackingLoading(false))
-  }, [token, JSON.stringify(effectiveBranchIds), year, month, dateFrom, dateTo])
+  }, [token, JSON.stringify(effectiveBranchIds), year, month, dateFrom, dateTo, lastSyncedAt])
 
   // ── Sort handlers ──────────────────────────────────────────────────────
   function handleSort(col: string) {
