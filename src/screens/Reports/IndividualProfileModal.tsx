@@ -80,7 +80,7 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
 
   const monthChartData = useMemo(() => (data?.history ?? []).map(h => ({
     label: `${MONTHS[h.month - 1]} ${String(h.year).slice(2)}`,
-    jewelry: h.actual_jewelry, bar: h.actual_bar, qty: h.actual_qty, kpi: h.kpi_pct,
+    weight: h.actual_jewelry + h.actual_bar, qty: h.actual_qty,
   })), [data])
 
   const drillChartData = useMemo(() => {
@@ -103,12 +103,11 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
   }, [granularity, drillEntries])
 
   const chartData  = granularity === 'month' ? monthChartData : drillChartData
-  const showKpiLine = granularity === 'month'
 
   const drillMonthLabel = drillYM ? `${MONTHS[parseInt(drillYM.slice(4)) - 1]} ${drillYM.slice(0, 4)}` : ''
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto animate-slide-in">
         {/* Header */}
         <div className="sticky top-0 bg-white/90 backdrop-blur-xl border-b border-white/60 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
@@ -169,7 +168,7 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
             <div className="bg-surface-container/30 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                 <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
-                  {granularity === 'month' ? 'Volume & KPI% Trend — Last 6 Months' : `${granularity === 'week' ? 'Weekly' : 'Daily'} Breakdown — ${drillMonthLabel}`}
+                  {granularity === 'month' ? 'Weight & Qty Trend — Last 6 Months' : `${granularity === 'week' ? 'Weekly' : 'Daily'} Breakdown — ${drillMonthLabel}`}
                 </p>
                 <div className="flex items-center gap-2">
                   {/* Granularity toggle */}
@@ -208,22 +207,11 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#666' }} interval={granularity === 'day' ? 'preserveStartEnd' : 0} />
                     <YAxis yAxisId="vol" tick={{ fontSize: 10, fill: '#666' }} width={52} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
-                    {showKpiLine && <YAxis yAxisId="pct" orientation="right" tick={{ fontSize: 10, fill: '#666' }} width={46} tickFormatter={v => `${v.toFixed(0)}%`} />}
-                    {!showKpiLine && <YAxis yAxisId="qty" orientation="right" tick={{ fontSize: 10, fill: '#666' }} width={40} />}
+                    <YAxis yAxisId="qty" orientation="right" tick={{ fontSize: 10, fill: '#666' }} width={40} />
                     <Tooltip content={<ChartTooltip />} />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
-                    {showKpiLine ? (
-                      <>
-                        <Bar yAxisId="vol" dataKey="jewelry" name="Jewelry (g)" fill="#004f96" fillOpacity={0.7} radius={[3,3,0,0]} />
-                        <Bar yAxisId="vol" dataKey="bar"     name="Bar (g)"     fill="#735c00" fillOpacity={0.7} radius={[3,3,0,0]} />
-                        <Line yAxisId="pct" type="monotone" dataKey="kpi" name="KPI %" stroke="#17575c" strokeWidth={2.5} dot={{ r: 4, fill: '#17575c' }} />
-                      </>
-                    ) : (
-                      <>
-                        <Bar yAxisId="vol" dataKey="weight" name="Total Weight (g)" fill="#004f96" fillOpacity={0.75} radius={[3,3,0,0]} />
-                        <Line yAxisId="qty" type="monotone" dataKey="qty" name="Qty" stroke="#9c6e1b" strokeWidth={2.5} dot={{ r: 3.5, fill: '#9c6e1b' }} strokeDasharray="4 2" />
-                      </>
-                    )}
+                    <Bar yAxisId="vol" dataKey="weight" name="Total Weight (g)" fill="#004f96" fillOpacity={0.75} radius={[3,3,0,0]} />
+                    <Line yAxisId="qty" type="monotone" dataKey="qty" name="Qty" stroke="#9c6e1b" strokeWidth={2.5} dot={{ r: 3.5, fill: '#9c6e1b' }} strokeDasharray="4 2" />
                   </ComposedChart>
                 </ResponsiveContainer>
               )}
@@ -296,11 +284,11 @@ export function SupProfileModal({ id, token, onClose }: SupModalProps) {
   const prev    = data?.history[data.history.length - 2]
   const allMonths = (data?.history ?? []).map(h => ({
     label: `${MONTHS[h.month - 1]} ${String(h.year).slice(2)}`,
-    jewelry: h.actual_jewelry, bar: h.actual_bar, qty: h.actual_qty, kpi: h.team_kpi_pct,
+    weight: h.actual_jewelry + h.actual_bar, qty: h.actual_qty,
   }))
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto animate-slide-in">
         <div className="sticky top-0 bg-white/90 backdrop-blur-xl border-b border-white/60 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
           <div className="flex items-center gap-3">
@@ -357,7 +345,7 @@ export function SupProfileModal({ id, token, onClose }: SupModalProps) {
 
             <div className="bg-surface-container/30 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Team Volume & KPI% Trend — Last 6 Months</p>
+                <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Team Weight & Qty Trend — Last 6 Months</p>
                 <div className="flex bg-white/60 rounded-lg p-0.5 border border-outline-variant/20">
                   {(['month'] as Granularity[]).map(g => (
                     <button key={g} onClick={() => setGranularity(g)}
@@ -372,12 +360,11 @@ export function SupProfileModal({ id, token, onClose }: SupModalProps) {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
                   <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#666' }} />
                   <YAxis yAxisId="vol" tick={{ fontSize: 10, fill: '#666' }} width={56} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
-                  <YAxis yAxisId="pct" orientation="right" tick={{ fontSize: 10, fill: '#666' }} width={50} tickFormatter={v => `${v.toFixed(0)}%`} />
+                  <YAxis yAxisId="qty" orientation="right" tick={{ fontSize: 10, fill: '#666' }} width={50} />
                   <Tooltip content={<ChartTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar yAxisId="vol" dataKey="jewelry" name="Jewelry (g)" fill="#004f96" fillOpacity={0.7} radius={[3,3,0,0]} />
-                  <Bar yAxisId="vol" dataKey="bar"     name="Bar (g)"     fill="#735c00" fillOpacity={0.7} radius={[3,3,0,0]} />
-                  <Line yAxisId="pct" type="monotone" dataKey="kpi" name="Team KPI %" stroke="#17575c" strokeWidth={2.5} dot={{ r: 4, fill: '#17575c' }} />
+                  <Bar yAxisId="vol" dataKey="weight" name="Total Weight (g)" fill="#004f96" fillOpacity={0.75} radius={[3,3,0,0]} />
+                  <Line yAxisId="qty" type="monotone" dataKey="qty" name="Qty" stroke="#9c6e1b" strokeWidth={2.5} dot={{ r: 3.5, fill: '#9c6e1b' }} strokeDasharray="4 2" />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>

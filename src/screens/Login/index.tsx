@@ -2,10 +2,12 @@ import { useState, useEffect, FormEvent } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
+import { getHomeRoute } from '../../config/navigation'
+import { ROLE_DEFAULTS } from '../../types'
 
 export default function Login() {
   const navigate = useNavigate()
-  const { token, setSession } = useAuthStore()
+  const { token, permissions, user, setSession } = useAuthStore()
   const { setLastSyncedAt } = useAppStore()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -74,7 +76,7 @@ export default function Login() {
     }
   }
 
-  if (token) return <Navigate to="/dashboard" replace />
+  if (token) return <Navigate to={getHomeRoute(permissions.length > 0 ? permissions : (ROLE_DEFAULTS[user?.role ?? 'sales_sup'] ?? []))} replace />
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -103,8 +105,11 @@ export default function Login() {
       await new Promise(r => setTimeout(r, 500)) // let the final status actually be readable
 
       setSession(result.token, result.user, result.permissions ?? [])
-      const landingPage = result.user.role === 'hr' ? '/kpi-settings' : '/dashboard'
-      navigate(landingPage)
+      // Land on the first menu item this role actually has, instead of a hardcoded route —
+      // accountant_officer/accountant_manager/hr_support don't have 'dashboard' at all, so
+      // hardcoding it there silently rendered a page absent from their own sidebar.
+      const perms = result.permissions?.length ? result.permissions : (ROLE_DEFAULTS[result.user.role] ?? [])
+      navigate(getHomeRoute(perms))
     } catch {
       setError('Connection error. Please restart the app.')
       setLoading(false)

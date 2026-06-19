@@ -552,7 +552,10 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
         const commCfg = commCfgByKey.get(`${g.staff_type}-${m.ym}`)
         if (commCfg) commission_lak += g.j * commCfg.jewelry_rate_lak + g.b * commCfg.bar_rate_lak + g.q * commCfg.qty_rate_lak
       }
-      const pt = targetByYm.get(m.ym) ?? 0
+      // Individual override if HR set one, else the branch+staffType target — same fallback
+      // chain used everywhere else (Roster screen, report:monthly). Without this, a rep with
+      // no per-rep override (the common case) always shows kpi_pct=0 despite a real score.
+      const pt = targetByYm.get(m.ym) ?? getBranchPointTarget(db, rep.branch_id, m.year, m.month, rep.staff_type)
       const total = js + bs + qs
       return { year: m.year, month: m.month, year_month: m.ym, actual_jewelry: j, actual_bar: bar, actual_qty: qty, kpi_score_jewelry: js, kpi_score_bar: bs, kpi_score_qty: qs, kpi_total_score: total, kpi_pct: pt > 0 ? (total / pt) * 100 : 0, point_target: pt, days_with_entries: daysByYm.get(m.ym) ?? 0, commission_lak }
     })
@@ -628,7 +631,11 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
 
       let teamScore = 0; let teamTarget = 0; let teamJ = 0; let teamBar = 0; let teamQty = 0
       for (const repId of repIds) {
-        teamTarget += targetByYmThenRep.get(`${m.ym}-${repId}`) ?? 0
+        // Same fallback chain as report:repHistory/Roster — individual override if HR set
+        // one, else the branch+staffType target. Without this, teamTarget stays 0 for any
+        // team without per-rep overrides (the common case) and team_kpi_pct always reads 0%
+        // despite a real team_total_score.
+        teamTarget += targetByYmThenRep.get(`${m.ym}-${repId}`) ?? getBranchPointTarget(db, sup.branch_id, m.year, m.month, sup.staff_type)
         // Score from the entry's OWN stamped branch_id/staff_type — not the rep's current
         // values — so a mid-trend transfer/type-change never re-rates past months.
         const groups = groupsByYmThenRep.get(`${m.ym}-${repId}`) ?? []

@@ -2,20 +2,8 @@ import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import { ROLE_DEFAULTS } from '../../types'
-import type { MenuKey, UserRole } from '../../types'
-
-// Each nav item maps to a menu_key — permissions control visibility
-const NAV_ITEMS: Array<{ to: string; icon: string; label: string; key: MenuKey; fallbackRoles?: UserRole[] }> = [
-  { to: '/dashboard',      icon: 'dashboard',       label: 'Dashboard',        key: 'dashboard' },
-  { to: '/entry',          icon: 'edit_document',   label: 'Daily Entry',      key: 'daily_entry' },
-  { to: '/reports',        icon: 'leaderboard',     label: 'KPI Report',       key: 'kpi_report' },
-  { to: '/sale-report',    icon: 'bar_chart',       label: 'Sale Report',      key: 'sale_report' },
-  { to: '/upload-history', icon: 'history',         label: 'Upload History',   key: 'upload_history' },
-  { to: '/roster',         icon: 'badge',           label: 'Roster',           key: 'roster' },
-  { to: '/audit-log',      icon: 'history_edu',     label: 'Audit Log',        key: 'audit_log' },
-  { to: '/settings',       icon: 'settings',        label: 'Settings',         key: 'settings' },
-  { to: '/kpi-settings',   icon: 'tune',            label: 'KPI Settings',     key: 'kpi_settings' },
-]
+import type { UserRole } from '../../types'
+import { NAV_ITEMS } from '../../config/navigation'
 
 const ROLE_COLOR: Record<UserRole, string> = {
   admin:              'bg-error',

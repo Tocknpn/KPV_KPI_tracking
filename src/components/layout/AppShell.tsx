@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
+import { getHomeRoute } from '../../config/navigation'
 import type { UserRole } from '../../types'
 
 interface Props {
@@ -13,12 +14,15 @@ interface Props {
 }
 
 export function AppShell({ children, title, allowedRoles }: Props) {
-  const { token, user, setPermissions, clearSession, setBranches } = useAuthStore()
+  const { token, user, permissions, setPermissions, clearSession, setBranches } = useAuthStore()
   const { setUnsyncedCount, sidebarCollapsed } = useAppStore()
 
   if (!token || !user) return <Navigate to="/login" replace />
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/dashboard" replace />
+    // Same role this screen belongs to might not have 'dashboard' either (accountant_officer,
+    // accountant_manager, hr_support) — bounce to their own first menu item, not a hardcoded
+    // route they may not have access to.
+    return <Navigate to={getHomeRoute(permissions)} replace />
   }
 
   useEffect(() => {
