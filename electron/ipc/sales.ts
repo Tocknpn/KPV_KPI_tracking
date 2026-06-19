@@ -151,6 +151,16 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
     const totW = byBranchRaw.reduce((s, r) => s + r.jewelry + r.bar, 0)
     const totQ = byBranchRaw.reduce((s, r) => s + r.qty, 0)
 
+    // Previous month total weight (for contribution % change calculation)
+    const prevTotWRow = prepare(db, `
+      SELECT COALESCE(SUM(de.jewelry_weight_g + de.bar_weight_g), 0) AS total
+      FROM daily_entries de
+      JOIN salesmen s ON s.id = de.salesman_id
+      WHERE de.entry_date >= ? AND de.entry_date <= ?
+        ${branchSql} ${typeSql}
+    `).get(lmFrom, lmTo, ...fParams) as { total: number } | undefined
+    const prevTotW = prevTotWRow?.total ?? 0
+
     // By branch: also get prev period for each branch
     const { branchSql: bSqlPrev, typeSql: tSqlPrev, params: fParamsPrev } = buildFilters(branchIds, staffType)
     const byBranchPrevRaw = prepare(db, `
@@ -168,17 +178,118 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
 
     const prevByBranchMap = new Map(byBranchPrevRaw.map(r => [r.branch_id, r]))
 
+    // Branch-level B2B/B2C breakdown (current period)
+    const { branchSql: bSqlType, params: fParamsType } = buildFilters(branchIds, staffType)
+    const branchTypeRaw = prepare(db, `
+      SELECT
+        de.branch_id,
+        s.staff_type,
+        COALESCE(SUM(de.jewelry_weight_g), 0) AS jewelry,
+        COALESCE(SUM(de.bar_weight_g),     0) AS bar,
+        COALESCE(SUM(de.quantity),         0) AS qty
+      FROM daily_entries de
+      JOIN salesmen s ON s.id = de.salesman_id
+      WHERE de.entry_date >= ? AND de.entry_date <= ?
+        ${bSqlType}
+      GROUP BY de.branch_id, s.staff_type
+    `).all(dateFrom, dateTo, ...fParamsType) as Array<{ branch_id: number; staff_type: string; jewelry: number; bar: number; qty: number }>
+
+    // Branch-level B2B/B2C breakdown (previous period)
+    const branchTypePrevRaw = prepare(db, `
+      SELECT
+        de.branch_id,
+        s.staff_type,
+        COALESCE(SUM(de.jewelry_weight_g), 0) AS jewelry,
+        COALESCE(SUM(de.bar_weight_g),     0) AS bar,
+        COALESCE(SUM(de.quantity),         0) AS qty
+      FROM daily_entries de
+      JOIN salesmen s ON s.id = de.salesman_id
+      WHERE de.entry_date >= ? AND de.entry_date <= ?
+        ${bSqlType}
+      GROUP BY de.branch_id, s.staff_type
+    `).all(lmFrom, lmTo, ...fParamsType) as Array<{ branch_id: number; staff_type: string; jewelry: number; bar: number; qty: number }>
+
+    // Build maps for quick lookup
+    const branchTypeMap = new Map<string, { jewelry: number; bar: number; total: number; qty: number }>()
+    for (const r of branchTypeRaw) {
+      const key = `${r.branch_id}-${r.staff_type}`
+      branchTypeMap.set(key, { jewelry: r.jewelry, bar: r.bar, total: r.jewelry + r.bar, qty: r.qty })
+    }
+
+    const branchTypePrevMap = new Map<string, { jewelry: number; bar: number; total: number; qty: number }>()
+    for (const r of branchTypePrevRaw) {
+      const key = `${r.branch_id}-${r.staff_type}`
+      branchTypePrevMap.set(key, { jewelry: r.jewelry, bar: r.bar, total: r.jewelry + r.bar, qty: r.qty })
+    }
+
     const byBranch = byBranchRaw.map(r => {
       const prev = prevByBranchMap.get(r.branch_id)
       const total = r.jewelry + r.bar
       const prevTotal = prev ? prev.jewelry + prev.bar : 0
+      const prevWeightContrib = prevTotW > 0 ? (prevTotal / prevTotW) * 100 : 0
+      const weightContrib = totW > 0 ? (total / totW) * 100 : 0
+      const weightContribChange = prevWeightContrib > 0 ? weightContrib - prevWeightContrib : null
+
+      // Jewelry contribution % change
+      const prevJewelryContrib = prevTotW > 0 && prev ? (prev.jewelry / prevTotW) * 100 : 0
+      const jewelryContrib = totW > 0 ? (r.jewelry / totW) * 100 : 0
+      const jewelryContribChange = prevJewelryContrib > 0 ? jewelryContrib - prevJewelryContrib : null
+
+      // Bar contribution % change
+      const prevBarContrib = prevTotW > 0 && prev ? (prev.bar / prevTotW) * 100 : 0
+      const barContrib = totW > 0 ? (r.bar / totW) * 100 : 0
+      const barContribChange = prevBarContrib > 0 ? barContrib - prevBarContrib : null
+
+      // Branch-internal gold type breakdown
+      const jewelryPct = total > 0 ? (r.jewelry / total) * 100 : 0
+      const barPct = total > 0 ? (r.bar / total) * 100 : 0
+      const prevJewelryPct = prevTotal > 0 && prev ? (prev.jewelry / prevTotal) * 100 : 0
+      const prevBarPct = prevTotal > 0 && prev ? (prev.bar / prevTotal) * 100 : 0
+      const jewelryPctChange = prevJewelryPct > 0 ? jewelryPct - prevJewelryPct : null
+      const barPctChange = prevBarPct > 0 ? barPct - prevBarPct : null
+
+      // Branch-internal customer type breakdown
+      const b2cKey = `${r.branch_id}-b2c`
+      const b2bKey = `${r.branch_id}-b2b`
+      const b2cData = branchTypeMap.get(b2cKey) || { jewelry: 0, bar: 0, total: 0, qty: 0 }
+      const b2bData = branchTypeMap.get(b2bKey) || { jewelry: 0, bar: 0, total: 0, qty: 0 }
+      const b2cPrevData = branchTypePrevMap.get(b2cKey) || { jewelry: 0, bar: 0, total: 0, qty: 0 }
+      const b2bPrevData = branchTypePrevMap.get(b2bKey) || { jewelry: 0, bar: 0, total: 0, qty: 0 }
+
+      const b2cTotal = b2cData.total
+      const b2bTotal = b2bData.total
+      const b2cPct = total > 0 ? (b2cTotal / total) * 100 : 0
+      const b2bPct = total > 0 ? (b2bTotal / total) * 100 : 0
+      const b2cPrevTotal = b2cPrevData.total
+      const b2bPrevTotal = b2bPrevData.total
+      const prevTotalForType = b2cPrevTotal + b2bPrevTotal
+      const b2cPrevPct = prevTotalForType > 0 ? (b2cPrevTotal / prevTotalForType) * 100 : 0
+      const b2bPrevPct = prevTotalForType > 0 ? (b2bPrevTotal / prevTotalForType) * 100 : 0
+      const b2cPctChange = prevTotalForType > 0 ? b2cPct - b2cPrevPct : null
+      const b2bPctChange = prevTotalForType > 0 ? b2bPct - b2bPrevPct : null
+
       return {
         ...r,
         total,
-        weight_contrib: totW > 0 ? (total / totW) * 100 : 0,
+        weight_contrib: weightContrib,
         qty_contrib:    totQ > 0 ? (r.qty / totQ) * 100 : 0,
         var_total_pct:  prevTotal > 0 ? ((total - prevTotal) / prevTotal) * 100 : null,
         var_qty_pct:    prev && prev.qty > 0 ? ((r.qty - prev.qty) / prev.qty) * 100 : null,
+        // New fields for pie charts
+        jewelry_contrib: jewelryContrib,
+        bar_contrib: barContrib,
+        weight_contrib_change: weightContribChange,
+        jewelry_contrib_change: jewelryContribChange,
+        bar_contrib_change: barContribChange,
+        // New fields for Branch Analyst
+        jewelry_pct: jewelryPct,
+        bar_pct: barPct,
+        jewelry_pct_change: jewelryPctChange,
+        bar_pct_change: barPctChange,
+        b2c_pct: b2cPct,
+        b2b_pct: b2bPct,
+        b2c_pct_change: b2cPctChange,
+        b2b_pct_change: b2bPctChange,
       }
     })
 

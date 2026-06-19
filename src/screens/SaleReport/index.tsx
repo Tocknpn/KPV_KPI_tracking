@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-  Cell, Legend,
+  Cell, Legend, PieChart, Pie,
 } from 'recharts'
 import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
@@ -23,6 +23,21 @@ interface BranchRow {
   jewelry: number; bar: number; total: number; qty: number; entries: number; reps: number
   weight_contrib: number; qty_contrib: number
   var_total_pct: number | null; var_qty_pct: number | null
+  // New fields for pie charts
+  jewelry_contrib: number
+  bar_contrib: number
+  weight_contrib_change: number | null
+  jewelry_contrib_change: number | null
+  bar_contrib_change: number | null
+  // New fields for Branch Analyst
+  jewelry_pct: number
+  bar_pct: number
+  jewelry_pct_change: number | null
+  bar_pct_change: number | null
+  b2c_pct: number
+  b2b_pct: number
+  b2c_pct_change: number | null
+  b2b_pct_change: number | null
 }
 interface TypeRow {
   staff_type: string
@@ -74,6 +89,27 @@ function VarChip({ pct, compact = false }: { pct: number | null; compact?: boole
       <span className="material-symbols-outlined" style={{ fontSize: compact ? 12 : 14 }}>{up ? 'arrow_upward' : 'arrow_downward'}</span>
       {Math.abs(pct).toFixed(1)}%
     </span>
+  )
+}
+
+// Custom pie chart label with branch name, % contribution, and % change
+function PieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent, branchCode, branchName, change }: {
+  cx: number; cy: number; midAngle?: number; innerRadius: number; outerRadius: number
+  percent?: number; branchCode: string; branchName: string; change: number | null
+}) {
+  if (midAngle == null || percent == null) return null
+  const RADIAN = Math.PI / 180
+  const radius = innerRadius + (outerRadius - innerRadius) * 0.5
+  const x = cx + radius * Math.cos(-midAngle * RADIAN)
+  const y = cy + radius * Math.sin(-midAngle * RADIAN)
+
+  const pctStr = `${(percent * 100).toFixed(1)}%`
+  const changeStr = change != null ? (change >= 0 ? `(+${change.toFixed(1)}%)` : `(${change.toFixed(1)}%)`) : ''
+
+  return (
+    <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="11" fontWeight="bold">
+      {branchCode}: {pctStr} {changeStr}
+    </text>
   )
 }
 
@@ -659,27 +695,193 @@ export default function SaleReport() {
           ═════════════════════════════════════════════════════════════ */}
           {activeTab === 'branch' && (
             <div className="space-y-6">
-              {/* Branch bar chart */}
+              {/* Branch pie charts */}
               {d.byBranch.length > 0 && (
                 <GlassCard elevated className="p-6">
                   <h4 className="font-headline-md text-headline-md text-on-surface mb-1">Branch Weight Contribution</h4>
-                  <p className="text-body-sm text-on-surface-variant mb-4">Jewelry + Bar (Baht) — {MONTHS[month - 1]} {year}</p>
-                  <div className="h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={d.byBranch} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e0e0" />
-                        <XAxis dataKey="branch_code" tick={{ fontSize: 11 }} />
-                        <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${fmtInt(v)}`} />
-                        <Tooltip
-                          formatter={(v: number, name: string) => [fmt(v, 1) + ' Baht', name]}
-                          labelFormatter={(_l, p) => p?.[0]?.payload?.branch_name ?? _l}
-                          contentStyle={{ borderRadius: 10, fontSize: 12 }}
-                        />
-                        <Legend iconType="circle" iconSize={8} />
-                        <Bar dataKey="jewelry" name="Jewelry" stackId="a" fill="#004f96" radius={[0,0,0,0]} />
-                        <Bar dataKey="bar"     name="Bar"     stackId="a" fill="#9c6e1b" radius={[3,3,0,0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <p className="text-body-sm text-on-surface-variant mb-6">{MONTHS[month - 1]} {year} — vs {lmLabel}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Jewelry Weight % Contribution */}
+                    <div>
+                      <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">Jewelry Weight % Contribution</h5>
+                      <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={d.byBranch.map(b => ({
+                                name: b.branch_name,
+                                branchCode: b.branch_code,
+                                value: b.jewelry_contrib,
+                                change: b.jewelry_contrib_change
+                              }))}
+                              cx="50%"
+                              cy="50%"
+                              labelLine={false}
+                              label={(props) => PieLabel({
+                                ...props,
+                                branchCode: props.payload.branchCode,
+                                branchName: props.payload.name,
+                                change: props.payload.change
+                              })}
+                              outerRadius={80}
+                              fill="#8884d8"
+                              dataKey="value"
+                            >
+                              {d.byBranch.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={BRANCH_COLORS[index % BRANCH_COLORS.length]} />
+                              ))}
+                            </Pie>
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* Bar Weight % Contribution */}
+                    <div>
+                      <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">Bar Weight % Contribution</h5>
+                      <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={d.byBranch.map(b => ({
+                                name: b.branch_name,
+                                branchCode: b.branch_code,
+                                value: b.bar_contrib,
+                                change: b.bar_contrib_change
+                              }))}
+                              cx="50%"
+                              cy="50%"
+                              labelLine={false}
+                              label={(props) => PieLabel({
+                                ...props,
+                                branchCode: props.payload.branchCode,
+                                branchName: props.payload.name,
+                                change: props.payload.change
+                              })}
+                              outerRadius={80}
+                              fill="#8884d8"
+                              dataKey="value"
+                            >
+                              {d.byBranch.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={BRANCH_COLORS[index % BRANCH_COLORS.length]} />
+                              ))}
+                            </Pie>
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* Total Weight % Contribution */}
+                    <div>
+                      <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">Total Weight % Contribution</h5>
+                      <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={d.byBranch.map(b => ({
+                                name: b.branch_name,
+                                branchCode: b.branch_code,
+                                value: b.weight_contrib,
+                                change: b.weight_contrib_change
+                              }))}
+                              cx="50%"
+                              cy="50%"
+                              labelLine={false}
+                              label={(props) => PieLabel({
+                                ...props,
+                                branchCode: props.payload.branchCode,
+                                branchName: props.payload.name,
+                                change: props.payload.change
+                              })}
+                              outerRadius={80}
+                              fill="#8884d8"
+                              dataKey="value"
+                            >
+                              {d.byBranch.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={BRANCH_COLORS[index % BRANCH_COLORS.length]} />
+                              ))}
+                            </Pie>
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                </GlassCard>
+              )}
+
+              {/* Branch Analyst section */}
+              {d.byBranch.length > 0 && (
+                <GlassCard elevated className="p-6">
+                  <h4 className="font-headline-md text-headline-md text-on-surface mb-1">Branch Analyst</h4>
+                  <p className="text-body-sm text-on-surface-variant mb-6">{MONTHS[month - 1]} {year} — vs {lmLabel}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {d.byBranch.map(branch => (
+                      <div key={branch.branch_id} className="rounded-xl p-4 border border-white/20" style={{ background: BRANCH_COLORS[d.byBranch.indexOf(branch) % BRANCH_COLORS.length] + '15', borderTop: `3px solid ${BRANCH_COLORS[d.byBranch.indexOf(branch) % BRANCH_COLORS.length]}` }}>
+                        <div className="flex items-center gap-2 mb-4">
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background: BRANCH_COLORS[d.byBranch.indexOf(branch) % BRANCH_COLORS.length] }}>
+                            {branch.branch_code}
+                          </div>
+                          <div>
+                            <p className="font-bold text-body-sm text-on-surface">{branch.branch_name}</p>
+                            <p className="text-[10px] text-on-surface-variant">{fmt(branch.total, 1)} Baht</p>
+                          </div>
+                        </div>
+
+                        {/* Gold Type Breakdown */}
+                        <div className="mb-4">
+                          <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-2">Gold Type</p>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-on-surface">Jewelry</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold tabular-nums">{branch.jewelry_pct.toFixed(1)}%</span>
+                                <VarChip pct={branch.jewelry_pct_change} compact />
+                              </div>
+                            </div>
+                            <div className="w-full bg-surface-container-highest rounded-full h-1.5">
+                              <div className="h-full bg-primary rounded-full" style={{ width: `${branch.jewelry_pct}%` }} />
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-on-surface">Bar</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold tabular-nums">{branch.bar_pct.toFixed(1)}%</span>
+                                <VarChip pct={branch.bar_pct_change} compact />
+                              </div>
+                            </div>
+                            <div className="w-full bg-surface-container-highest rounded-full h-1.5">
+                              <div className="h-full bg-tertiary rounded-full" style={{ width: `${branch.bar_pct}%` }} />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Customer Type Breakdown */}
+                        <div>
+                          <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-2">Customer Type</p>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-on-surface">B2C</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold tabular-nums">{branch.b2c_pct.toFixed(1)}%</span>
+                                <VarChip pct={branch.b2c_pct_change} compact />
+                              </div>
+                            </div>
+                            <div className="w-full bg-surface-container-highest rounded-full h-1.5">
+                              <div className="h-full bg-secondary rounded-full" style={{ width: `${branch.b2c_pct}%` }} />
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-on-surface">B2B</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold tabular-nums">{branch.b2b_pct.toFixed(1)}%</span>
+                                <VarChip pct={branch.b2b_pct_change} compact />
+                              </div>
+                            </div>
+                            <div className="w-full bg-surface-container-highest rounded-full h-1.5">
+                              <div className="h-full bg-purple-600 rounded-full" style={{ width: `${branch.b2b_pct}%` }} />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </GlassCard>
               )}
