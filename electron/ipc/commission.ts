@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { google } from 'googleapis'
 import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
-import { requireAuth, requireAdmin } from './auth'
+import { requireAuth, requireAdmin, logAudit } from './auth'
 import { getServiceAuth, getSetting, pushCommission, pullCommissionConfigsFromSheet } from './sheets'
 import { getRosterMapAsOf } from '../db/history'
 
@@ -83,6 +83,8 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
       } catch { /* Sheets not configured or unavailable — silently skip */ }
     }
 
+    logAudit(db, u.id, u.username, u.role, 'commission_config_update',
+      `${data.staffType} ${data.yearMonth} — J:${data.jewelryRateLak} B:${data.barRateLak} Q:${data.qtyRateLak}`, 'commission_config', data.yearMonth)
     return { success: true }
   })
 
@@ -110,7 +112,7 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
     b2b: { jewelry: number; bar: number; qty: number }
     supB2cPct: number; supB2bPct: number
   }) => {
-    requireAdmin(token)
+    const u = requireAdmin(token)
     const db = getDb()
     const upsert = (staffType: string, jewelry: number, bar: number, qty: number) => {
       prepare(db, `
@@ -136,6 +138,9 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
         await pushCommission(db, sheets, sheetsId)
       } catch { /* Sheets not configured or unavailable — silently skip */ }
     }
+    logAudit(db, u.id, u.username, u.role, 'commission_defaults_update',
+      `B2C J:${data.b2c.jewelry} B:${data.b2c.bar} Q:${data.b2c.qty} · B2B J:${data.b2b.jewelry} B:${data.b2b.bar} Q:${data.b2b.qty} · Sup ${data.supB2cPct}%/${data.supB2bPct}%`,
+      'commission_config')
     return { success: true }
   })
 

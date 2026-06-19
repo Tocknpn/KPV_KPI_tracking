@@ -313,6 +313,8 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
         }
       })
       pushRosterIfConfigured(db).catch(() => {})
+      logAudit(db, u.id, u.username, u.role, 'roster_bulk_upload',
+        `${rows.length} rows — ${created} created, ${updated} updated${skipped.length ? `, ${skipped.length} skipped` : ''}`, 'roster_upload')
       return { success: true, created, updated, skipped: skipped.length, skippedCodes: skipped }
     } catch (e: unknown) {
       return { success: false, error: e instanceof Error ? e.message : String(e) }

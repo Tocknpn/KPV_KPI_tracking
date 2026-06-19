@@ -17,7 +17,35 @@ const EVENT_COLORS: Record<string, 'success' | 'error' | 'info' | 'warning' | 'n
   user_create: 'info',
   user_update: 'info',
   user_delete: 'error',
+  user_permanent_delete: 'error',
   permission_change: 'warning',
+  sales_upload_submitted: 'info',
+  sales_upload_deleted: 'warning',
+  roster_rep_create: 'info',
+  roster_rep_update: 'info',
+  roster_rep_deactivate: 'warning',
+  roster_rep_reactivate: 'success',
+  roster_bulk_upload: 'info',
+  supervisor_create: 'info',
+  supervisor_update: 'info',
+  supervisor_delete: 'warning',
+  supervisor_assign_reps: 'info',
+  kpi_config_create: 'info',
+  kpi_config_update: 'info',
+  kpi_config_delete: 'warning',
+  kpi_metric_multiplier_update: 'info',
+  kpi_branch_rates_update: 'info',
+  kpi_branch_qty_tiers_update: 'info',
+  kpi_branch_target_update: 'info',
+  kpi_branch_target_defaults_update: 'info',
+  kpi_monthly_branch_targets_update: 'info',
+  kpi_formula_update: 'warning',
+  kpi_sup_pct_update: 'warning',
+  kpi_month_confirmed: 'success',
+  kpi_default_rates_update: 'warning',
+  kpi_default_qty_tiers_update: 'warning',
+  commission_config_update: 'info',
+  commission_defaults_update: 'warning',
 }
 
 const PAGE_SIZE = 50
@@ -107,7 +135,35 @@ export default function AuditLog() {
             <option value="user_create">User Create</option>
             <option value="user_update">User Update</option>
             <option value="user_delete">User Delete</option>
+            <option value="user_permanent_delete">User Permanent Delete</option>
             <option value="permission_change">Permission Change</option>
+            <option value="sales_upload_submitted">Sales Upload Submitted</option>
+            <option value="sales_upload_deleted">Sales Upload Deleted</option>
+            <option value="roster_rep_create">Roster — Rep Create</option>
+            <option value="roster_rep_update">Roster — Rep Update</option>
+            <option value="roster_rep_deactivate">Roster — Rep Deactivate</option>
+            <option value="roster_rep_reactivate">Roster — Rep Reactivate</option>
+            <option value="roster_bulk_upload">Roster — Bulk Upload</option>
+            <option value="supervisor_create">Supervisor Create</option>
+            <option value="supervisor_update">Supervisor Update</option>
+            <option value="supervisor_delete">Supervisor Delete</option>
+            <option value="supervisor_assign_reps">Supervisor Assign Reps</option>
+            <option value="kpi_config_create">KPI Config Create</option>
+            <option value="kpi_config_update">KPI Config Update</option>
+            <option value="kpi_config_delete">KPI Config Delete</option>
+            <option value="kpi_metric_multiplier_update">KPI Metric Multiplier</option>
+            <option value="kpi_branch_rates_update">KPI Branch Rates</option>
+            <option value="kpi_branch_qty_tiers_update">KPI Branch Qty Tiers</option>
+            <option value="kpi_branch_target_update">KPI Branch Target</option>
+            <option value="kpi_branch_target_defaults_update">KPI Branch Target Defaults</option>
+            <option value="kpi_monthly_branch_targets_update">KPI Monthly Branch Targets</option>
+            <option value="kpi_formula_update">KPI Formula</option>
+            <option value="kpi_sup_pct_update">KPI Supervisor %</option>
+            <option value="kpi_month_confirmed">KPI Month Confirmed</option>
+            <option value="kpi_default_rates_update">KPI Default Rates</option>
+            <option value="kpi_default_qty_tiers_update">KPI Default Qty Tiers</option>
+            <option value="commission_config_update">Commission Config</option>
+            <option value="commission_defaults_update">Commission Defaults</option>
           </select>
         </div>
         <button onClick={() => { setDateFrom(''); setDateTo(''); setUsername(''); setEventType('') }}

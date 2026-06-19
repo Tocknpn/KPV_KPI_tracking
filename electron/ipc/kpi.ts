@@ -1,7 +1,7 @@
 import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
-import { requireAuth, requireAdmin } from './auth'
+import { requireAuth, requireAdmin, logAudit } from './auth'
 import {
   pushMonthlyTargetsIfConfigured, pushKpiRatesIfConfigured, pushQtyTiersIfConfigured,
   pushBranchesIfConfigured,
@@ -142,6 +142,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
       })
     })
     pushQtyTiersIfConfigured(db).catch(() => {})
+    logAudit(db, u.id, u.username, u.role, config.id ? 'kpi_config_update' : 'kpi_config_create', config.label, 'kpi_tier_config', String(configId!))
     return { success: true, id: configId! }
   })
 
@@ -153,13 +154,16 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
       prepare(db, `DELETE FROM kpi_tiers WHERE config_id = ?`).run(configId)
       prepare(db, `DELETE FROM kpi_tier_configs WHERE id = ?`).run(configId)
     })
+    logAudit(db, u.id, u.username, u.role, 'kpi_config_delete', undefined, 'kpi_tier_config', String(configId))
     return { success: true }
   })
 
   ipcMain.handle('kpi:saveMetricMultiplier', async (_e, token: string, metricId: number, pointsPerUnit: number) => {
     const u = requireAuth(token)
     if (!['admin','hr'].includes(u.role)) throw new Error('Forbidden')
-    prepare(getDb(), `UPDATE kpi_metrics SET points_per_unit = ? WHERE id = ?`).run(pointsPerUnit, metricId)
+    const db = getDb()
+    prepare(db, `UPDATE kpi_metrics SET points_per_unit = ? WHERE id = ?`).run(pointsPerUnit, metricId)
+    logAudit(db, u.id, u.username, u.role, 'kpi_metric_multiplier_update', `metric ${metricId} → ${pointsPerUnit}`, 'kpi_metric', String(metricId))
     return { success: true }
   })
 
@@ -211,6 +215,9 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
       }
     })
     pushKpiRatesIfConfigured(db).catch(() => {})
+    logAudit(db, u.id, u.username, u.role, 'kpi_branch_rates_update',
+      `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][month-1]} ${year} — J:${rates.jewelry.b2c}/${rates.jewelry.b2b} B:${rates.bar.b2c}/${rates.bar.b2b}`,
+      'branch', String(branchId), branchId)
     return { success: true }
   })
 
@@ -273,14 +280,17 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
       })
     })
     pushQtyTiersIfConfigured(db).catch(() => {})
+    logAudit(db, u.id, u.username, u.role, 'kpi_branch_qty_tiers_update',
+      `branch ${branchId} ${staffType} — ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][month-1]} ${year}`, 'branch', String(branchId), branchId)
     return { success: true, configId: configId! }
   })
 
   ipcMain.handle('kpi:saveBranchKpiTarget', async (_e, token: string, branchId: number, target: number) => {
-    requireAdmin(token)
+    const u = requireAdmin(token)
     const db = getDb()
     prepare(db, `UPDATE branches SET kpi_point_target = ? WHERE id = ?`).run(target, branchId)
     pushBranchesIfConfigured(db).catch(() => {})
+    logAudit(db, u.id, u.username, u.role, 'kpi_branch_target_update', `target → ${target}`, 'branch', String(branchId), branchId)
     return { success: true }
   })
 
@@ -289,11 +299,12 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
   // "pts/person" cosmetic display — getBranchPointTarget's real scoring path uses the
   // type-specific columns directly, never this average.
   ipcMain.handle('kpi:saveBranchTargetDefaults', async (_e, token: string, branchId: number, targetB2c: number, targetB2b: number) => {
-    requireAdmin(token)
+    const u = requireAdmin(token)
     const db = getDb()
     prepare(db, `UPDATE branches SET target_b2c_default=?, target_b2b_default=?, kpi_point_target=? WHERE id=?`)
       .run(targetB2c, targetB2b, Math.round((targetB2c + targetB2b) / 2), branchId)
     pushBranchesIfConfigured(db).catch(() => {})
+    logAudit(db, u.id, u.username, u.role, 'kpi_branch_target_defaults_update', `B2C ${targetB2c} / B2B ${targetB2b}`, 'branch', String(branchId), branchId)
     return { success: true }
   })
 
@@ -336,6 +347,8 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
       }
     })
     pushMonthlyTargetsIfConfigured(db).catch(() => {})
+    logAudit(db, u.id, u.username, u.role, 'kpi_monthly_branch_targets_update',
+      `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][month-1]} ${year} — ${targets.length} branch(es)`, 'branch_kpi_monthly_targets')
     return { success: true }
   })
 
@@ -351,10 +364,11 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
   })
 
   ipcMain.handle('kpi:saveFormula', async (_e, token: string, base: number, weight: number) => {
-    requireAdmin(token)
+    const u = requireAdmin(token)
     const db = getDb()
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('kpi_total_base', ?)`  ).run(String(base))
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('kpi_total_weight', ?)`).run(String(weight))
+    logAudit(db, u.id, u.username, u.role, 'kpi_formula_update', `base ${base}, weight ${weight}`, 'app_settings')
     return { success: true }
   })
 
@@ -371,9 +385,10 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
   })
 
   ipcMain.handle('kpi:saveSupKpiPct', async (_e, token: string, pct: number) => {
-    requireAdmin(token)
+    const u = requireAdmin(token)
     const db = getDb()
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('sup_kpi_pct', ?)`).run(String(pct))
+    logAudit(db, u.id, u.username, u.role, 'kpi_sup_pct_update', `${pct}%`, 'app_settings')
     return { success: true }
   })
 
@@ -391,9 +406,11 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('kpi:markMonthSubmitted', async (_e, token: string, year: number, month: number) => {
     const u = requireAuth(token)
     if (!['admin', 'hr'].includes(u.role)) throw new Error('Forbidden')
+    const db = getDb()
     const ym = `${year}${String(month).padStart(2, '0')}`
-    prepare(getDb(), `INSERT OR REPLACE INTO kpi_monthly_submissions (year_month, submitted_by, submitted_at) VALUES (?, ?, datetime('now'))`)
+    prepare(db, `INSERT OR REPLACE INTO kpi_monthly_submissions (year_month, submitted_by, submitted_at) VALUES (?, ?, datetime('now'))`)
       .run(ym, u.username)
+    logAudit(db, u.id, u.username, u.role, 'kpi_month_confirmed', ym, 'kpi_monthly_submissions', ym)
     return { success: true }
   })
 
@@ -425,7 +442,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('kpi:saveDefaultMetricRates', async (_e, token: string, branchId: number, rates: {
     jewelry: { b2c: number; b2b: number }; bar: { b2c: number; b2b: number }
   }) => {
-    requireAdmin(token)
+    const u = requireAdmin(token)
     const db = getDb()
     transaction(db, () => {
       const writes: Array<[number, 'b2c' | 'b2b', number]> = [
@@ -438,6 +455,8 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
       }
     })
     pushKpiRatesIfConfigured(db).catch(() => {})
+    logAudit(db, u.id, u.username, u.role, 'kpi_default_rates_update',
+      `J:${rates.jewelry.b2c}/${rates.jewelry.b2b} B:${rates.bar.b2c}/${rates.bar.b2b}`, 'branch', String(branchId), branchId)
     return { success: true }
   })
 
@@ -458,7 +477,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('kpi:saveDefaultQtyTiers', async (_e, token: string, branchId: number,
     tiers: Array<{ thresholdPct: number; score: number }>, staffType: 'b2c' | 'b2b'
   ) => {
-    requireAdmin(token)
+    const u = requireAdmin(token)
     const db = getDb()
     const branch = prepare(db, `SELECT code FROM branches WHERE id = ?`).get(branchId) as { code: string } | undefined
     let configId: number
@@ -482,6 +501,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
       })
     })
     pushQtyTiersIfConfigured(db).catch(() => {})
+    logAudit(db, u.id, u.username, u.role, 'kpi_default_qty_tiers_update', `branch ${branchId} ${staffType}`, 'branch', String(branchId), branchId)
     return { success: true, configId: configId! }
   })
 }

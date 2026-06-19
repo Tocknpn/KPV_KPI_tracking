@@ -1,7 +1,7 @@
 import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
-import { requireAuth } from './auth'
+import { requireAuth, logAudit } from './auth'
 import { syncEntriesToCloudIfConfigured, pushSupervisorsIfConfigured, pushRosterIfConfigured } from './sheets'
 import { snapshotSalesman } from '../db/history'
 
@@ -43,23 +43,25 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('entry:createSalesman', async (_e, token: string, data: {
     fullName: string; nickname: string; branchId: number; position: string; department: string
   }) => {
-    requireAuth(token)
+    const user = requireAuth(token)
     const db = getDb()
     const result = prepare(db, `INSERT INTO salesmen (full_name, nickname, branch_id, position, department) VALUES (?,?,?,?,?)`)
       .run(data.fullName, data.nickname, data.branchId, data.position, data.department)
     snapshotSalesman(db, Number(result.lastInsertRowid))
+    logAudit(db, user.id, user.username, user.role, 'roster_rep_create', data.fullName, 'salesman', String(result.lastInsertRowid), data.branchId)
     return { success: true, id: result.lastInsertRowid }
   })
 
   ipcMain.handle('entry:updateSalesman', async (_e, token: string, id: number, data: {
     fullName?: string; nickname?: string; branchId?: number; position?: string; department?: string; active?: number
   }) => {
-    requireAuth(token)
+    const user = requireAuth(token)
     const db = getDb()
     const fields = Object.entries({ full_name: data.fullName, nickname: data.nickname, branch_id: data.branchId, position: data.position, department: data.department, active: data.active }).filter(([, v]) => v !== undefined)
     if (!fields.length) return { success: true }
     fields.forEach(([col, val]) => prepare(db, `UPDATE salesmen SET ${col} = ? WHERE id = ?`).run(val as string | number, id))
     snapshotSalesman(db, id)
+    logAudit(db, user.id, user.username, user.role, 'roster_rep_update', JSON.stringify(data), 'salesman', String(id), data.branchId ?? null)
     return { success: true }
   })
 
@@ -183,35 +185,40 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('supervisor:save', async (_e, token: string, data: {
     id?: number; fullName: string; nickname: string; branchId: number; active?: number; supCode?: string | null
   }) => {
-    requireAuth(token)
+    const user = requireAuth(token)
     const db = getDb()
     const supCode = data.supCode?.trim() || null
     if (data.id) {
       prepare(db, `UPDATE supervisors SET full_name=?,nickname=?,branch_id=?,active=?,sup_code=? WHERE id=?`)
         .run(data.fullName, data.nickname, data.branchId, data.active ?? 1, supCode, data.id)
       pushSupervisorsIfConfigured(db).catch(() => {})
+      logAudit(db, user.id, user.username, user.role, 'supervisor_update', data.fullName, 'supervisor', String(data.id), data.branchId)
       return { success: true, id: data.id }
     }
     const r = prepare(db, `INSERT INTO supervisors (full_name, nickname, branch_id, sup_code) VALUES (?,?,?,?)`)
       .run(data.fullName, data.nickname, data.branchId, supCode)
     pushSupervisorsIfConfigured(db).catch(() => {})
+    logAudit(db, user.id, user.username, user.role, 'supervisor_create', data.fullName, 'supervisor', String(r.lastInsertRowid), data.branchId)
     return { success: true, id: r.lastInsertRowid }
   })
 
   ipcMain.handle('supervisor:delete', async (_e, token: string, id: number) => {
-    requireAuth(token)
+    const user = requireAuth(token)
     const db = getDb()
+    const sup = prepare(db, `SELECT full_name, branch_id FROM supervisors WHERE id = ?`).get(id) as { full_name: string; branch_id: number } | undefined
     // Unlink reps before deactivating
     const affected = prepare(db, `SELECT id FROM salesmen WHERE supervisor_id = ?`).all(id) as Array<{ id: number }>
     prepare(db, `UPDATE salesmen SET supervisor_id = NULL WHERE supervisor_id = ?`).run(id)
     affected.forEach(r => snapshotSalesman(db, r.id))
     prepare(db, `UPDATE supervisors SET active = 0 WHERE id = ?`).run(id)
     pushSupervisorsIfConfigured(db).catch(() => {})
+    logAudit(db, user.id, user.username, user.role, 'supervisor_delete',
+      `${sup?.full_name ?? id} — ${affected.length} rep(s) unlinked`, 'supervisor', String(id), sup?.branch_id ?? null)
     return { success: true }
   })
 
   ipcMain.handle('supervisor:assignSalesmen', async (_e, token: string, supervisorId: number, salesmanIds: number[]) => {
-    requireAuth(token)
+    const user = requireAuth(token)
     const db = getDb()
     transaction(db, () => {
       // Clear existing assignments for this supervisor
@@ -225,6 +232,7 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
       }
     })
     pushRosterIfConfigured(db).catch(() => {})
+    logAudit(db, user.id, user.username, user.role, 'supervisor_assign_reps', `${salesmanIds.length} rep(s)`, 'supervisor', String(supervisorId))
     return { success: true }
   })
 
