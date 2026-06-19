@@ -4,7 +4,7 @@ import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin, logAudit } from './auth'
 import {
   pushMonthlyTargetsIfConfigured, pushKpiRatesIfConfigured, pushQtyTiersIfConfigured,
-  pushBranchesIfConfigured,
+  pushBranchesIfConfigured, pushKpiSubmissionsIfConfigured,
 } from './sheets'
 import type { Database } from 'sql.js'
 
@@ -410,6 +410,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     const ym = `${year}${String(month).padStart(2, '0')}`
     prepare(db, `INSERT OR REPLACE INTO kpi_monthly_submissions (year_month, submitted_by, submitted_at) VALUES (?, ?, datetime('now'))`)
       .run(ym, u.username)
+    pushKpiSubmissionsIfConfigured(db).catch(() => {})
     logAudit(db, u.id, u.username, u.role, 'kpi_month_confirmed', ym, 'kpi_monthly_submissions', ym)
     return { success: true }
   })

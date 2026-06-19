@@ -20,6 +20,7 @@ const TABS = {
   USERS:           'Users',
   SUPERVISORS:     'Supervisors',
   MONTHLY_TARGETS: 'MonthlyBranchTargets',
+  KPI_SUBMISSIONS: 'KpiSubmissions',
 } as const
 
 const SHEET_HEADERS = ['Date', 'Branch', 'Rep Code', 'Salesman Name', 'Jewelry (Baht)', 'Bar (Baht)', 'Qty']
@@ -335,6 +336,17 @@ async function pushMonthlyBranchTargets(db: Database, sheets: ReturnType<typeof 
   await writeTab(sheets, spreadsheetId, TABS.MONTHLY_TARGETS, ['Branch', 'Month', 'Target (pts/person)', 'B2C Target Override', 'B2B Target Override'], rows)
 }
 
+// "HR confirmed this month" marker — previously local-only, which meant it got silently
+// wiped (with no way to recover) every time bootstrapConnect switched/re-pulled a sheet.
+// Pushing/pulling it like every other config tab lets it survive a sheet-source switch.
+async function pushKpiSubmissions(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  const rows = (prepare(db, `SELECT year_month, submitted_by, submitted_at FROM kpi_monthly_submissions ORDER BY year_month`).all() as Array<{
+    year_month: string; submitted_by: string | null; submitted_at: string
+  }>)
+    .map(r => [readableYearMonth(r.year_month), r.submitted_by ?? '', r.submitted_at])
+  await writeTab(sheets, spreadsheetId, TABS.KPI_SUBMISSIONS, ['Month', 'submitted_by', 'submitted_at'], rows)
+}
+
 // ── Push all unsynced daily entries — exported for use in entries.ts, upload.ts ─
 export async function syncEntriesToCloudIfConfigured(db: Database): Promise<void> {
   const sheetsId = getSetting('sheets_id')
@@ -475,6 +487,18 @@ export async function pushMonthlyTargetsIfConfigured(db: Database): Promise<void
   } catch { /* Sheets unavailable — silently skip */ }
 }
 
+// ── Push only the KpiSubmissions tab — exported for kpi.ts ──────────────────
+export async function pushKpiSubmissionsIfConfigured(db: Database): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+    await pushKpiSubmissions(db, sheets, sheetsId)
+  } catch { /* Sheets unavailable — silently skip */ }
+}
+
 // ── Push only the KPIRates tab — exported for kpi.ts ─────────────────────────
 export async function pushKpiRatesIfConfigured(db: Database): Promise<void> {
   const sheetsId = getSetting('sheets_id')
@@ -529,6 +553,7 @@ export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
       pushUsers(db, sheets, sheetsId),
       pushSupervisors(db, sheets, sheetsId),
       pushMonthlyBranchTargets(db, sheets, sheetsId),
+      pushKpiSubmissions(db, sheets, sheetsId),
     ])
   } catch { /* Sheets unavailable — silently skip */ }
 }
@@ -536,10 +561,10 @@ export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
 // ── Pull all config + entries from Sheets (standalone, callable from main.ts) ─
 export async function pullAllFromCloud(sheetsId: string, saPath: string): Promise<{
   success: boolean
-  counts: { entries: number; configs: number; settings: number; branches: number; kpiRates: number; roster: number; qtyTiers: number; users: number; supervisors: number; monthlyTargets: number }
+  counts: { entries: number; configs: number; settings: number; branches: number; kpiRates: number; roster: number; qtyTiers: number; users: number; supervisors: number; monthlyTargets: number; kpiSubmissions: number }
   error?: string
 }> {
-  const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, supervisorRoster: 0, qtyTiers: 0, users: 0, supervisors: 0, monthlyTargets: 0 }
+  const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, supervisorRoster: 0, qtyTiers: 0, users: 0, supervisors: 0, monthlyTargets: 0, kpiSubmissions: 0 }
   const sectionErrors: string[] = []
   try {
     const auth   = getServiceAuth(saPath)
@@ -790,6 +815,21 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
             target_b2b        = excluded.target_b2b
         `).run(branch.id, year, month, target, isNaN(b2c) ? target : b2c, isNaN(b2b) ? target : b2b)
         counts.monthlyTargets++
+      }
+    }
+
+    // ── KPI monthly submissions ("HR confirmed this month" marker) ────
+    const kmsRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'KpiSubmissions!A:C' }).catch(() => null)
+    if (kmsRes) {
+      const all = kmsRes.data.values ?? []
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'month' ? all.slice(1) : all
+      for (const row of data) {
+        const [monthLabel, submittedBy, submittedAt] = row as string[]
+        const yearMonth = parseReadableYearMonth(monthLabel)
+        if (!yearMonth) continue
+        prepare(db, `INSERT OR REPLACE INTO kpi_monthly_submissions (year_month, submitted_by, submitted_at) VALUES (?,?,?)`)
+          .run(yearMonth, submittedBy ?? null, submittedAt ?? new Date().toISOString())
+        counts.kpiSubmissions++
       }
     }
 
