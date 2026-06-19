@@ -183,7 +183,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
       JOIN branches b ON b.id = de.branch_id
       JOIN salesmen s ON s.id = de.salesman_id
       WHERE de.upload_log_id = ?
-    `).all() as Array<{ entry_date: string; branch_code: string; rep_code: string }>
+    `).all(uploadLogId) as Array<{ entry_date: string; branch_code: string; rep_code: string }>
 
     const deleted = prepare(db, `DELETE FROM daily_entries WHERE upload_log_id = ?`).run(uploadLogId)
     logAudit(db, user.id, user.username, user.role, 'sales_upload_deleted',
@@ -222,7 +222,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
       JOIN branches b ON b.id = de.branch_id
       JOIN salesmen s ON s.id = de.salesman_id
       WHERE de.branch_id = ? AND de.entry_date >= ? AND de.entry_date <= ?
-    `).all() as Array<{ entry_date: string; branch_code: string; rep_code: string }>
+    `).all(branchId, dateFrom, dateTo) as Array<{ entry_date: string; branch_code: string; rep_code: string }>
 
     const deleted = prepare(db, `DELETE FROM daily_entries WHERE branch_id = ? AND entry_date >= ? AND entry_date <= ?`)
       .run(branchId, dateFrom, dateTo)
