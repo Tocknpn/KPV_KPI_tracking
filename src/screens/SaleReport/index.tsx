@@ -106,8 +106,11 @@ function PieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent, change 
   const pctStr = `${(percent * 100).toFixed(1)}%`
   const changeStr = change != null ? (change >= 0 ? `(+${change.toFixed(1)}%)` : `(${change.toFixed(1)}%)`) : ''
 
+  // Only show label if the slice is large enough (> 10%)
+  if (percent < 0.1) return null
+
   return (
-    <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="10" fontWeight="bold">
+    <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="11" fontWeight="bold">
       {pctStr} {changeStr}
     </text>
   )
@@ -526,7 +529,7 @@ export default function SaleReport() {
       </div>
 
       {/* ── Filter Bar ─────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3 mb-5 p-4 rounded-2xl bg-surface-container/40 border border-white/20 backdrop-blur-sm">
+      <div className="flex flex-wrap items-center gap-3 mb-5 p-4 rounded-2xl bg-surface-container/40 border border-white/20 backdrop-blur-sm relative z-10">
         <MonthDropdown year={year} month={month} onChange={handleMonthChange} />
         <DateRangeBar year={year} month={month} dateFrom={dateFrom} dateTo={dateTo} maxDate={maxDate}
           onDateFromChange={setDateFrom} onDateToChange={setDateTo} />
@@ -731,6 +734,17 @@ export default function SaleReport() {
                                 <Cell key={`cell-${index}`} fill={BRANCH_COLORS[index % BRANCH_COLORS.length]} stroke="white" strokeWidth={2} />
                               ))}
                             </Pie>
+                            <Tooltip
+                              formatter={(value: number, name: string, props: any) => {
+                                const change = props.payload.change
+                                const changeStr = change != null ? (change >= 0 ? `(+${change.toFixed(1)}%)` : `(${change.toFixed(1)}%)`) : 'N/A'
+                                return [
+                                  `${value.toFixed(1)}% ${changeStr}`,
+                                  props.payload.branchCode
+                                ]
+                              }}
+                              contentStyle={{ borderRadius: 10, fontSize: 12 }}
+                            />
                           </PieChart>
                         </ResponsiveContainer>
                       </div>
@@ -766,6 +780,17 @@ export default function SaleReport() {
                                 <Cell key={`cell-${index}`} fill={BRANCH_COLORS[index % BRANCH_COLORS.length]} stroke="white" strokeWidth={2} />
                               ))}
                             </Pie>
+                            <Tooltip
+                              formatter={(value: number, name: string, props: any) => {
+                                const change = props.payload.change
+                                const changeStr = change != null ? (change >= 0 ? `(+${change.toFixed(1)}%)` : `(${change.toFixed(1)}%)`) : 'N/A'
+                                return [
+                                  `${value.toFixed(1)}% ${changeStr}`,
+                                  props.payload.branchCode
+                                ]
+                              }}
+                              contentStyle={{ borderRadius: 10, fontSize: 12 }}
+                            />
                           </PieChart>
                         </ResponsiveContainer>
                       </div>
@@ -801,6 +826,17 @@ export default function SaleReport() {
                                 <Cell key={`cell-${index}`} fill={BRANCH_COLORS[index % BRANCH_COLORS.length]} stroke="white" strokeWidth={2} />
                               ))}
                             </Pie>
+                            <Tooltip
+                              formatter={(value: number, name: string, props: any) => {
+                                const change = props.payload.change
+                                const changeStr = change != null ? (change >= 0 ? `(+${change.toFixed(1)}%)` : `(${change.toFixed(1)}%)`) : 'N/A'
+                                return [
+                                  `${value.toFixed(1)}% ${changeStr}`,
+                                  props.payload.branchCode
+                                ]
+                              }}
+                              contentStyle={{ borderRadius: 10, fontSize: 12 }}
+                            />
                           </PieChart>
                         </ResponsiveContainer>
                       </div>
