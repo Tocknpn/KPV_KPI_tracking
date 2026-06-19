@@ -92,10 +92,10 @@ function VarChip({ pct, compact = false }: { pct: number | null; compact?: boole
   )
 }
 
-// Custom pie chart label with branch name, % contribution, and % change
-function PieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent, branchCode, branchName, change }: {
+// Custom pie chart label with only % contribution and % change
+function PieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent, change }: {
   cx: number; cy: number; midAngle?: number; innerRadius: number; outerRadius: number
-  percent?: number; branchCode: string; branchName: string; change: number | null
+  percent?: number; change: number | null
 }) {
   if (midAngle == null || percent == null) return null
   const RADIAN = Math.PI / 180
@@ -107,8 +107,8 @@ function PieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent, branchC
   const changeStr = change != null ? (change >= 0 ? `(+${change.toFixed(1)}%)` : `(${change.toFixed(1)}%)`) : ''
 
   return (
-    <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="11" fontWeight="bold">
-      {branchCode}: {pctStr} {changeStr}
+    <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="10" fontWeight="bold">
+      {pctStr} {changeStr}
     </text>
   )
 }
@@ -281,7 +281,7 @@ function BranchDropdown({ branches, selectedIds, onChange }: {
         <span className="material-symbols-outlined text-sm">{open ? 'expand_less' : 'expand_more'}</span>
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-2 bg-white/95 backdrop-blur-xl shadow-xl rounded-xl border border-white/40 z-50 min-w-52 py-1">
+        <div className="absolute left-0 top-full mt-2 bg-white/95 backdrop-blur-xl shadow-xl rounded-xl border border-white/40 z-[9999] min-w-52 py-1">
           <label className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer">
             <input type="checkbox" checked={isAll} onChange={() => onChange([])} className="accent-primary" />
             <span className="text-body-sm">All Branches</span>
@@ -704,7 +704,7 @@ export default function SaleReport() {
                     {/* Jewelry Weight % Contribution */}
                     <div>
                       <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">Jewelry Weight % Contribution</h5>
-                      <div className="h-64">
+                      <div className="h-80">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
                             <Pie
@@ -719,16 +719,16 @@ export default function SaleReport() {
                               labelLine={false}
                               label={(props) => PieLabel({
                                 ...props,
-                                branchCode: props.payload.branchCode,
-                                branchName: props.payload.name,
                                 change: props.payload.change
                               })}
-                              outerRadius={80}
+                              outerRadius={100}
                               fill="#8884d8"
                               dataKey="value"
+                              stroke="white"
+                              strokeWidth={2}
                             >
                               {d.byBranch.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={BRANCH_COLORS[index % BRANCH_COLORS.length]} />
+                                <Cell key={`cell-${index}`} fill={BRANCH_COLORS[index % BRANCH_COLORS.length]} stroke="white" strokeWidth={2} />
                               ))}
                             </Pie>
                           </PieChart>
@@ -739,7 +739,7 @@ export default function SaleReport() {
                     {/* Bar Weight % Contribution */}
                     <div>
                       <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">Bar Weight % Contribution</h5>
-                      <div className="h-64">
+                      <div className="h-80">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
                             <Pie
@@ -754,16 +754,16 @@ export default function SaleReport() {
                               labelLine={false}
                               label={(props) => PieLabel({
                                 ...props,
-                                branchCode: props.payload.branchCode,
-                                branchName: props.payload.name,
                                 change: props.payload.change
                               })}
-                              outerRadius={80}
+                              outerRadius={100}
                               fill="#8884d8"
                               dataKey="value"
+                              stroke="white"
+                              strokeWidth={2}
                             >
                               {d.byBranch.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={BRANCH_COLORS[index % BRANCH_COLORS.length]} />
+                                <Cell key={`cell-${index}`} fill={BRANCH_COLORS[index % BRANCH_COLORS.length]} stroke="white" strokeWidth={2} />
                               ))}
                             </Pie>
                           </PieChart>
@@ -774,7 +774,7 @@ export default function SaleReport() {
                     {/* Total Weight % Contribution */}
                     <div>
                       <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">Total Weight % Contribution</h5>
-                      <div className="h-64">
+                      <div className="h-80">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
                             <Pie
@@ -789,22 +789,32 @@ export default function SaleReport() {
                               labelLine={false}
                               label={(props) => PieLabel({
                                 ...props,
-                                branchCode: props.payload.branchCode,
-                                branchName: props.payload.name,
                                 change: props.payload.change
                               })}
-                              outerRadius={80}
+                              outerRadius={100}
                               fill="#8884d8"
                               dataKey="value"
+                              stroke="white"
+                              strokeWidth={2}
                             >
                               {d.byBranch.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={BRANCH_COLORS[index % BRANCH_COLORS.length]} />
+                                <Cell key={`cell-${index}`} fill={BRANCH_COLORS[index % BRANCH_COLORS.length]} stroke="white" strokeWidth={2} />
                               ))}
                             </Pie>
                           </PieChart>
                         </ResponsiveContainer>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Shared Legend */}
+                  <div className="flex flex-wrap justify-center gap-4 mt-4">
+                    {d.byBranch.map((branch, index) => (
+                      <div key={branch.branch_id} className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded" style={{ backgroundColor: BRANCH_COLORS[index % BRANCH_COLORS.length], border: '2px solid white' }} />
+                        <span className="text-sm text-on-surface font-medium">{branch.branch_code} - {branch.branch_name}</span>
+                      </div>
+                    ))}
                   </div>
                 </GlassCard>
               )}
