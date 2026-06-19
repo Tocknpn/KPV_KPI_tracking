@@ -266,6 +266,7 @@ export default function Roster() {
   const [filterBranch, setFilterBranch] = useState<number | 'all'>('all')
   const [filterSup, setFilterSup]       = useState<number | 'all'>('all')
   const [filterType, setFilterType]     = useState<'all' | 'b2c' | 'b2b'>('all')
+  const [showInactive, setShowInactive] = useState(false)
   const [search, setSearch]             = useState('')
 
   function showToast(msg: string) {
@@ -345,7 +346,7 @@ export default function Roster() {
   }
 
   const filteredRoster = roster.filter(r => {
-    if (r.active === 0) return false
+    if (r.active === 0 && !showInactive) return false
     if (filterBranch !== 'all' && r.branch_id !== filterBranch) return false
     if (filterSup !== 'all' && r.supervisor_id !== filterSup) return false
     if (filterType !== 'all' && r.staff_type !== filterType) return false
@@ -524,6 +525,13 @@ export default function Roster() {
             </button>
           ))}
         </div>
+
+        {view === 'reps' && (
+          <label className="flex items-center gap-1.5 text-body-sm text-on-surface-variant cursor-pointer select-none">
+            <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="accent-primary" />
+            Show Inactive
+          </label>
+        )}
 
         <div className="flex-1 min-w-[200px] max-w-xs relative">
           <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
@@ -711,7 +719,7 @@ export default function Roster() {
         <div className="px-5 py-3 bg-surface-container-low/20 border-t border-outline-variant/10 flex items-center justify-between">
           <p className="text-[11px] text-on-surface-variant">
             Showing {filteredRoster.length} of {roster.length} reps
-            {roster.filter(r => r.active === 0).length > 0 && ` · ${roster.filter(r => r.active === 0).length} inactive hidden`}
+            {!showInactive && roster.filter(r => r.active === 0).length > 0 && ` · ${roster.filter(r => r.active === 0).length} inactive hidden`}
           </p>
           <p className="text-[10px] text-on-surface-variant/60 italic">Changes auto-push to Google Sheets Roster tab</p>
         </div>
