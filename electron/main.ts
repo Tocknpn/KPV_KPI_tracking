@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { writeFileSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 import { initDatabase } from './db/connection'
 import { registerAllHandlers, startEmailScheduler } from './ipc/index'
 import { pullAllFromCloud, getSetting } from './ipc/sheets'
@@ -54,6 +55,11 @@ app.whenReady().then(async () => {
 
   // Allow renderer to poll readiness synchronously (handles fast-startup race)
   ipcMain.handle('app:isReady', () => isDbReady)
+
+  // User-initiated update actions — never triggered automatically, only from the
+  // in-app "Update available" banner the renderer shows on 'updater:available'.
+  ipcMain.handle('updater:download', () => autoUpdater.downloadUpdate())
+  ipcMain.handle('updater:install', () => autoUpdater.quitAndInstall())
 
   // Create window immediately so OS event pump stays alive while DB loads.
   // Window stays hidden (show:false) until ready-to-show fires — user sees the
@@ -124,6 +130,30 @@ app.whenReady().then(async () => {
 
   // Start scheduled email jobs
   startEmailScheduler()
+
+  // Auto-update check — silently does nothing in dev (no packaged app, no GH_TOKEN) or
+  // if the network/repo is unreachable. autoDownload is off so the user gets a choice
+  // before a download starts; quitAndInstall only fires when they explicitly click it
+  // (see ipcMain handlers below), never silently mid-session.
+  autoUpdater.autoDownload = false
+  autoUpdater.on('update-available', (info) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater:available', { version: info.version })
+    }
+  })
+  autoUpdater.on('update-downloaded', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater:downloaded')
+    }
+  })
+  autoUpdater.on('error', (err) => {
+    console.warn('[updater] check/download failed:', err?.message)
+  })
+  if (is.dev) {
+    console.log('[updater] skipped in dev')
+  } else {
+    autoUpdater.checkForUpdates().catch(e => console.warn('[updater] checkForUpdates failed:', e?.message))
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

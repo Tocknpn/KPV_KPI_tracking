@@ -237,6 +237,14 @@ contextBridge.exposeInMainWorld('api', {
   onStartupSyncResult: (cb: (r: { configured: boolean; success: boolean; error?: string }) => void) =>
     ipcRenderer.once('sheets:startupSyncResult', (_e, r) => cb(r)),
 
+  // ── App updates ────────────────────────────────────────────────────────
+  onUpdateAvailable: (cb: (info: { version: string }) => void) =>
+    ipcRenderer.on('updater:available', (_e, info) => cb(info)),
+  onUpdateDownloaded: (cb: () => void) =>
+    ipcRenderer.on('updater:downloaded', () => cb()),
+  downloadUpdate: () => ipcRenderer.invoke('updater:download'),
+  installUpdate: () => ipcRenderer.invoke('updater:install'),
+
   // ── Admin / Test Data ─────────────────────────────────────────────────
   seedTestData: (token: string) =>
     ipcRenderer.invoke('admin:seedTestData', token),

@@ -12,6 +12,10 @@ interface Window {
     }>
     isSheetsConfigured(): Promise<boolean>
     onStartupSyncResult(cb: (r: { configured: boolean; success: boolean; error?: string }) => void): void
+    onUpdateAvailable(cb: (info: { version: string }) => void): void
+    onUpdateDownloaded(cb: () => void): void
+    downloadUpdate(): Promise<void>
+    installUpdate(): Promise<void>
     bootstrapConnect(sheetsId: string, serviceAccountPath: string): Promise<{ success: boolean; message?: string; error?: string }>
     browseFileBootstrap(): Promise<string | null>
     logout(token: string): Promise<{ success: boolean }>

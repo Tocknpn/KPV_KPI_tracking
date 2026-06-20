@@ -19,6 +19,9 @@ export default function App() {
   const [dbReady, setDbReady] = useState(false)
   const [initError, setInitError] = useState<string | null>(null)
   const setSyncBanner = useAppStore(s => s.setSyncBanner)
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null)
+  const [updateDownloading, setUpdateDownloading] = useState(false)
+  const [updateReady, setUpdateReady] = useState(false)
 
   useEffect(() => {
     // Poll once: if DB already ready (fast startup), resolve immediately.
@@ -31,7 +34,16 @@ export default function App() {
     // Surfaces the startup auto-pull's outcome (configured/success/error) so a device with
     // no admin/hr login still sees why its data looks stale or empty — see TopBar banner.
     window.api.onStartupSyncResult(r => setSyncBanner(r))
+    // electron-updater found a newer GitHub release — user decides whether to download,
+    // nothing happens automatically (see main.ts: autoDownload = false).
+    window.api.onUpdateAvailable(info => setUpdateVersion(info.version))
+    window.api.onUpdateDownloaded(() => { setUpdateDownloading(false); setUpdateReady(true) })
   }, [])
+
+  function handleDownloadUpdate() {
+    setUpdateDownloading(true)
+    window.api.downloadUpdate()
+  }
 
   if (initError) {
     return (
@@ -63,7 +75,27 @@ export default function App() {
   }
 
   return (
-    <Routes>
+    <>
+      {(updateVersion || updateReady) && (
+        <div className="fixed top-0 left-0 right-0 z-[100] bg-primary text-white text-sm flex items-center justify-center gap-3 py-2 px-4">
+          {updateReady ? (
+            <>
+              <span>Update downloaded — restart to install v{updateVersion}.</span>
+              <button onClick={() => window.api.installUpdate()} className="px-3 py-1 rounded-md bg-white text-primary font-bold hover:opacity-90">
+                Restart & Update
+              </button>
+            </>
+          ) : (
+            <>
+              <span>Update available — v{updateVersion}.</span>
+              <button onClick={handleDownloadUpdate} disabled={updateDownloading} className="px-3 py-1 rounded-md bg-white text-primary font-bold hover:opacity-90 disabled:opacity-60">
+                {updateDownloading ? 'Downloading…' : 'Update'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      <Routes>
       <Route path="/login"          element={<Login />} />
       <Route path="/dashboard"      element={<Dashboard />} />
       <Route path="/entry"          element={<DailyEntry />} />
@@ -83,6 +115,7 @@ export default function App() {
       <Route path="/commission"     element={<Navigate to="/reports" replace />} />
       <Route path="/team"           element={<Navigate to="/reports" replace />} />
       <Route path="*"               element={<Navigate to="/login" replace />} />
-    </Routes>
+      </Routes>
+    </>
   )
 }

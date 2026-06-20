@@ -30,3 +30,8 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: SalesTrack Pro
+
+publish:
+  provider: github
+  owner: Tocknpn
+  repo: KPV_KPI_tracking
