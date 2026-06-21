@@ -1,6 +1,6 @@
 # KPV Sales Performance — System Flowcharts
 
-> Version: **v1.7.88** — schema v20. Update this header + diagrams whenever app changes screens, roles, or data flow.
+> Version: **v1.8.14** — schema v20. Update this header + diagrams whenever app changes screens, roles, or data flow.
 
 Paste each diagram block into [mermaid.live](https://mermaid.live) to render.
 
@@ -124,7 +124,9 @@ flowchart TD
 
 A month nobody touched simply reads as whatever the last edited month said for every report/calculation — no "confirm this month, nothing changed" step. **The Roster screen's own display is the one exception**: it shows an exact-month-only view so HR can see at a glance whether a month was actually uploaded, instead of silently inheriting an older month's data. Deactivating/transferring a rep next month never changes how a past month's report reads (§ Diagram 5).
 
-The Roster screen also has a **Sup tab** alongside the existing Reps tab — a read-only list of supervisors for the selected month (Sup Code, Name, Branch, Type, live Rep headcount, Target, Status), so HR can check both reps and supervisors are accounted for without leaving the screen. The Reps tab now also shows each rep's **Target** column (individual override if set, else branch+staff-type default), and the old "Show Inactive" toggle was removed — inactive reps are always hidden now.
+The Roster screen also has a **Sup tab** alongside the existing Reps tab — a read-only list of supervisors for the selected month (Sup Code, Name, Branch, Type, live Rep headcount, Target, Status), so HR can check both reps and supervisors are accounted for without leaving the screen. The Reps tab now also shows each rep's **Target** column (individual override if set, else branch+staff-type default).
+
+A **"Show Inactive"** checkbox (re-added 2026-06-19, after a stretch where inactive reps were always hidden with no way to see them) reveals deactivated reps in the table. Only inactive reps get a **permanent delete** button (trash icon, next to Reactivate) — blocked if that rep has any uploaded daily entries on record, same safety rule as deleting a user account.
 
 ---
 
@@ -172,6 +174,23 @@ Clicking a rep or supervisor row on KPI Report opens a profile modal with a tren
 
 ---
 
+## Diagram 7 — Auto-Update Flow
+
+```mermaid
+flowchart TD
+    LAUNCH["App launches\n(packaged build only — skipped in dev)"] --> CHECK["autoUpdater.checkForUpdates()\nqueries GitHub Releases\n(Tocknpn/KPV_KPI_tracking)"]
+    CHECK -->|no newer release| SILENT["No banner — nothing happens"]
+    CHECK -->|newer release found| BANNER["Blue banner:\n'Update available — vX.Y.Z' + Update button"]
+    BANNER -->|user clicks Update| DL["Downloads installer in background\nautoDownload is OFF — never starts without a click"]
+    DL --> READY["Banner changes to\n'Restart & Update' button"]
+    READY -->|user clicks| INSTALL["quitAndInstall() —\napp closes, installer runs, reopens on new version"]
+    READY -->|user ignores| LATER["Stays on old version until they click\n— no forced install"]
+```
+
+Releases must be published as **Release**, not **Draft** — `electron-builder.yml`'s `releaseType: release` setting forces this on every `npm run dist:win -- --publish always`. A draft release is invisible to the GitHub API endpoint electron-updater queries, which fails with "No published versions on GitHub" and shows no banner at all — silent, no error visible to the end user. Only devices already running **v1.8.12+** (the version this code first shipped in) have the checker at all; older installs need one manual reinstall to join the auto-update loop.
+
+---
+
 ## Change Log
 
 | Version | Date | Change |
@@ -187,5 +206,14 @@ Clicking a rep or supervisor row on KPI Report opens a profile modal with a tren
 | v1.7.x | 2026-06-18/19 | KPI Report profile modal: trend chart unified to one Total Weight bar + one Quantity line across all time views; fixed Supervisor Team KPI % always showing 0.0% |
 | v1.7.x | 2026-06-18/19 | Post-login landing page now routes to the first menu item the user's role actually has, instead of always defaulting to Dashboard |
 | v1.7.x | 2026-06-18/19 | Sync status pill added next to "Updated Xm ago" on every screen, visible to all roles, for "not configured" / "last sync failed" |
+| v1.8.x | 2026-06-19 | Branch % Contribution pie chart: value labels moved outside the slice with leader lines (Analytics + Sale Report branch pies); 3 branch-weight pie charts on Sale Report now sit in bordered cards |
+| v1.8.x | 2026-06-19 | Fixed: `report:monthly` / `report:dailyTracking` / `commission:getReport` for `sales_sup` AND-ed today's live branch against the viewed month's historical roster — a supervisor's branch transfer silently blanked their own past-month reports. Now scopes by `supervisor_id` only |
+| v1.8.x | 2026-06-19 | Fixed: `report:teamPerformance` had zero role scoping for `sales_sup` — showed every supervisor/team in the branch instead of just their own |
+| v1.8.x | 2026-06-19 | Fixed: Sale Report's "Branch Total Weight — Week-over-Week" widget ignored role-based branch scoping entirely — `sales_sup`/`branch_manager`/`accountant_officer` saw every branch's chart, not just their own |
+| v1.8.x | 2026-06-19 | Fixed: Audit Log page hardcoded `allowedRoles={['admin']}`, ignoring the per-user permission override — a role with `audit_log` in its defaults (or granted via User Management) couldn't actually open the page even though the sidebar showed it. Added `requiredPermission` support to `AppShell`, gated by effective permission instead of a fixed role list |
+| v1.8.x | 2026-06-19 | Fixed: "HR confirmed this month" KPI flag was local-only — switching Google Sheet source then back wiped it (no corresponding sheet data to restore from), banner reappeared despite KPI rates being correct. Now pushed/pulled via a new `KpiSubmissions` sheet tab like every other config table |
+| v1.8.x | 2026-06-19 | Roster: re-added "Show Inactive" checkbox + permanent Delete button (inactive reps only, blocked if rep has upload history) |
+| v1.8.x | 2026-06-19 | PDF export fixed: was exporting 70MB+ files (PNG → JPEG), right-side table columns cut off (nested `overflow-hidden` ancestors weren't un-clipped, only the immediate scroll container was), and fonts rendering wrong (now waits on `document.fonts.ready` before capture) |
+| v1.8.12 | 2026-06-20/21 | Auto-update added via `electron-updater` + GitHub Releases (`Tocknpn/KPV_KPI_tracking`) — see Diagram 7 |
 
 *Diagrams older than v1.7.x described a 4-role system (admin/branch_manager/supervisor/executive) and Manual Entry — fully replaced, kept only in version history above for context.*

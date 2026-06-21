@@ -17,6 +17,8 @@
 | Need to fix just one bad day inside a multi-date upload | Deleting the whole batch would remove correct days too | Use **Delete by Branch + Date** in Upload History's Approval panel instead of the per-batch delete — pick the branch and the exact date (or range), confirm the live preview count, and only those days are removed. |
 | Branch target shows 0 for one type (B2C or B2B) | Admin never filled in that side after a data wipe/reset | Go to KPI Settings (Admin) → Branch Point Target Defaults → fill in both B2C and B2B for that branch. |
 | "Save failed" with no other detail | Session expired, or a backend validation error | Log out and back in, then retry. If it persists, note the exact error text and escalate — it now shows the real reason instead of failing silently. |
+| "Month not confirmed" banner came back after I already confirmed it | Switched Google Sheet source then switched back — fixed as of v1.8.x (the confirmed flag now syncs via the sheet too) | If you're on an older version, just click Save All in KPI Settings again — harmless even if nothing changed. |
+| No "Update available" banner even though a newer version exists | Either this device is on a version older than v1.8.12 (no update-checker at all), or the release on GitHub is still a Draft | Pre-1.8.12: needs one manual reinstall. Draft release: ask whoever published it to click "Publish release" on GitHub. |
 
 ## General rule of thumb
 

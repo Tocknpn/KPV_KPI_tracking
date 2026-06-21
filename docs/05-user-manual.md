@@ -63,8 +63,10 @@ Two tabs: **Reps** and **Sup**.
   expects, including the optional `Sup_Code` column (safer than matching by name).
 - A **Target** column shows each rep's monthly KPI point target — their individual override
   if one's been set, otherwise the branch+staff-type default.
-- Inactive reps are always hidden from the list (a footer count shows how many are hidden) —
-  there's no "Show Inactive" toggle anymore.
+- Inactive reps are hidden by default (footer shows how many are hidden). Check **"Show
+  Inactive"** in the filter bar to reveal them — only then do **Reactivate** and a permanent
+  **Delete** button (trash icon) appear next to each one. Delete is blocked if that rep has
+  any uploaded daily entries on record — deactivate instead in that case.
 - Switching the month dropdown at the top shows the roster *exactly as uploaded/edited for
   that month* — if nothing was ever uploaded for the selected month, the table shows empty
   with "No roster uploaded for {Month} {Year}" instead of quietly showing an older month's
@@ -107,3 +109,11 @@ Clicking a rep or supervisor row opens a profile modal with a trend chart — on
 Weight (Jewelry + Bar combined, in grams) and one line for Quantity. This is the same chart
 style no matter which time view you're on (Month / Week / Day for reps; Month-only for
 supervisors).
+
+## App Updates
+
+When a newer version has been published, a blue banner appears at the top of the app:
+"Update available — vX.Y.Z" with an **Update** button. Click it to download in the
+background — nothing downloads automatically without that click. Once downloaded, the banner
+changes to **"Restart & Update"** — click it to close and reopen the app on the new version.
+Ignoring the banner is fine; you'll keep using the current version until you click through.
