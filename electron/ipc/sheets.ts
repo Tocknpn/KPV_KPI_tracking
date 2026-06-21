@@ -21,6 +21,7 @@ const TABS = {
   SUPERVISORS:     'Supervisors',
   MONTHLY_TARGETS: 'MonthlyBranchTargets',
   KPI_SUBMISSIONS: 'KpiSubmissions',
+  AUDIT_LOG: 'AuditLog',
 } as const
 
 const SHEET_HEADERS = ['Date', 'Branch', 'Rep Code', 'Salesman Name', 'Jewelry (Baht)', 'Bar (Baht)', 'Qty']
@@ -380,6 +381,43 @@ export async function syncEntriesToCloudIfConfigured(db: Database): Promise<void
   } catch { /* Sheets unavailable — silently skip */ }
 }
 
+// ── Push unsynced audit log events (append-only, same pattern as entries) ──
+// audit_logs was local-only before this — one device's actions were invisible on every
+// other device's Audit Log screen. Append-only, never clear+rewrite: a continuously
+// growing event log under concurrent writers must never risk the clobber a full-tab
+// rewrite would cause (see KpiSubmissions/Roster/etc — those are small config snapshots,
+// this is an event stream, different shape, different risk profile).
+export async function syncAuditLogsToCloudIfConfigured(db: Database): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+
+    const unsynced = prepare(db, `
+      SELECT id, occurred_at, username, role, event_type, target_type, target_id, detail, branch_id
+      FROM audit_logs WHERE synced=0 ORDER BY id
+    `).all() as Array<{ id: number; occurred_at: string; username: string; role: string; event_type: string; target_type: string | null; target_id: string | null; detail: string | null; branch_id: number | null }>
+
+    if (!unsynced.length) return
+
+    const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: `${TABS.AUDIT_LOG}!A1` }).catch(() => null)
+    if (!headerCheck?.data?.values?.[0]?.[0]) {
+      await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetsId, requestBody: { requests: [{ addSheet: { properties: { title: TABS.AUDIT_LOG } } }] } }).catch(() => {})
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: sheetsId, range: `${TABS.AUDIT_LOG}!A1`, valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [['occurred_at', 'username', 'role', 'event_type', 'target_type', 'target_id', 'detail', 'branch_id']] },
+      })
+    }
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: sheetsId, range: `${TABS.AUDIT_LOG}!A:H`, valueInputOption: 'USER_ENTERED',
+      requestBody: { values: unsynced.map(r => [r.occurred_at, r.username, r.role, r.event_type, r.target_type ?? '', r.target_id ?? '', r.detail ?? '', r.branch_id ?? '']) },
+    })
+    unsynced.forEach(r => prepare(db, `UPDATE audit_logs SET synced=1 WHERE id=?`).run(r.id))
+  } catch { /* Sheets unavailable — silently skip */ }
+}
+
 // ── Delete matching daily entries from Google Sheets ───────────────────────
 export async function deleteEntriesFromCloud(
   db: Database,
@@ -561,10 +599,10 @@ export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
 // ── Pull all config + entries from Sheets (standalone, callable from main.ts) ─
 export async function pullAllFromCloud(sheetsId: string, saPath: string): Promise<{
   success: boolean
-  counts: { entries: number; configs: number; settings: number; branches: number; kpiRates: number; roster: number; qtyTiers: number; users: number; supervisors: number; monthlyTargets: number; kpiSubmissions: number }
+  counts: { entries: number; configs: number; settings: number; branches: number; kpiRates: number; roster: number; qtyTiers: number; users: number; supervisors: number; monthlyTargets: number; kpiSubmissions: number; auditLogs: number }
   error?: string
 }> {
-  const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, supervisorRoster: 0, qtyTiers: 0, users: 0, supervisors: 0, monthlyTargets: 0, kpiSubmissions: 0 }
+  const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, supervisorRoster: 0, qtyTiers: 0, users: 0, supervisors: 0, monthlyTargets: 0, kpiSubmissions: 0, auditLogs: 0 }
   const sectionErrors: string[] = []
   try {
     const auth   = getServiceAuth(saPath)
@@ -830,6 +868,30 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
         prepare(db, `INSERT OR REPLACE INTO kpi_monthly_submissions (year_month, submitted_by, submitted_at) VALUES (?,?,?)`)
           .run(yearMonth, submittedBy ?? null, submittedAt ?? new Date().toISOString())
         counts.kpiSubmissions++
+      }
+    }
+
+    // ── Audit Log (merge — append-only event stream, dedup by content since
+    // a local AUTOINCREMENT id is never a stable key across multiple devices) ──
+    const auditRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: `${TABS.AUDIT_LOG}!A:H` }).catch(() => null)
+    if (auditRes) {
+      const all = auditRes.data.values ?? []
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'occurred_at' ? all.slice(1) : all
+      for (const row of data) {
+        const [occurredAt, username, role, eventType, targetType, targetId, detail, branchIdStr] = row as string[]
+        if (!occurredAt || !eventType) continue
+        const exists = prepare(db, `
+          SELECT 1 FROM audit_logs
+          WHERE occurred_at=? AND username=? AND event_type=? AND IFNULL(target_id,'')=? AND IFNULL(detail,'')=?
+          LIMIT 1
+        `).get(occurredAt, username ?? '', eventType, targetId ?? '', detail ?? '')
+        if (exists) continue
+        const branchId = parseInt(branchIdStr, 10)
+        prepare(db, `
+          INSERT INTO audit_logs (occurred_at, username, role, event_type, target_type, target_id, detail, branch_id, synced)
+          VALUES (?,?,?,?,?,?,?,?,1)
+        `).run(occurredAt, username ?? '', role ?? '', eventType, targetType || null, targetId || null, detail || null, isNaN(branchId) ? null : branchId)
+        counts.auditLogs++
       }
     }
 

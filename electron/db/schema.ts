@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js'
 
-const SCHEMA_VERSION = 26
+const SCHEMA_VERSION = 27
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -185,7 +185,8 @@ const BASE_TABLES = `
     target_type TEXT,
     target_id   TEXT,
     detail      TEXT,
-    branch_id   INTEGER
+    branch_id   INTEGER,
+    synced      INTEGER NOT NULL DEFAULT 0
   );
   CREATE TABLE IF NOT EXISTS roster_monthly (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -693,6 +694,15 @@ export function applySchema(db: Database): boolean {
     `)
     db.run(`CREATE INDEX IF NOT EXISTS idx_sup_roster_monthly_ym ON supervisor_roster_monthly(year_month)`)
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '26')`).run()
+  }
+
+  if (currentVersion < 27) {
+    // audit_logs was local-only — never pushed/pulled, so one device's admin actions were
+    // invisible to every other device's Audit Log screen. synced=0 marks rows not yet
+    // pushed, same append-only pattern daily_entries already uses (safe for concurrent
+    // writers — never clears/rewrites the sheet, only appends new rows).
+    try { db.run(`ALTER TABLE audit_logs ADD COLUMN synced INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '27')`).run()
   }
 
   // Self-heal columns that BASE_TABLES was historically missing (salesmen.supervisor_id,

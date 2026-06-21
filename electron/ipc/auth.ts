@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs'
 import { randomBytes } from 'crypto'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
-import { pushUsersIfConfigured } from './sheets'
+import { pushUsersIfConfigured, syncAuditLogsToCloudIfConfigured } from './sheets'
 
 // ── Role permission defaults (mirrors src/types/index.ts ROLE_DEFAULTS) ──
 const ROLE_DEFAULTS: Record<string, string[]> = {
@@ -37,6 +37,9 @@ export function logAudit(
       INSERT INTO audit_logs (user_id, username, role, event_type, target_type, target_id, detail, branch_id)
       VALUES (?,?,?,?,?,?,?,?)
     `).run(userId, username, role, eventType, targetType ?? null, targetId ?? null, detail ?? null, branchId ?? null)
+    // Fire-and-forget — every other device's Audit Log screen picks this up on its next
+    // pull. Single choke point: every logAudit() call site across the app gets this for free.
+    syncAuditLogsToCloudIfConfigured(db).catch(() => {})
   } catch { /* non-critical — never throw */ }
 }
 
