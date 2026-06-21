@@ -35,3 +35,8 @@ publish:
   provider: github
   owner: Tocknpn
   repo: KPV_KPI_tracking
+  # electron-builder defaults new releases to "draft" — drafts are invisible to the
+  # GitHub API endpoint electron-updater queries, so every client-side update check fails
+  # with "No published versions on GitHub" until someone manually publishes the draft on
+  # github.com. releaseType: release publishes it immediately on upload instead.
+  releaseType: release

@@ -2,21 +2,38 @@ import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
 // Report tables (Daily Tracking, Reps Performance, etc) sit inside their own
-// `overflow-x-auto` div for on-screen horizontal scrolling. html2canvas only rasterizes
-// each element's visible/clipped box, not its scrollable content — left un-touched, any
-// wide table gets its right-hand columns silently cut off in the exported PDF. Temporarily
-// widen every such container to its full scrollWidth before the snapshot, restore after.
+// `overflow-x-auto` div for on-screen horizontal scrolling, which itself is usually wrapped
+// by a GlassCard with `overflow-hidden` (for its rounded corners). Widening just the
+// scroll container isn't enough — the GlassCard ancestor still clips the now-wider table at
+// its own edge, same cut-off symptom one level up. Walk every ancestor up to the capture
+// root and force overflow:visible on each, not just the immediate scroll container.
 function unclipScrollContainers(root: HTMLElement): () => void {
   const containers = [root, ...Array.from(root.querySelectorAll<HTMLElement>('*'))]
     .filter(el => getComputedStyle(el).overflowX === 'auto' || getComputedStyle(el).overflowX === 'scroll')
-  const restore = containers.map(el => {
+
+  const restoreFns: Array<() => void> = []
+
+  for (const el of containers) {
     const prevOverflow = el.style.overflow
     const prevWidth    = el.style.width
     el.style.overflow = 'visible'
     el.style.width    = `${el.scrollWidth}px`
-    return () => { el.style.overflow = prevOverflow; el.style.width = prevWidth }
-  })
-  return () => restore.forEach(fn => fn())
+    restoreFns.push(() => { el.style.overflow = prevOverflow; el.style.width = prevWidth })
+
+    let ancestor = el.parentElement
+    while (ancestor && ancestor !== root.parentElement) {
+      const style = getComputedStyle(ancestor)
+      if (style.overflow !== 'visible' || style.overflowX !== 'visible' || style.overflowY !== 'visible') {
+        const prevAncestorOverflow = ancestor.style.overflow
+        ancestor.style.overflow = 'visible'
+        const a = ancestor
+        restoreFns.push(() => { a.style.overflow = prevAncestorOverflow })
+      }
+      ancestor = ancestor.parentElement
+    }
+  }
+
+  return () => restoreFns.forEach(fn => fn())
 }
 
 // Snapshots a DOM element (the current report's table/cards, not the whole page — caller

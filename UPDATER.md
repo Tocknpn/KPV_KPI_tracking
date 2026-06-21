@@ -18,10 +18,19 @@ Goal: build new version → publish → every installed device gets an in-app "U
 - [x] Bumped to v1.8.12, ran `npm run dist:win -- --publish always` — succeeded after fixing token scope (first PAT had empty oauth-scopes, regenerated with `repo` properly checked)
 - [x] Release uploaded: `SalesTrack-Pro-Setup-1.8.12.exe` to github.com/Tocknpn/KPV_KPI_tracking/releases tag v1.8.12
 
-## Phase 4 — End-to-end test
-- [ ] Install current version on a spare/test device
-- [ ] Bump version, build+publish v2
-- [ ] Open v1 app, confirm update prompt shows, update, confirm v2 installs + local DB untouched
+## Phase 4 — End-to-end test — banner confirmed working 2026-06-21
+- [x] Installed v1.8.12 (has updater code), published v1.8.13 — found bug: releases default to **draft**, invisible to electron-updater's GitHub API query → "No published versions on GitHub" error
+- [x] Fixed: added `releaseType: release` to `electron-builder.yml` — future builds publish live automatically
+- [x] Manually published the v1.8.13 draft once (one-time, pre-fix release)
+- [x] Reopened v1.8.12 app — "Update available — v1.8.13" banner confirmed showing
+- [ ] Click Update → confirm download → Restart & Update → confirm v1.8.13 installs + local DB/login state untouched
+
+## Going forward — normal release flow (no more setup needed)
+1. Code changes
+2. Bump `version` in package.json
+3. `npm run dist:win -- --publish always`
+4. Every device on v1.8.12+ sees the banner next time they open the app
+5. Devices still on pre-1.8.12 (before updater code existed) need one manual reinstall to join — one-time only
 
 ## Phase 5 — Rollout
 - [ ] Becomes normal release flow going forward — every future version is just Phase 3's one command
