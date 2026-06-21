@@ -14,9 +14,9 @@ Goal: build new version → publish → every installed device gets an in-app "U
 - [x] PAT generated (regenerated after first one got exposed in a screenshot — old one revoked)
 - [x] `GH_TOKEN` set as User env var on build machine
 
-## Phase 3 — First real publish
-- [ ] Bump version, run `npm run dist:win -- --publish always`
-- [ ] Confirm release + `latest.yml` appear on GitHub
+## Phase 3 — First real publish — DONE 2026-06-21
+- [x] Bumped to v1.8.12, ran `npm run dist:win -- --publish always` — succeeded after fixing token scope (first PAT had empty oauth-scopes, regenerated with `repo` properly checked)
+- [x] Release uploaded: `SalesTrack-Pro-Setup-1.8.12.exe` to github.com/Tocknpn/KPV_KPI_tracking/releases tag v1.8.12
 
 ## Phase 4 — End-to-end test
 - [ ] Install current version on a spare/test device
@@ -29,4 +29,5 @@ Goal: build new version → publish → every installed device gets an in-app "U
 ---
 ## Status log
 - 2026-06-19: Plan created. Phase 1 done — code wired, untested (needs real GitHub repo to test against).
-- 2026-06-20: Phase 2 done — repo (Tocknpn/KPV_KPI_tracking) + token wired in. Next: Phase 3 (first publish).
+- 2026-06-20: Phase 2 done — repo (Tocknpn/KPV_KPI_tracking) + token wired in.
+- 2026-06-21: Phase 3 done — v1.8.12 published to GitHub Releases. Next: Phase 4 (install old version on test device, confirm in-app update prompt actually appears + works end to end).
