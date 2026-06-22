@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="lo">
+<head>
+<meta charset="UTF-8">
+<title>SalesTrack Pro — ປຶ້ມຄູ່ມືການນຳໃຊ້</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Lao:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --blue: #004f96; --blue-light: #e8f1fb;
+    --gold: #9c6e1b; --gold-light: #fdf6e8;
+    --green: #1e7a4a; --green-light: #e9f7ef;
+    --red: #b3261e; --red-light: #fdecea;
+    --ink: #1c2330; --sub: #5b6472; --line: #e3e7ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Noto Sans Lao", -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink); background: #f6f8fc; margin: 0; line-height: 1.7;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px 80px; }
+  header.cover {
+    background: linear-gradient(135deg, #004f96, #1e6fb8 55%, #2f9e6b);
+    color: #fff; padding: 64px 24px 56px; text-align: center;
+  }
+  header.cover h1 { font-size: 34px; margin: 0 0 8px; }
+  header.cover p { font-size: 16px; opacity: .92; margin: 0; }
+  nav.toc {
+    background: #fff; border: 1px solid var(--line); border-radius: 14px;
+    margin: -32px auto 40px; padding: 24px 28px; box-shadow: 0 8px 24px rgba(0,0,0,.06);
+  }
+  nav.toc h2 { margin-top: 0; font-size: 16px; letter-spacing: .02em; color: var(--sub); }
+  nav.toc ol { columns: 2; gap: 32px; padding-left: 20px; margin: 0; }
+  nav.toc li { margin-bottom: 6px; }
+  nav.toc a { color: var(--blue); text-decoration: none; font-weight: 600; }
+  nav.toc a:hover { text-decoration: underline; }
+
+  table.rolemap { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  table.rolemap th, table.rolemap td { border: 1px solid var(--line); padding: 7px 8px; text-align: center; }
+  table.rolemap th { background: var(--blue-light); font-size: 12px; }
+  table.rolemap td:first-child, table.rolemap th:first-child { text-align: left; font-weight: 600; }
+  table.rolemap .y { color: var(--green); font-weight: 700; }
+  table.rolemap .n { color: #c7cbd1; }
+
+  section.feature { margin: 56px 0; }
+  section.feature h2 {
+    font-size: 24px; margin: 0 0 4px; padding-bottom: 10px;
+    border-bottom: 3px solid var(--blue);
+  }
+  section.feature .badges { margin: 10px 0 18px; }
+  .badge {
+    display: inline-block; font-size: 12px; font-weight: 700;
+    letter-spacing: .01em; padding: 4px 10px; border-radius: 999px; margin: 2px 4px 2px 0;
+  }
+  .b-admin { background: #fde2e1; color: #92231d; }
+  .b-hr { background: #e3dafc; color: #4b2e9e; }
+  .b-hrs { background: #ece4fb; color: #6a4cb0; }
+  .b-ao { background: #fde9d2; color: #8a4f0a; }
+  .b-am { background: #fde9d2; color: #8a4f0a; }
+  .b-sup { background: #d9f0e8; color: #146c4a; }
+  .b-bm { background: #dbe9fb; color: #154b91; }
+  .b-tm { background: #dbe9fb; color: #154b91; }
+
+  .step { margin: 14px 0; }
+  .step ol, .step ul { padding-left: 22px; }
+  .step li { margin-bottom: 6px; }
+
+  figure { margin: 18px 0; }
+  figure img {
+    width: 100%; border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 6px 18px rgba(20,30,50,.08); display: block;
+  }
+  figcaption { font-size: 13.5px; color: var(--sub); margin-top: 8px; text-align: center; }
+
+  .box { border-radius: 10px; padding: 14px 16px; margin: 16px 0; font-size: 15px; }
+  .box b { display: block; font-size: 12.5px; margin-bottom: 4px; }
+  .tip { background: var(--blue-light); border-left: 4px solid var(--blue); }
+  .tip b { color: var(--blue); }
+  .note { background: var(--gold-light); border-left: 4px solid var(--gold); }
+  .note b { color: var(--gold); }
+  .warn { background: var(--red-light); border-left: 4px solid var(--red); }
+  .warn b { color: var(--red); }
+
+  .top { text-align: right; }
+  .top a { font-size: 12px; color: var(--sub); text-decoration: none; }
+  .top a:hover { text-decoration: underline; }
+
+  footer { text-align: center; color: var(--sub); font-size: 13px; padding: 40px 0; }
+
+  code.btn { background: #eef2f8; padding: 2px 6px; border-radius: 5px; font-family: -apple-system, Segoe UI, sans-serif; font-size: 13px; font-weight: 600; color: var(--blue); }
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <h1>SalesTrack Pro</h1>
+  <p>ປຶ້ມຄູ່ມືການນຳໃຊ້ — ລະບົບຕິດຕາມຍອດຂາຍ KPV ຄຳ &amp; ເພັດພອຍ</p>
+</header>
+
+<div class="wrap">
+
+<nav class="toc">
+  <h2>ສາລະບານ</h2>
+  <ol>
+    <li><a href="#login">1. ການເຂົ້າສູ່ລະບົບ ແລະ ການເຊື່ອມຕໍ່</a></li>
+    <li><a href="#dashboard">2. ໜ້າຫຼັກ (Dashboard)</a></li>
+    <li><a href="#entry">3. ອັບໂຫລດຂໍ້ມູນຍອດຂາຍປະຈຳວັນ</a></li>
+    <li><a href="#history">4. ປະຫວັດການອັບໂຫລດ</a></li>
+    <li><a href="#roster">5. ບັນຊີພະນັກງານ — ພະນັກງານຂາຍ</a></li>
+    <li><a href="#roster-sup">6. ບັນຊີພະນັກງານ — ຫົວໜ້າທີມ</a></li>
+    <li><a href="#kpi">7. ລາຍງານ KPI</a></li>
+    <li><a href="#sales">8. ລາຍງານຍອດຂາຍ</a></li>
+    <li><a href="#kpisettings">9. ການຕັ້ງຄ່າ KPI</a></li>
+    <li><a href="#users">10. ການຕັ້ງຄ່າ ແລະ ຜູ້ໃຊ້</a></li>
+    <li><a href="#audit">11. ປະຫວັດການເຄື່ອນໄຫວ (Audit Log)</a></li>
+  </ol>
+</nav>
+
+<section class="feature">
+  <h2>ໃຜເຫັນຫຍັງ</h2>
+  <p>ແຕ່ລະບັນຊີຜູ້ໃຊ້ມີ "ບົດບາດ" (role) ຂອງຕົນເອງ ເຊິ່ງເປັນຕົວກຳນົດວ່າເມນູໃດຈະປະກົດຢູ່ໃນແຖບດ້ານຂ້າງ. ຜູ້ດູແລລະບົບ (Admin) ສາມາດເພີ່ມສິດການເຂົ້າເຖິງພິເສດໃຫ້ບຸກຄົນໃດໜຶ່ງໄດ້ນອກເໜືອຈາກນີ້.</p>
+  <table class="rolemap">
+    <tr><th>ໜ້າຈໍ</th><th>Admin</th><th>HR</th><th>HR Support</th><th>ບັນຊີ-ພະນັກງານ</th><th>ບັນຊີ-ຫົວໜ້າ</th><th>ຫົວໜ້າທີມຂາຍ</th><th>ຜູ້ຈັດການສາຂາ</th><th>ຜູ້ບໍລິຫານສູງສຸດ</th></tr>
+    <tr><td>ໜ້າຫຼັກ (Dashboard)</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>ອັບໂຫລດຍອດຂາຍປະຈຳວັນ</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+    <tr><td>ລາຍງານ KPI</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>ລາຍງານຍອດຂາຍ</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>ປະຫວັດການອັບໂຫລດ</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="y">✓</td></tr>
+    <tr><td>ບັນຊີພະນັກງານ (Roster)</td><td class="n">–</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="y">✓</td></tr>
+    <tr><td>ການຕັ້ງຄ່າ KPI</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="y">✓</td></tr>
+    <tr><td>ປະຫວັດການເຄື່ອນໄຫວ</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+    <tr><td>ການຕັ້ງຄ່າ / ຜູ້ໃຊ້</td><td class="y">✓</td><td class="y">✓*</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+  </table>
+  <p style="font-size:12px;color:var(--sub)">* HR ເຫັນແທັບການເຊື່ອມຕໍ່ (Connection) — ແທັບຜູ້ໃຊ້ (ການສ້າງບັນຊີ) ປົກກະຕິແລ້ວເປັນສິດຂອງ Admin ເທົ່ານັ້ນ.</p>
+</section>
+
+<!-- ============================= 1. LOGIN ============================= -->
+<section class="feature" id="login">
+  <div class="top"><a href="#">↑ ກັບຄືນເທິງ</a></div>
+  <h2>1. ການເຂົ້າສູ່ລະບົບ ແລະ ການເຊື່ອມຕໍ່</h2>
+  <div class="badges"><span class="badge b-admin">ທຸກຄົນ</span></div>
+
+  <p>ທຸກໜ້າຈໍເລີ່ມຕົ້ນທີ່ນີ້. ປ້ອນຊື່ຜູ້ໃຊ້ ແລະ ລະຫັດຜ່ານ, ແລ້ວກົດ <code class="btn">Sign In</code>.</p>
+
+  <figure>
+    <img src="Screenshot/Login%20Page.png" alt="ໜ້າເຂົ້າສູ່ລະບົບ">
+    <figcaption>ໜ້າເຂົ້າສູ່ລະບົບ — ຊື່ຜູ້ໃຊ້, ລະຫັດຜ່ານ, ປຸ່ມ Sign In.</figcaption>
+  </figure>
+
+  <div class="step">
+    <p>ຫຼັງຈາກກົດ Sign In, ແອັບຈະດຶງຂໍ້ມູນລ້າສຸດຈາກ Google Sheets ມາກ່ອນທີ່ຈະເຂົ້າສູ່ລະບົບໄດ້ ເພື່ອບໍ່ໃຫ້ເຫັນຂໍ້ມູນເກົ່າ:</p>
+  </div>
+
+  <figure>
+    <img src="Screenshot/Done%20Login%20-%20Loading.png" alt="ໜ້າກຳລັງເຊື່ອມຕໍ່ Google Sheets">
+    <figcaption>"Connecting to Google Sheets…" — ເກີດຂຶ້ນອັດຕະໂນມັດທຸກຄັ້ງທີ່ເຂົ້າສູ່ລະບົບ.</figcaption>
+  </figure>
+
+  <div class="box tip">
+    <b>ຄຳແນະນຳ</b>
+    ຖ້າບໍ່ມີອິນເຕີເນັດ, ແອັບກໍ່ຈະຍັງເຂົ້າໃຊ້ໄດ້ ໂດຍໃຊ້ຂໍ້ມູນລ້າສຸດທີ່ບັນທຶກໄວ້ໃນອຸປະກອນນີ້ — ພຽງແຕ່ຈະມີຂໍ້ຄວາມແຈ້ງເຕືອນເລັກໆປະກົດຂຶ້ນ.
+  </div>
+
+  <h3>ການສະຫຼັບການເຊື່ອມຕໍ່ຖານຂໍ້ມູນ (Test ຫຼື Production)</h3>
+  <p>ໄອຄອນນ້ອຍຢູ່ມຸມຂວາເທິງຂອງໜ້າເຂົ້າສູ່ລະບົບ ໃຫ້ທ່ານສະຫຼັບໃຫ້ອຸປະກອນນີ້ໄປໃຊ້ Google Sheet ອື່ນໄດ້.</p>
+
+  <figure>
+    <img src="Screenshot/Login%20Global%20connection%20set%20up%201.png" alt="ປ່ອງລະຫັດຜ່ານກ່ອນເຂົ້າແຜງສະຫຼັບຖານຂໍ້ມູນ">
+    <figcaption>ຂັ້ນຕອນ 1 — ກົດໄອຄອນ, ປ້ອນລະຫັດຜ່ານເພື່ອປົດລັອກແຜງນີ້.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="Screenshot/Login%20Global%20connection%20set%20up%202.png" alt="ແຜງສະຫຼັບຖານຂໍ້ມູນ ມີຊ່ອງ Sheet ID ແລະ ໄຟລ໌ JSON">
+    <figcaption>ຂັ້ນຕອນ 2 — ແປະ Google Sheet ID ແລະ ທີ່ຢູ່ໄຟລ໌ .json ຂອງບັນຊີບໍລິການ, ແລ້ວກົດ Switch Database &amp; Sync.</figcaption>
+  </figure>
+
+  <div class="box warn">
+    <b>ຄຳເຕືອນ</b>
+    ການສະຫຼັບຈະລ້າງຂໍ້ມູນທ້ອງຖິ່ນຂອງອຸປະກອນນີ້ກ່ອນ ແລ້ວຈິ່ງດຶງຂໍ້ມູນໃໝ່ທັງໝົດຈາກ Sheet ໃໝ່. ບໍ່ຄວນເຮັດແບບສຸ່ມສ່ຽງໃນອຸປະກອນທີ່ກຳລັງໃຊ້ງານຢູ່ — ຂໍ້ມູນທີ່ຍັງບໍ່ໄດ້ Sync ຈະສູນຫາຍ.
+  </div>
+</section>
+
+<!-- ============================= 2. DASHBOARD ============================= -->
+<section class="feature" id="dashboard">
+  <div class="top"><a href="#">↑ ກັບຄືນເທິງ</a></div>
+  <h2>2. ໜ້າຫຼັກ (Dashboard)</h2>
+  <div class="badges">
+    <span class="badge b-admin">Admin</span><span class="badge b-hr">HR</span>
+    <span class="badge b-am">ບັນຊີ-ຫົວໜ້າ</span><span class="badge b-sup">ຫົວໜ້າທີມຂາຍ</span>
+    <span class="badge b-bm">ຜູ້ຈັດການສາຂາ</span><span class="badge b-tm">ຜູ້ບໍລິຫານສູງສຸດ</span>
+  </div>
+
+  <p>ໜ້າທີ່ທ່ານຈະເຫັນທັນທີຫຼັງເຂົ້າສູ່ລະບົບ (ສຳລັບບົດບາດທີ່ມີສິດ). ສະຫຼຸບຂໍ້ມູນຂອງເດືອນປັດຈຸບັນແບບສົດ — ນ້ຳໜັກ ຄຳ/ແທ່ງ/ຈຳນວນ ລວມ, ຄະແນນ KPI ໂດຍລວມ, ແລະ 10 ອັນດັບພະນັກງານຂາຍດີທີ່ສຸດ.</p>
+
+  <figure>
+    <img src="Screenshot/Dashboard%20Overview.png" alt="ໜ້າ Dashboard Overview">
+    <figcaption>Dashboard — ຕົວກອງສາຂາ/ວັນທີຢູ່ເທິງ, ໝູນຄະແນນ KPI ຢູ່ຊ້າຍ, ອັນດັບພະນັກງານຢູ່ຂວາ.</figcaption>
+  </figure>
+
+  <div class="step">
+    <ul>
+      <li>ໃຊ້ຕົວກອງ <b>ສາຂາ</b> ແລະ <b>ເດືອນ/ວັນທີ</b> ມຸມຂວາເທິງ ເພື່ອປ່ຽນສິ່ງທີ່ກຳລັງເບິ່ງ.</li>
+      <li>ໝູນຄະແນນ KPI ສະແດງ % ໂດຍລວມທຽບກັບເປົ້າໝາຍຂອງໄລຍະທີ່ເລືອກ.</li>
+      <li>10 ອັນດັບພະນັກງານຂາຍດີ ຈັດອັນດັບຕາມຄະແນນລວມ ຄຳ+ແທ່ງ+ຈຳນວນ.</li>
+    </ul>
+  </div>
+
+  <div class="box tip">
+    <b>ຄຳແນະນຳ</b>
+    ຫົວໜ້າທີມຈະເຫັນສະເພາະທີມຂອງຕົນ; ຜູ້ຈັດການສາຂາເຫັນທັງສາຂາ; Admin/HR/ຜູ້ບໍລິຫານສູງສຸດ ເຫັນທັງໝົດ.
+  </div>
+</section>
+
+<!-- ============================= 3. DAILY ENTRY ============================= -->
+<section class="feature" id="entry">
+  <div class="top"><a href="#">↑ ກັບຄືນເທິງ</a></div>
+  <h2>3. ອັບໂຫລດຂໍ້ມູນຍອດຂາຍປະຈຳວັນ</h2>
+  <div class="badges"><span class="badge b-ao">ບັນຊີ-ພະນັກງານ</span><span class="badge b-am">ບັນຊີ-ຫົວໜ້າ</span></div>
+
+  <p>ນີ້ແມ່ນວິທີທີ່ຂໍ້ມູນຍອດຂາຍປະຈຳວັນເຂົ້າສູ່ລະບົບ — ໂດຍການອັບໂຫລດໄຟລ໌ Excel, ບໍ່ແມ່ນການພິມໃສ່ຟອມ. ພະນັກງານບັນຊີອັບໂຫລດໄດ້ສະເພາະສາຂາຂອງຕົນ; ຫົວໜ້າບັນຊີອັບໂຫລດໄດ້ທຸກສາຂາ.</p>
+
+  <figure>
+    <img src="Screenshot/Data%20Entry.png" alt="ໜ້າອັບໂຫລດ Daily XLSX, ຍັງບໍ່ມີໄຟລ໌">
+    <figcaption>ໜ້າອັບໂຫລດປະຈຳວັນ — ດາວໂຫລດແບບຟອມ, ແລ້ວລາກໄຟລ໌ທີ່ຕື່ມແລ້ວເຂົ້າມາ.</figcaption>
+  </figure>
+
+  <div class="step">
+    <ol>
+      <li>ກົດ <code class="btn">Download Template</code> — ຈະໄດ້ໄຟລ໌ .xlsx ທີ່ມີລາຍຊື່ພະນັກງານຂາຍຂອງເດືອນນີ້ ສະເພາະສາຂາຂອງທ່ານ.</li>
+      <li>ຕື່ມ <b>ວັນທີ</b>, <b>ນ້ຳໜັກຄຳ (ບາດ)</b>, <b>ນ້ຳໜັກແທ່ງ (ບາດ)</b>, <b>ຈຳນວນ</b> ສຳລັບແຕ່ລະຄົນ. ບໍ່ຕ້ອງແກ້ໄຂສ່ວນອື່ນ.</li>
+      <li>ລາກໄຟລ໌ມາວາງໃນກ່ອງ (ຫຼືກົດເພື່ອເລືອກໄຟລ໌), ແລ້ວກົດ <code class="btn">Import Daily Data</code>.</li>
+    </ol>
+  </div>
+
+  <figure>
+    <img src="Screenshot/Data%20Entry%20-%20Upload.png" alt="ການສະແດງຕົວຢ່າງກ່ອນນຳເຂົ້າ">
+    <figcaption>ຕົວຢ່າງຫຼັງຈາກວາງໄຟລ໌ —ກວດສອບແຖວຂໍ້ມູນໃຫ້ຖືກຕ້ອງກ່ອນກົດ Import Daily Data.</figcaption>
+  </figure>
+
+  <div class="box warn">
+    <b>ໝາຍເຫດ</b>
+    ຖ້າແຖວໃດມີຂໍ້ມູນຄົນ+ວັນທີນັ້ນຢູ່ແລ້ວ, ລະບົບຈະປະຕິເສດແຖວນັ້ນເພື່ອປ້ອງກັນບໍ່ໃຫ້ຂໍ້ມູນເກົ່າຖືກທັບໂດຍບໍ່ຮູ້ໂຕ. ຖ້າເກີດກໍລະນີນີ້, ໃຫ້ແຈ້ງຫົວໜ້າບັນຊີໃຫ້ລ້າງລາຍການທີ່ຂັດກັນກ່ອນ (ເບິ່ງ ປະຫວັດການອັບໂຫລດ ລຸ່ມນີ້), ແລ້ວຈິ່ງອັບໂຫລດໃໝ່.
+  </div>
+</section>
+
+<!-- ============================= 4. UPLOAD HISTORY ============================= -->
+<section class="feature" id="history">
+  <div class="top"><a href="#">↑ ກັບຄືນເທິງ</a></div>
+  <h2>4. ປະຫວັດການອັບໂຫລດ</h2>
+  <div class="badges"><span class="badge b-admin">Admin</span><span class="badge b-hr">HR</span><span class="badge b-ao">ບັນຊີ-ພະນັກງານ</span><span class="badge b-am">ບັນຊີ-ຫົວໜ້າ</span><span class="badge b-tm">ຜູ້ບໍລິຫານສູງສຸດ</span></div>
+
+  <p>ບ່ອນກວດສອບວ່າທຸກສາຂາອັບໂຫລດຂໍ້ມູນຕາມກຳນົດເວລາ, ແລະ ບ່ອນທີ່ຫົວໜ້າບັນຊີແກ້ໄຂການອັບໂຫລດທີ່ຜິດພາດ.</p>
+
+  <figure>
+    <img src="Screenshot/Upload%20History.png" alt="ໜ້າປະຫວັດການອັບໂຫລດ">
+    <figcaption>ຕາລາງສະຖານະການອັບໂຫລດແຕ່ລະສາຂາ + ແຜງອະນຸມັດສຳລັບລ້າງລາຍການທີ່ຜິດພາດ.</figcaption>
+  </figure>
+
+  <div class="step">
+    <ul>
+      <li><b>ຕາລາງສະຖານະສາຂາ</b> —ເບິ່ງໄດ້ໄວວ່າສາຂາໃດອັບໂຫລດແລ້ວ ສາຂາໃດຍັງບໍ່ໄດ້.</li>
+      <li><b>ລາຍການອັບໂຫລດ — ການອະນຸມັດ</b> (ສະເພາະຫົວໜ້າບັນຊີ) — ຊອກຫາລາຍການທີ່ຜິດພາດ, ກົດ <code class="btn">Delete &amp; Allow Resubmit</code> ເພື່ອລ້າງລາຍການນັ້ນ ໃຫ້ພະນັກງານອັບໂຫລດຂໍ້ມູນທີ່ຖືກຕ້ອງໃໝ່.</li>
+      <li><b>Upload Log</b> ລຸ່ມສຸດ ສະແດງທຸກໄຟລ໌ທີ່ເຄີຍອັບໂຫລດ, ໃຜອັບໂຫລດ, ແລະ ສະຖານະ.</li>
+    </ul>
+  </div>
+
+  <div class="box note">
+    <b>ໝາຍເຫດ</b>
+    ການລຶບລາຍການແມ່ນບໍ່ສາມາດກັບຄືນໄດ້ — ໃຫ້ຢືນຢັນກັບພະນັກງານບັນຊີກ່ອນລຶບ, ບໍ່ແມ່ນຫຼັງລຶບແລ້ວ.
+  </div>
+</section>
+
+<!-- ============================= 5. ROSTER REPS ============================= -->
+<section class="feature" id="roster">
+  <div class="top"><a href="#">↑ ກັບຄືນເທິງ</a></div>
+  <h2>5. ບັນຊີພະນັກງານ — ພະນັກງານຂາຍ</h2>
+  <div class="badges"><span class="badge b-hr">HR</span><span class="badge b-hrs">HR Support</span><span class="badge b-tm">ຜູ້ບໍລິຫານສູງສຸດ</span></div>
+
+  <p>ໜ້າຈັດການໂຄງສ້າງບຸກຄະລາກອນ — ໃຜເຮັດວຽກຢູ່ໃສ, ສາຂາໃດ, ຢູ່ພາຍໃຕ້ຫົວໜ້າທີມໃດ. ບັນຊີນີ້ອີງຕາມເດືອນ — ການແກ້ໄຂເດືອນນີ້ຈະບໍ່ໄປປ່ຽນແປງລາຍງານຂອງເດືອນກ່ອນ.</p>
+
+  <figure>
+    <img src="Screenshot/Roaster%20-%20Reps.png" alt="ແທັບ Roster ພະນັກງານຂາຍ">
+    <figcaption>ບັນຊີພະນັກງານຂາຍ — ແຕ່ລະແຖວສະແດງສາຂາ, ຫົວໜ້າທີມ, ປະເພດ, ເປົ້າໝາຍ, ແລະ ສະຖານະ.</figcaption>
+  </figure>
+
+  <div class="step">
+    <ul>
+      <li><b>Add Rep</b> — ເພີ່ມພະນັກງານທີ່ລະຄົນດ້ວຍມື.</li>
+      <li><b>Upload Roster</b> — ອັບໂຫລດໄຟລ໌ Excel ເພື່ອເພີ່ມພະນັກງານທີລະຫຼາຍຄົນ.</li>
+      <li>ຕົວເລືອກເດືອນ (ມຸມຂວາເທິງ) ກຳນົດວ່າທ່ານກຳລັງເບິ່ງ/ແກ້ໄຂເດືອນໃດ — ເລືອກໃຫ້ຖືກກ່ອນແກ້ໄຂຂໍ້ມູນຍ້ອນຫຼັງ.</li>
+      <li>ກົດ <code class="btn">Show Inactive</code> ເພື່ອເບິ່ງພະນັກງານທີ່ປິດການນຳໃຊ້ — ປຸ່ມ Reactivate ແລະ ລຶບຖາວອນ ຈະປະກົດສະເພາະຫຼັງຈາກນັ້ນ.</li>
+    </ul>
+  </div>
+
+  <figure>
+    <img src="Screenshot/Roaster%20-%20Reps%20-%20Upload.png" alt="ປ່ອງຢືນຢັນ Upload Roster">
+    <figcaption>Upload Roster — ກວດສອບຮູບແບບໄຟລ໌ກ່ອນນຳເຂົ້າ.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="Screenshot/Roaster%20-%20Reps%20-%20Upload%202.png" alt="ປ່ອງເພີ່ມພະນັກງານຂາຍ">
+    <figcaption>Add Rep — ເພີ່ມພະນັກງານທີ່ລະຄົນ ດ້ວຍລະຫັດ, ຊື່, ສາຂາ, ປະເພດ, ແລະ ຫົວໜ້າທີມ.</figcaption>
+  </figure>
+
+  <div class="box tip">
+    <b>ຄຳແນະນຳ</b>
+    ໄຟລ໌ Upload Roster ຕ້ອງມີຄໍລັມ <b>Effective_Date</b> — ນີ້ແມ່ນຕົວກຳນົດວ່າການປ່ຽນແປງນັ້ນຈະນັບເລີ່ມຈາກເດືອນໃດ, ບໍ່ມີຕົວເລືອກເດືອນແຍກສະເພາະການອັບໂຫລດ.
+  </div>
+</section>
+
+<!-- ============================= 6. ROSTER SUPS ============================= -->
+<section class="feature" id="roster-sup">
+  <div class="top"><a href="#">↑ ກັບຄືນເທິງ</a></div>
+  <h2>6. ບັນຊີພະນັກງານ — ຫົວໜ້າທີມ</h2>
+  <div class="badges"><span class="badge b-hr">HR</span><span class="badge b-hrs">HR Support</span><span class="badge b-tm">ຜູ້ບໍລິຫານສູງສຸດ</span></div>
+
+  <p>ແທັບ Sup ຄຽງຂ້າງ Reps — ບັນຊີຫົວໜ້າທີມ (ອ່ານໄດ້ເທົ່ານັ້ນ) ຂອງເດືອນທີ່ເລືອກ, ໃຫ້ HR ກວດສອບໄດ້ວ່າທັງພະນັກງານ ແລະ ຫົວໜ້າທີມ ຄົບຖ້ວນໂດຍບໍ່ຕ້ອງອອກຈາກໜ້ານີ້.</p>
+
+  <figure>
+    <img src="Screenshot/Roaster%20-%20Sups.png" alt="ແທັບ Roster ຫົວໜ້າທີມ">
+    <figcaption>ສາຂາ, ປະເພດ, ຈຳນວນພະນັກງານປະຈຳທີມສົດ, ເປົ້າໝາຍປະຈຳເດືອນ, ແລະ ສະຖານະ ຂອງແຕ່ລະຫົວໜ້າທີມ.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================= 7. KPI REPORT ============================= -->
+<section class="feature" id="kpi">
+  <div class="top"><a href="#">↑ ກັບຄືນເທິງ</a></div>
+  <h2>7. ລາຍງານ KPI</h2>
+  <div class="badges">
+    <span class="badge b-admin">Admin</span><span class="badge b-hr">HR</span><span class="badge b-hrs">HR Support</span>
+    <span class="badge b-am">ບັນຊີ-ຫົວໜ້າ</span><span class="badge b-sup">ຫົວໜ້າທີມຂາຍ</span>
+    <span class="badge b-bm">ຜູ້ຈັດການສາຂາ</span><span class="badge b-tm">ຜູ້ບໍລິຫານສູງສຸດ</span>
+  </div>
+
+  <p>ໜ້າຄິດໄລ່ຄະແນນຫຼັກ — ມີ 6 ແທັບຍ່ອຍ, ທັງໝົດໃຊ້ຕົວກອງເດືອນ/ສາຂາ/ປະເພດລູກຄ້າອັນດຽວກັນຢູ່ເທິງ.</p>
+
+  <h3>Company Overview</h3>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Company%20Overview.png" alt="ແທັບ Company Overview">
+    <figcaption>% KPI ໂດຍລວມ + ຄາດຄະເນທ້າຍເດືອນ, ແຍກຕາມສາຂາຢູ່ດ້ານຂວາ.</figcaption>
+  </figure>
+
+  <h3>Reps Performance</h3>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Reps%20Performance.png" alt="ແທັບ Reps Performance">
+    <figcaption>ຂໍ້ມູນຈິງ ຄຳ/ແທ່ງ/ຈຳນວນ, % ຄະແນນ KPI, ແລະ ຄາດຄະເນທ້າຍເດືອນ ຂອງແຕ່ລະຄົນ — ກົດຫົວຄໍລັມເພື່ອລຽງລຳດັບ.</figcaption>
+  </figure>
+
+  <h3>Supervisor Performance</h3>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Supervisor%20Performance.png" alt="ແທັບ Supervisor Performance">
+    <figcaption>ແນວຄວາມຄິດດຽວກັນ, ແຕ່ລະແຖວເປັນຫົວໜ້າທີມ — ຄະແນນລວມຂອງທີມທຽບກັບເປົ້າໝາຍທີມ.</figcaption>
+  </figure>
+
+  <h3>Commission</h3>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Commission%20Reps.png" alt="ແທັບ Commission, ມຸມມອງ Staff Commission">
+    <figcaption>Staff Commission — ຄ່າຄອມມິຊັ່ນທີ່ແຕ່ລະຄົນໄດ້ຮັບ, ແຍກຕາມ ຄຳ/ແທ່ງ/ຈຳນວນ.</figcaption>
+  </figure>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Sups%20Commission.png" alt="ແທັບ Commission, ມຸມມອງ Supervisor Commission">
+    <figcaption>ສະຫຼັບໄປ Supervisor Commission — ສ່ວນແບ່ງຄອມມິຊັ່ນຂອງຫົວໜ້າທີມຈາກທີມຂອງຕົນ.</figcaption>
+  </figure>
+
+  <h3>Customer Type Report</h3>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Customer%20Type%20Report.png" alt="ແທັບ Customer Type Report">
+    <figcaption>ຂໍ້ມູນດຽວກັນ, ແຍກເປັນ B2C (ຂາຍຍ່ອຍ) ແລະ B2B (ຂາຍສົ່ງ).</figcaption>
+  </figure>
+
+  <h3>Daily Tracking</h3>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Daily%20Tracking.png" alt="ແທັບ Daily Tracking">
+    <figcaption>ຕາລາງກວດສອບ — ແຕ່ລະແຖວເປັນພະນັກງານ, ແຕ່ລະຄໍລັມເປັນແຕ່ລະວັນ. ຊ່ອງຫວ່າງໝາຍຄວາມວ່າຍັງບໍ່ໄດ້ອັບໂຫລດຂໍ້ມູນຂອງຄົນ/ວັນນັ້ນ.</figcaption>
+  </figure>
+
+  <h3>ໂປຣໄຟລ໌ ພະນັກງານ / ຫົວໜ້າທີມ</h3>
+  <p>ກົດແຖວໃດໜຶ່ງໃນ Reps ຫຼື Supervisor Performance ເພື່ອເປີດກຣາຟແນວໂນ້ມຂອງຄົນນັ້ນ.</p>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Modal%20profile.png" alt="ປ່ອງໂປຣໄຟລ໌ ພ້ອມກຣາຟແນວໂນ້ມ">
+    <figcaption>ປ່ອງໂປຣໄຟລ໌ — ກຣາຟແນວໂນ້ມນ້ຳໜັກ/ຈຳນວນ ແລະ ປະຫວັດ KPI ລາຍເດືອນ ຂອງຄົນນັ້ນ.</figcaption>
+  </figure>
+
+  <div class="box tip">
+    <b>ຄຳແນະນຳ</b>
+    ໃຊ້ປຸ່ມ <code class="btn">Export</code> (ມຸມຂວາເທິງຂອງລາຍງານ) ເພື່ອດາວໂຫລດຕາລາງປັດຈຸບັນເປັນ Excel ຫຼື PDF.
+  </div>
+</section>
+
+<!-- ============================= 8. SALE REPORT ============================= -->
+<section class="feature" id="sales">
+  <div class="top"><a href="#">↑ ກັບຄືນເທິງ</a></div>
+  <h2>8. ລາຍງານຍອດຂາຍ</h2>
+  <div class="badges">
+    <span class="badge b-admin">Admin</span><span class="badge b-hr">HR</span>
+    <span class="badge b-ao">ບັນຊີ-ພະນັກງານ</span><span class="badge b-am">ບັນຊີ-ຫົວໜ້າ</span>
+    <span class="badge b-sup">ຫົວໜ້າທີມຂາຍ</span><span class="badge b-bm">ຜູ້ຈັດການສາຂາ</span><span class="badge b-tm">ຜູ້ບໍລິຫານສູງສຸດ</span>
+  </div>
+
+  <p>ຂໍ້ມູນຍອດຂາຍດິບ (ບໍ່ໄດ້ຄິດໄລ່ KPI) — 4 ມຸມມອງ ຜ່ານແຖບແທັບ.</p>
+
+  <h3>Overview</h3>
+  <figure>
+    <img src="Screenshot/Sales%20Report%20-%20Overview.png" alt="ແທັບ Sale Report Overview">
+    <figcaption>ກາດສະຫຼຸບນ້ຳໜັກ/ຈຳນວນລວມ, ກຣາຟນ້ອຍລາຍອາທິດ.</figcaption>
+  </figure>
+
+  <h3>By Branch</h3>
+  <figure>
+    <img src="Screenshot/Sales%20Report%20-%20By%20Branch.png" alt="ແທັບ By Branch ພ້ອມກຣາຟວົງມົນ">
+    <figcaption>ກຣາຟວົງມົນສະແດງສ່ວນແບ່ງນ້ຳໜັກ ຄຳ/ແທ່ງ/ລວມ ຂອງແຕ່ລະສາຂາ, ພ້ອມລາຍລະອຽດແຕ່ລະສາຂາລຸ່ມນີ້.</figcaption>
+  </figure>
+
+  <h3>By Customer Type</h3>
+  <figure>
+    <img src="Screenshot/Sales%20Report%20-%20By%20Customer%20Type.png" alt="ແທັບ By Customer Type">
+    <figcaption>ກາດ B2C ກັບ B2B ຄຽງຂ້າງກັນ ພ້ອມກຣາຟສົມທຽບ.</figcaption>
+  </figure>
+
+  <h3>Trend</h3>
+  <figure>
+    <img src="Screenshot/Sales%20Report%20-%20Trend.png" alt="ແທັບ Trend">
+    <figcaption>ຕາລາງ % ການປ່ຽນແປງລາຍອາທິດ ແລະ ລາຍເດືອນ, ພ້ອມກຣາຟແນວໂນ້ມຍອດຂາຍລາຍວັນ.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================= 9. KPI SETTINGS ============================= -->
+<section class="feature" id="kpisettings">
+  <div class="top"><a href="#">↑ ກັບຄືນເທິງ</a></div>
+  <h2>9. ການຕັ້ງຄ່າ KPI</h2>
+  <div class="badges"><span class="badge b-admin">Admin (ຄ່າເລີ່ມຕົ້ນ)</span><span class="badge b-hr">HR (ປະຈຳເດືອນ)</span><span class="badge b-tm">ຜູ້ບໍລິຫານສູງສຸດ</span></div>
+
+  <p>ໜ້ານີ້ເປັນຕົວກຳນົດວິທີຄິດໄລ່ຄະແນນທັງໝົດ — ແຕ່ Admin ກັບ HR ມີໜ້າທີ່ແຕກຕ່າງກັນຢູ່ໜ້ານີ້.</p>
+
+  <h3>ມຸມມອງ Admin — ຄ່າເລີ່ມຕົ້ນຄົງທີ່ (Defaults)</h3>
+  <p>Admin ກຳນົດ <b>ຄ່າເລີ່ມຕົ້ນຄົງທີ່</b> ທີ່ທຸກເດືອນຈະໃຊ້ ຖ້າບໍ່ມີການກຳນົດສະເພາະເດືອນນັ້ນ. ບໍ່ມີຕົວເລືອກເດືອນ — ຄ່ານີ້ໃຊ້ຕະຫຼອດໄປຈົນກວ່າຈະປ່ຽນໃໝ່.</p>
+  <figure>
+    <img src="Screenshot/(Admin)%20KPI%20setting%20Defaults.png" alt="ມຸມມອງ Admin, ກາດຄອມມິຊັ່ນ ແລະ ເປົ້າໝາຍ">
+    <figcaption>ຄ່າເລີ່ມຕົ້ນອັດຕາຄອມມິຊັ່ນ ແລະ ເປົ້າໝາຍຄະແນນຂອງແຕ່ລະສາຂາ.</figcaption>
+  </figure>
+  <figure>
+    <img src="Screenshot/(Admin)%20KPI%20setting%20Defaults%202.png" alt="ມຸມມອງ Admin, ອັດຕາຄະແນນ ແລະ ຕາລາງ Qty Tier">
+    <figcaption>ຄະແນນຕໍ່ກຣາມ ຄຳ/ແທ່ງ ແລະ ຕາລາງ Qty Tier, ພ້ອມ Score Simulator ລຸ່ມສຸດ ສຳລັບລອງເບິ່ງຄະແນນກ່ອນບັນທຶກ.</figcaption>
+  </figure>
+
+  <h3>ມຸມມອງ HR — ການຕັ້ງຄ່າປະຈຳເດືອນ</h3>
+  <p>HR ເລືອກເດືອນ, ສາມາດກົດ <code class="btn">Use Defaults</code> ເພື່ອດຶງຄ່າເລີ່ມຕົ້ນຂອງ Admin ມາເປັນຈຸດເລີ່ມຕົ້ນ, ປັບແກ້ສິ່ງທີ່ແຕກຕ່າງເດືອນນີ້, ແລ້ວກົດ <code class="btn">Save All</code> ເພື່ອຢືນຢັນ.</p>
+  <figure>
+    <img src="Screenshot/(HR)%20KPI%20setting.png" alt="ມຸມມອງ HR, ອັດຕາຄອມມິຊັ່ນ ແລະ ເປົ້າໝາຍປະຈຳເດືອນ">
+    <figcaption>ອັດຕາຄອມມິຊັ່ນ ແລະ ເປົ້າໝາຍຄະແນນ KPI ປະຈຳເດືອນ ຂອງເດືອນທີ່ເລືອກ.</figcaption>
+  </figure>
+  <figure>
+    <img src="Screenshot/(HR)%20KPI%20setting%202.png" alt="ມຸມມອງ HR, ຕາລາງ Qty Tier">
+    <figcaption>ຕາລາງ Qty Tier ສະເພາະເດືອນນີ້ — ແກ້ໄຂໄດ້ແຍກຕາມສາຂາ.</figcaption>
+  </figure>
+
+  <div class="box warn">
+    <b>ສຳຄັນ</b>
+    HR ຕ້ອງກົດ Save All ທຸກເດືອນ — ເຖິງວ່າຈະບໍ່ມີຫຍັງປ່ຽນແປງກໍ່ຕາມ — ເພື່ອໝາຍວ່າເດືອນນັ້ນ "Confirmed". ຖ້າຂ້າມໄປ ຈະມີແຖບແຈ້ງເຕືອນຄ້າງຢູ່ໃນ Dashboard/KPI Report (ຄະແນນຍັງຄິດໄລ່ໄດ້ປົກກະຕິໂດຍໃຊ້ຄ່າຫຼ້າສຸດ, ແຕ່ແຖບຈະຄ້າງຢູ່ຈົນກວ່າຈະຢືນຢັນ).
+  </div>
+</section>
+
+<!-- ============================= 10. SETTINGS / USERS ============================= -->
+<section class="feature" id="users">
+  <div class="top"><a href="#">↑ ກັບຄືນເທິງ</a></div>
+  <h2>10. ການຕັ້ງຄ່າ ແລະ ຜູ້ໃຊ້</h2>
+  <div class="badges"><span class="badge b-admin">Admin</span><span class="badge b-hr">HR (ສະເພາະ Connection)</span></div>
+
+  <h3>Connection Settings</h3>
+  <p>ຮັກສາການເຊື່ອມຕໍ່ Google Sheets ໃຫ້ປົກກະຕິ — Push/Pull ດ້ວຍມືຖ້າຈຳນວນ "unsynced" ບໍ່ຫາຍໄປເອງ.</p>
+  <figure>
+    <img src="Screenshot/Setting%20-%20Connection.png" alt="ແທັບ Connection Settings">
+    <figcaption>Spreadsheet ID ທີ່ເຊື່ອມຕໍ່ຢູ່, ປຸ່ມ Test Connection, Push to Sheets / Pull from Sheets, ແລະ ປະຫວັດການ sync ລ່າສຸດ.</figcaption>
+  </figure>
+
+  <h3>User Management</h3>
+  <p>ສ້າງ/ປິດການນຳໃຊ້ບັນຊີ, ກຳນົດບົດບາດ ແລະ ສາຂາ, ປ່ຽນສິດການເຂົ້າເຖິງເມນູຂອງບຸກຄົນໃດໜຶ່ງນອກເໜືອຈາກບົດບາດປົກກະຕິ.</p>
+  <figure>
+    <img src="Screenshot/Setting%20-%20Users.png" alt="ແທັບ Users, ລາຍຊື່ບັນຊີ">
+    <figcaption>ທຸກບັນຊີ, ບົດບາດ, ສາຂາ/ທີມ, ແລະ ສະຖານະ — ພ້ອມຄຳອະທິບາຍສິດແຕ່ລະບົດບາດ.</figcaption>
+  </figure>
+  <figure>
+    <img src="Screenshot/Setting%20-%20Users%20-%20Add%20user.png" alt="ປ່ອງສ້າງຜູ້ໃຊ້ໃໝ່">
+    <figcaption>Create New User — ຊື່, ຊື່ຜູ້ໃຊ້, ລະຫັດຜ່ານ, ບົດບາດ, ສາຂາ, ແລະ ທີມຫົວໜ້າ.</figcaption>
+  </figure>
+
+  <div class="box tip">
+    <b>ຄຳແນະນຳ</b>
+    ທຸກການບັນທຶກຈະຖືກ Push ໄປ Google Sheet ໂດຍອັດຕະໂນມັດທັນທີ. ລືມລະຫັດຜ່ານ? ພິມລະຫັດໃໝ່ໃນຟອມແກ້ໄຂບັນຊີນັ້ນ, ຫຼື ກວດເບິ່ງໄດ້ກົງໃນແທັບ Users ຂອງ Sheet (ບັນທຶກເປັນຕົວອັກສອນທຳມະດາໂດຍຕັ້ງໃຈ).
+  </div>
+</section>
+
+<!-- ============================= 11. AUDIT LOG ============================= -->
+<section class="feature" id="audit">
+  <div class="top"><a href="#">↑ ກັບຄືນເທິງ</a></div>
+  <h2>11. ປະຫວັດການເຄື່ອນໄຫວ (Audit Log)</h2>
+  <div class="badges"><span class="badge b-admin">Admin</span><span class="badge b-hr">HR</span></div>
+
+  <p>ບັນທຶກທຸກການກະທຳສຳຄັນຂອງຜູ້ໃຊ້ທຸກຄົນ — ການເຂົ້າສູ່ລະບົບ, ການແກ້ໄຂບັນຊີພະນັກງານ, ການປ່ຽນສິດ, ການຢືນຢັນ KPI — ໃຜເຮັດ, ເວລາໃດ, ແລະ ມີຜົນກະທົບຫຍັງ.</p>
+
+  <figure>
+    <img src="Screenshot/Audit%20Log.png" alt="ໜ້າ Audit Log ພ້ອມຕົວກອງ ແລະ ລາຍການ">
+    <figcaption>ກອງຕາມວັນທີ, ຊື່ຜູ້ໃຊ້, ຫຼື ປະເພດເຫດການ. ແຕ່ລະແຖວສະແດງ ເວລາ, ຜູ້ໃຊ້, ບົດບາດ, ເຫດການ, ເປົ້າ, ແລະ ລາຍລະອຽດ.</figcaption>
+  </figure>
+
+  <div class="box note">
+    <b>ໝາຍເຫດ</b>
+    ກວດເບິ່ງເປັນບາງໄລຍະ ສຳລັບສິ່ງຜິດປົກກະຕິ — ການເຂົ້າສູ່ລະບົບລົ້ມເຫຼວ, ການລຶບຂໍ້ມູນທີ່ບໍ່ໄດ້ຄາດໝາຍ, ການປ່ຽນສິດທີ່ບໍ່ມີໃຜແຈ້ງ.
+  </div>
+</section>
+
+</div>
+
+<footer>SalesTrack Pro · ລະບົບຕິດຕາມຍອດຂາຍ KPV ຄຳ &amp; ເພັດພອຍ</footer>
+
+</body>
+</html>
