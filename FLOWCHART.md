@@ -46,10 +46,10 @@ flowchart TD
         M_ADMIN["dashboard · kpi_report · sale_report ·\nupload_history · upload_status ·\naudit_log · user_management · settings\n— NOT daily_entry / kpi_settings / roster"]
         M_SUP["dashboard · kpi_report ·\nsale_report · upload_status"]
         M_AO["daily_entry · sale_report ·\nupload_history · upload_status"]
-        M_AM["sale_report · upload_history ·\nupload_status"]
+        M_AM["dashboard · kpi_report · daily_entry ·\nsale_report · upload_history"]
         M_BM["dashboard · kpi_report ·\nsale_report · upload_status"]
         M_HR["dashboard · kpi_report · sale_report ·\nupload_history · upload_status ·\nroster · kpi_settings · audit_log · settings\n— NOT user_management / daily_entry"]
-        M_HRS["roster (upload only) · upload_status"]
+        M_HRS["roster (upload only) · kpi_report"]
         M_TM["dashboard · kpi_report · sale_report ·\nupload_history · roster · kpi_settings ·\nsettings — view only, no writes"]
     end
 

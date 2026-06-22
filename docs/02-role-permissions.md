@@ -7,12 +7,12 @@ user's menu access on top of the default, per-user, via Settings → Users → t
 
 | Menu | Admin | HR | HR Support | Accountant Officer | Accountant Manager | Sales Supervisor | Branch Manager | Top Manager |
 |---|---|---|---|---|---|---|---|---|
-| Dashboard | ✅ | ✅ | — | — | — | ✅ | ✅ | ✅ |
-| Daily Entry Upload | — | — | — | ✅ | — | — | — | — |
-| KPI Report | ✅ | ✅ | — | — | — | ✅ | ✅ | ✅ |
+| Dashboard | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | ✅ |
+| Daily Entry Upload | — | — | — | ✅ | ✅ | — | — | — |
+| KPI Report | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ |
 | Sale Report | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Upload History | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ |
-| Upload Status | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| Upload Status | ✅ | ✅ | — | ✅ | — | ✅ | ✅ | — |
 | Roster | — | ✅ | ✅ | — | — | — | — | ✅ |
 | KPI Settings | ✅ | ✅ | — | — | — | — | — | ✅ |
 | Audit Log | ✅ | ✅ | — | — | — | — | — | — |
@@ -44,14 +44,15 @@ flowchart LR
 - **HR** — owns the Roster (who works where, monthly) and **monthly KPI Settings**
   (confirms/adjusts each month's rates, tiers, targets, commission — even if nothing changed
   from last month, HR must click Save to mark the month confirmed).
-- **HR Support** — Roster-only, no KPI Settings access. For someone who just helps maintain
-  staff lists without touching scoring rules.
+- **HR Support** — Roster (upload/manage) + KPI Report (all tabs), no KPI Settings access. For
+  someone who helps maintain staff lists and check KPI numbers without touching scoring rules.
 - **Accountant Officer** — uploads Daily Entry (Jewelry/Bar/Qty sales) for **their own branch
   only**. Cannot see or upload another branch's reps. Cannot fix a wrong upload themselves —
   must ask an Accountant Manager to clear it first.
-- **Accountant Manager** — same daily upload power as Officer, but **across every branch**,
-  plus the power to **delete an upload batch** to let an Officer (or themselves) re-upload a
-  corrected file.
+- **Accountant Manager** — Dashboard, KPI Report (all tabs), Daily Entry Upload (all
+  branches), Sale Report, Upload History — same daily upload power as Officer but **across
+  every branch**, plus the power to **delete an upload batch** to let an Officer (or
+  themselves) re-upload a corrected file.
 - **Sales Supervisor** — views their own team's dashboard and KPI report. No edit access.
 - **Branch Manager** — views their own branch's reports. No edit access.
 - **Top Manager** — sees everything across all branches, and also has Roster + KPI Settings

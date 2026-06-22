@@ -25,11 +25,11 @@ export const ROLE_DEFAULTS: Record<UserRole, MenuKey[]> = {
   admin:              ['dashboard','kpi_report','sale_report','upload_history','upload_status','audit_log','user_management','settings','kpi_settings'],
   sales_sup:          ['dashboard','kpi_report','sale_report','upload_status'],
   accountant_officer: ['daily_entry','sale_report','upload_history','upload_status'],
-  accountant_manager: ['sale_report','upload_history','upload_status'],
+  accountant_manager: ['dashboard','kpi_report','daily_entry','sale_report','upload_history'],
   branch_manager:     ['dashboard','kpi_report','sale_report','upload_status'],
   top_manager:        ['dashboard','kpi_report','sale_report','upload_history','roster','kpi_settings','settings'],
   hr:                 ['dashboard','kpi_report','sale_report','upload_history','upload_status','roster','kpi_settings','audit_log','settings'],
-  hr_support:         ['roster','upload_status'],
+  hr_support:         ['roster','kpi_report'],
 }
 
 export const ROLE_LABELS: Record<UserRole, string> = {
