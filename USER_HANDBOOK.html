@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SalesTrack Pro — User Handbook</title>
+<style>
+  :root {
+    --blue: #004f96; --blue-light: #e8f1fb;
+    --gold: #9c6e1b; --gold-light: #fdf6e8;
+    --green: #1e7a4a; --green-light: #e9f7ef;
+    --red: #b3261e; --red-light: #fdecea;
+    --ink: #1c2330; --sub: #5b6472; --line: #e3e7ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink); background: #f6f8fc; margin: 0; line-height: 1.55;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px 80px; }
+  header.cover {
+    background: linear-gradient(135deg, #004f96, #1e6fb8 55%, #2f9e6b);
+    color: #fff; padding: 64px 24px 56px; text-align: center;
+  }
+  header.cover h1 { font-size: 34px; margin: 0 0 8px; }
+  header.cover p { font-size: 16px; opacity: .92; margin: 0; }
+  nav.toc {
+    background: #fff; border: 1px solid var(--line); border-radius: 14px;
+    margin: -32px auto 40px; padding: 24px 28px; box-shadow: 0 8px 24px rgba(0,0,0,.06);
+  }
+  nav.toc h2 { margin-top: 0; font-size: 16px; text-transform: uppercase; letter-spacing: .06em; color: var(--sub); }
+  nav.toc ol { columns: 2; gap: 32px; padding-left: 20px; margin: 0; }
+  nav.toc li { margin-bottom: 6px; }
+  nav.toc a { color: var(--blue); text-decoration: none; font-weight: 600; }
+  nav.toc a:hover { text-decoration: underline; }
+
+  table.rolemap { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  table.rolemap th, table.rolemap td { border: 1px solid var(--line); padding: 7px 8px; text-align: center; }
+  table.rolemap th { background: var(--blue-light); font-size: 12px; }
+  table.rolemap td:first-child, table.rolemap th:first-child { text-align: left; font-weight: 600; }
+  table.rolemap .y { color: var(--green); font-weight: 700; }
+  table.rolemap .n { color: #c7cbd1; }
+
+  section.feature { margin: 56px 0; }
+  section.feature h2 {
+    font-size: 24px; margin: 0 0 4px; padding-bottom: 10px;
+    border-bottom: 3px solid var(--blue);
+  }
+  section.feature .badges { margin: 10px 0 18px; }
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .03em; padding: 4px 10px; border-radius: 999px; margin: 2px 4px 2px 0;
+  }
+  .b-admin { background: #fde2e1; color: #92231d; }
+  .b-hr { background: #e3dafc; color: #4b2e9e; }
+  .b-hrs { background: #ece4fb; color: #6a4cb0; }
+  .b-ao { background: #fde9d2; color: #8a4f0a; }
+  .b-am { background: #fde9d2; color: #8a4f0a; }
+  .b-sup { background: #d9f0e8; color: #146c4a; }
+  .b-bm { background: #dbe9fb; color: #154b91; }
+  .b-tm { background: #dbe9fb; color: #154b91; }
+
+  .step { margin: 14px 0; }
+  .step ol, .step ul { padding-left: 22px; }
+  .step li { margin-bottom: 6px; }
+
+  figure { margin: 18px 0; }
+  figure img {
+    width: 100%; border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 6px 18px rgba(20,30,50,.08); display: block;
+  }
+  figcaption { font-size: 13px; color: var(--sub); margin-top: 8px; text-align: center; }
+
+  .box { border-radius: 10px; padding: 14px 16px; margin: 16px 0; font-size: 14.5px; }
+  .box b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+  .tip { background: var(--blue-light); border-left: 4px solid var(--blue); }
+  .tip b { color: var(--blue); }
+  .note { background: var(--gold-light); border-left: 4px solid var(--gold); }
+  .note b { color: var(--gold); }
+  .warn { background: var(--red-light); border-left: 4px solid var(--red); }
+  .warn b { color: var(--red); }
+
+  .top { text-align: right; }
+  .top a { font-size: 12px; color: var(--sub); text-decoration: none; }
+  .top a:hover { text-decoration: underline; }
+
+  footer { text-align: center; color: var(--sub); font-size: 13px; padding: 40px 0; }
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <h1>SalesTrack Pro</h1>
+  <p>User Handbook — KPV Gold &amp; Jewelry Sales Performance System</p>
+</header>
+
+<div class="wrap">
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#login">1. Logging In &amp; Connecting</a></li>
+    <li><a href="#dashboard">2. Dashboard</a></li>
+    <li><a href="#entry">3. Daily Entry Upload</a></li>
+    <li><a href="#history">4. Upload History</a></li>
+    <li><a href="#roster">5. Roster — Reps</a></li>
+    <li><a href="#roster-sup">6. Roster — Supervisors</a></li>
+    <li><a href="#kpi">7. KPI Report</a></li>
+    <li><a href="#sales">8. Sale Report</a></li>
+    <li><a href="#kpisettings">9. KPI Settings</a></li>
+    <li><a href="#users">10. Settings &amp; Users</a></li>
+    <li><a href="#audit">11. Audit Log</a></li>
+  </ol>
+</nav>
+
+<section class="feature">
+  <h2>Who Sees What</h2>
+  <p>Every account has a role. A role controls which menu items show up on the left sidebar. Admin can grant extra access to any individual person on top of this if needed.</p>
+  <table class="rolemap">
+    <tr><th>Screen</th><th>Admin</th><th>HR</th><th>HR Support</th><th>Acc. Officer</th><th>Acc. Manager</th><th>Sales Sup</th><th>Branch Mgr</th><th>Top Mgr</th></tr>
+    <tr><td>Dashboard</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>Daily Entry Upload</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+    <tr><td>KPI Report</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>Sale Report</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>Upload History</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="y">✓</td></tr>
+    <tr><td>Roster</td><td class="n">–</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="y">✓</td></tr>
+    <tr><td>KPI Settings</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="y">✓</td></tr>
+    <tr><td>Audit Log</td><td class="y">✓</td><td class="y">✓</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+    <tr><td>Settings / Users</td><td class="y">✓</td><td class="y">✓*</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>
+  </table>
+  <p style="font-size:12px;color:var(--sub)">* HR sees the Connection tab; the Users tab (creating accounts) stays Admin-only in practice.</p>
+</section>
+
+<!-- ============================= 1. LOGIN ============================= -->
+<section class="feature" id="login">
+  <div class="top"><a href="#">↑ top</a></div>
+  <h2>1. Logging In &amp; Connecting</h2>
+  <div class="badges"><span class="badge b-admin">Everyone</span></div>
+
+  <p>Every screen starts here. Enter your username and password, click <b>Sign In</b>.</p>
+
+  <figure>
+    <img src="Screenshot/Login%20Page.png" alt="Login Page">
+    <figcaption>The Login screen — username, password, Sign In.</figcaption>
+  </figure>
+
+  <div class="step">
+    <p>After you click Sign In, the app pulls the latest data from Google Sheets before letting you in, so you never see stale numbers:</p>
+  </div>
+
+  <figure>
+    <img src="Screenshot/Done%20Login%20-%20Loading.png" alt="Connecting to Google Sheets loading screen">
+    <figcaption>"Connecting to Google Sheets…" — happens automatically every login.</figcaption>
+  </figure>
+
+  <div class="box tip">
+    <b>Tip</b>
+    If there's no internet, the app still lets you in using whatever was last saved on this device — it just shows a small notice instead of blocking you.
+  </div>
+
+  <h3>Switching the connected database (Test vs Production)</h3>
+  <p>A small icon in the top-right corner of the Login screen lets you point this device at a different Google Sheet entirely.</p>
+
+  <figure>
+    <img src="Screenshot/Login%20Global%20connection%20set%20up%201.png" alt="Password prompt before Switch Database panel">
+    <figcaption>Step 1 — click the icon, enter the gate password to unlock the panel.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="Screenshot/Login%20Global%20connection%20set%20up%202.png" alt="Switch Database panel with Sheet ID and JSON path fields">
+    <figcaption>Step 2 — paste the Google Sheet ID and the service account .json path, then click Switch Database &amp; Sync.</figcaption>
+  </figure>
+
+  <div class="box warn">
+    <b>Warning</b>
+    Switching wipes this device's local data first, then pulls everything fresh from the new Sheet. Don't do this casually on a device that's actively being used — anything not yet synced is lost.
+  </div>
+</section>
+
+<!-- ============================= 2. DASHBOARD ============================= -->
+<section class="feature" id="dashboard">
+  <div class="top"><a href="#">↑ top</a></div>
+  <h2>2. Dashboard</h2>
+  <div class="badges">
+    <span class="badge b-admin">Admin</span><span class="badge b-hr">HR</span>
+    <span class="badge b-am">Acc. Manager</span><span class="badge b-sup">Sales Sup</span>
+    <span class="badge b-bm">Branch Mgr</span><span class="badge b-tm">Top Mgr</span>
+  </div>
+
+  <p>Your landing page after login (for roles that have it). A live snapshot of the current month — total Jewelry/Bar/Quantity, overall KPI score, and your Top 10 performers.</p>
+
+  <figure>
+    <img src="Screenshot/Dashboard%20Overview.png" alt="Dashboard Overview screen">
+    <figcaption>Dashboard — branch/date filters at top, KPI score gauge on the left, leaderboard on the right.</figcaption>
+  </figure>
+
+  <div class="step">
+    <ul>
+      <li>Use the <b>branch</b> and <b>month/date</b> filters top-right to change what you're viewing.</li>
+      <li>The KPI Score ring shows your overall % against target for the selected period.</li>
+      <li>Top 10 Performers ranks reps by their combined Jewelry+Bar+Qty score.</li>
+    </ul>
+  </div>
+
+  <div class="box tip">
+    <b>Tip</b>
+    A supervisor only ever sees their own team here; a branch manager sees their whole branch; admin/HR/top manager see everything.
+  </div>
+</section>
+
+<!-- ============================= 3. DAILY ENTRY ============================= -->
+<section class="feature" id="entry">
+  <div class="top"><a href="#">↑ top</a></div>
+  <h2>3. Daily Entry Upload</h2>
+  <div class="badges"><span class="badge b-ao">Accountant Officer</span><span class="badge b-am">Accountant Manager</span></div>
+
+  <p>This is how daily sales actually get into the system — by uploading a spreadsheet file, not typing into a form. An Accountant Officer uploads for their own branch only; an Accountant Manager can upload for any branch.</p>
+
+  <figure>
+    <img src="Screenshot/Data%20Entry.png" alt="Daily XLSX Upload screen, empty state">
+    <figcaption>Daily Entry screen — download the template, then drag your filled file into the drop zone.</figcaption>
+  </figure>
+
+  <div class="step">
+    <ol>
+      <li>Click <b>Download Template</b> — gives you an .xlsx pre-filled with this month's reps for your branch.</li>
+      <li>Fill in <b>Date</b>, <b>Jewelry (Baht)</b>, <b>Bar (Baht)</b>, <b>Qty</b> for each rep. Leave everything else as-is.</li>
+      <li>Drag the file onto the drop zone (or click to browse), then click <b>Import Daily Data</b>.</li>
+    </ol>
+  </div>
+
+  <figure>
+    <img src="Screenshot/Data%20Entry%20-%20Upload.png" alt="Daily XLSX Upload preview before import">
+    <figcaption>Preview after dropping a file — check the rows look right before clicking Import Daily Data.</figcaption>
+  </figure>
+
+  <div class="box warn">
+    <b>Note</b>
+    If a row already has a record for that rep + date, it gets rejected to protect existing numbers from being silently overwritten. If that happens, ask an Accountant Manager to clear the conflicting batch first (see Upload History below), then re-upload.
+  </div>
+</section>
+
+<!-- ============================= 4. UPLOAD HISTORY ============================= -->
+<section class="feature" id="history">
+  <div class="top"><a href="#">↑ top</a></div>
+  <h2>4. Upload History</h2>
+  <div class="badges"><span class="badge b-admin">Admin</span><span class="badge b-hr">HR</span><span class="badge b-ao">Acc. Officer</span><span class="badge b-am">Acc. Manager</span><span class="badge b-tm">Top Mgr</span></div>
+
+  <p>Where you check that every branch is actually uploading on schedule, and where an Accountant Manager fixes a bad upload.</p>
+
+  <figure>
+    <img src="Screenshot/Upload%20History.png" alt="Upload History screen with Branch Coverage Matrix and Approval panel">
+    <figcaption>Branch Coverage Matrix (who's up to date) + the Approval panel for clearing bad batches.</figcaption>
+  </figure>
+
+  <div class="step">
+    <ul>
+      <li><b>Branch Coverage Matrix</b> — at a glance, which branches have entered today's data and which haven't.</li>
+      <li><b>Sales Upload Records — Approval</b> (Accountant Manager only) — find a bad batch, click <b>Delete &amp; Allow Resubmit</b> to clear it so the officer can re-upload corrected data.</li>
+      <li><b>Upload Log</b> at the bottom lists every file ever uploaded, who uploaded it, and its status.</li>
+    </ul>
+  </div>
+
+  <div class="box note">
+    <b>Note</b>
+    Deleting a batch is irreversible inside the app — confirm with the Accountant Officer before clearing, not after.
+  </div>
+</section>
+
+<!-- ============================= 5. ROSTER REPS ============================= -->
+<section class="feature" id="roster">
+  <div class="top"><a href="#">↑ top</a></div>
+  <h2>5. Roster — Reps</h2>
+  <div class="badges"><span class="badge b-hr">HR</span><span class="badge b-hrs">HR Support</span><span class="badge b-tm">Top Mgr</span></div>
+
+  <p>The org-chart job — who works where, for which branch, under which supervisor. The roster is month-aware: editing this month never changes how last month's report reads.</p>
+
+  <figure>
+    <img src="Screenshot/Roaster%20-%20Reps.png" alt="Roster Reps tab listing">
+    <figcaption>Roster — Reps tab. Each row shows branch, supervisor, type, target, and status.</figcaption>
+  </figure>
+
+  <div class="step">
+    <ul>
+      <li><b>Add Rep</b> — manually add one person.</li>
+      <li><b>Upload Roster</b> — bulk-upload a spreadsheet of many reps at once.</li>
+      <li>The month picker (top-right) controls which month you're viewing/editing — pick the right one before making backdated changes.</li>
+      <li>Check <b>Show Inactive</b> to reveal deactivated reps — only then do Reactivate and permanent Delete buttons appear.</li>
+    </ul>
+  </div>
+
+  <figure>
+    <img src="Screenshot/Roaster%20-%20Reps%20-%20Upload.png" alt="Upload Roster confirmation dialog">
+    <figcaption>Upload Roster — confirms the file format before importing.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="Screenshot/Roaster%20-%20Reps%20-%20Upload%202.png" alt="Add Sales Rep modal">
+    <figcaption>Add Rep — manually add one person with rep code, name, branch, type, and supervisor.</figcaption>
+  </figure>
+
+  <div class="box tip">
+    <b>Tip</b>
+    Bulk roster files need an <b>Effective_Date</b> column — that's what decides which month the change counts from, there's no separate month dropdown for the upload itself.
+  </div>
+</section>
+
+<!-- ============================= 6. ROSTER SUPS ============================= -->
+<section class="feature" id="roster-sup">
+  <div class="top"><a href="#">↑ top</a></div>
+  <h2>6. Roster — Supervisors</h2>
+  <div class="badges"><span class="badge b-hr">HR</span><span class="badge b-hrs">HR Support</span><span class="badge b-tm">Top Mgr</span></div>
+
+  <p>The Sup tab next to Reps — a read-only list of supervisors for the selected month, so HR can confirm both reps and supervisors are accounted for without leaving the screen.</p>
+
+  <figure>
+    <img src="Screenshot/Roaster%20-%20Sups.png" alt="Roster Supervisors tab">
+    <figcaption>Each supervisor's branch, type, live rep headcount, monthly target, and status.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================= 7. KPI REPORT ============================= -->
+<section class="feature" id="kpi">
+  <div class="top"><a href="#">↑ top</a></div>
+  <h2>7. KPI Report</h2>
+  <div class="badges">
+    <span class="badge b-admin">Admin</span><span class="badge b-hr">HR</span><span class="badge b-hrs">HR Support</span>
+    <span class="badge b-am">Acc. Manager</span><span class="badge b-sup">Sales Sup</span>
+    <span class="badge b-bm">Branch Mgr</span><span class="badge b-tm">Top Mgr</span>
+  </div>
+
+  <p>The main scoring screen — six sub-tabs, all sharing the same month/branch/customer-type filters at the top.</p>
+
+  <h3>Company Overview</h3>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Company%20Overview.png" alt="KPI Report Company Overview tab">
+    <figcaption>Overall KPI % + estimated month-end, broken down per branch on the right.</figcaption>
+  </figure>
+
+  <h3>Reps Performance</h3>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Reps%20Performance.png" alt="KPI Report Reps Performance tab">
+    <figcaption>Every rep's Jewelry/Bar/Qty actuals, KPI Score %, and Est. Month End — sortable by clicking column headers.</figcaption>
+  </figure>
+
+  <h3>Supervisor Performance</h3>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Supervisor%20Performance.png" alt="KPI Report Supervisor Performance tab">
+    <figcaption>Same idea, one row per supervisor — their team's combined score against the team target.</figcaption>
+  </figure>
+
+  <h3>Commission</h3>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Commission%20Reps.png" alt="KPI Report Commission tab, Staff Commission view">
+    <figcaption>Staff Commission — each rep's commission earned, by Jewelry/Bar/Qty.</figcaption>
+  </figure>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Sups%20Commission.png" alt="KPI Report Commission tab, Supervisor Commission view">
+    <figcaption>Switch to Supervisor Commission — each supervisor's share of their team's commission.</figcaption>
+  </figure>
+
+  <h3>Customer Type Report</h3>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Customer%20Type%20Report.png" alt="KPI Report Customer Type Report tab">
+    <figcaption>Same numbers, split by B2C (Retail) vs B2B (Wholesale).</figcaption>
+  </figure>
+
+  <h3>Daily Tracking</h3>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Daily%20Tracking.png" alt="KPI Report Daily Tracking tab">
+    <figcaption>A reconciliation grid — one row per rep, one column per day, raw uploaded values. A blank cell means nothing was uploaded for that rep/date.</figcaption>
+  </figure>
+
+  <h3>Rep / Supervisor Profile</h3>
+  <p>Click any row in Reps or Supervisor Performance to open a trend chart for that person.</p>
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Modal%20profile.png" alt="Rep profile modal with weight and qty trend chart">
+    <figcaption>Profile popup — month-by-month weight/qty trend and KPI history for that one person.</figcaption>
+  </figure>
+
+  <div class="box tip">
+    <b>Tip</b>
+    Use the <b>Export</b> button (top-right of the report) to download the current table as Excel or a PDF snapshot.
+  </div>
+</section>
+
+<!-- ============================= 8. SALE REPORT ============================= -->
+<section class="feature" id="sales">
+  <div class="top"><a href="#">↑ top</a></div>
+  <h2>8. Sale Report</h2>
+  <div class="badges">
+    <span class="badge b-admin">Admin</span><span class="badge b-hr">HR</span>
+    <span class="badge b-ao">Acc. Officer</span><span class="badge b-am">Acc. Manager</span>
+    <span class="badge b-sup">Sales Sup</span><span class="badge b-bm">Branch Mgr</span><span class="badge b-tm">Top Mgr</span>
+  </div>
+
+  <p>Raw sales numbers (not KPI-scored) — four views via the tab bar.</p>
+
+  <h3>Overview</h3>
+  <figure>
+    <img src="Screenshot/Sales%20Report%20-%20Overview.png" alt="Sale Report Overview tab">
+    <figcaption>Total weight/quantity cards, week-over-week mini charts.</figcaption>
+  </figure>
+
+  <h3>By Branch</h3>
+  <figure>
+    <img src="Screenshot/Sales%20Report%20-%20By%20Branch.png" alt="Sale Report By Branch tab with pie charts">
+    <figcaption>Pie charts showing each branch's share of Jewelry/Bar/Total weight, plus a per-branch analyst breakdown below.</figcaption>
+  </figure>
+
+  <h3>By Customer Type</h3>
+  <figure>
+    <img src="Screenshot/Sales%20Report%20-%20By%20Customer%20Type.png" alt="Sale Report By Customer Type tab">
+    <figcaption>B2C vs B2B side-by-side cards and a comparison chart.</figcaption>
+  </figure>
+
+  <h3>Trend</h3>
+  <figure>
+    <img src="Screenshot/Sales%20Report%20-%20Trend.png" alt="Sale Report Trend tab">
+    <figcaption>Week-over-week and month-over-month % change tables, plus a daily sales trend chart.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================= 9. KPI SETTINGS ============================= -->
+<section class="feature" id="kpisettings">
+  <div class="top"><a href="#">↑ top</a></div>
+  <h2>9. KPI Settings</h2>
+  <div class="badges"><span class="badge b-admin">Admin (Defaults)</span><span class="badge b-hr">HR (Monthly)</span><span class="badge b-tm">Top Mgr</span></div>
+
+  <p>This is the one screen that controls how every score gets calculated — but Admin and HR see two different jobs on it.</p>
+
+  <h3>Admin view — standing Defaults</h3>
+  <p>Admin sets the <b>standing values</b> that any month without its own override falls back to. No month picker — Defaults apply forever until changed again.</p>
+  <figure>
+    <img src="Screenshot/(Admin)%20KPI%20setting%20Defaults.png" alt="Admin KPI Settings Defaults view, commission and target cards">
+    <figcaption>Commission Rate Defaults and Branch Point Target Defaults.</figcaption>
+  </figure>
+  <figure>
+    <img src="Screenshot/(Admin)%20KPI%20setting%20Defaults%202.png" alt="Admin KPI Settings Defaults view, rates and qty tiers">
+    <figcaption>Jewelry/Bar points-per-gram and the Qty Tier table, plus the Score Simulator at the bottom to preview a score before saving.</figcaption>
+  </figure>
+
+  <h3>HR view — this month's settings</h3>
+  <p>HR picks a month, optionally clicks <b>Use Defaults</b> to pull Admin's standing values in as a starting point, adjusts anything different this month, then clicks <b>Save All</b> to confirm.</p>
+  <figure>
+    <img src="Screenshot/(HR)%20KPI%20setting.png" alt="HR KPI Settings view, commission rates and monthly targets">
+    <figcaption>Commission Rates and Monthly KPI Point Targets for the selected month.</figcaption>
+  </figure>
+  <figure>
+    <img src="Screenshot/(HR)%20KPI%20setting%202.png" alt="HR KPI Settings view, qty tiers">
+    <figcaption>Qty Tier table for this specific month — editable per branch.</figcaption>
+  </figure>
+
+  <div class="box warn">
+    <b>Important</b>
+    HR must click Save All every month — even if nothing changed — to mark that month "Confirmed." Skipping it leaves a warning banner up on Dashboard/KPI Report (numbers still calculate fine using the last known values, but the banner stays until explicitly confirmed).
+  </div>
+</section>
+
+<!-- ============================= 10. SETTINGS / USERS ============================= -->
+<section class="feature" id="users">
+  <div class="top"><a href="#">↑ top</a></div>
+  <h2>10. Settings &amp; Users</h2>
+  <div class="badges"><span class="badge b-admin">Admin</span><span class="badge b-hr">HR (Connection only)</span></div>
+
+  <h3>Connection Settings</h3>
+  <p>Keeps the Google Sheets connection healthy — manual Push/Pull if the "unsynced" count isn't clearing on its own.</p>
+  <figure>
+    <img src="Screenshot/Setting%20-%20Connection.png" alt="Settings Connection Settings tab">
+    <figcaption>Connected Spreadsheet ID, Test Connection, Push to Sheets / Pull from Sheets buttons, and the recent sync log.</figcaption>
+  </figure>
+
+  <h3>User Management</h3>
+  <p>Create/deactivate accounts, assign roles and branches, override an individual person's menu access beyond their role's default.</p>
+  <figure>
+    <img src="Screenshot/Setting%20-%20Users.png" alt="Settings Users tab, list of accounts">
+    <figcaption>Every account, its role, branch/team, and status — plus a quick-reference legend of what each role can do.</figcaption>
+  </figure>
+  <figure>
+    <img src="Screenshot/Setting%20-%20Users%20-%20Add%20user.png" alt="Create New User modal">
+    <figcaption>Create New User — name, username, password, role, branch, and supervisor team.</figcaption>
+  </figure>
+
+  <div class="box tip">
+    <b>Tip</b>
+    Each save auto-pushes to the Google Sheet immediately. Forgot someone's password? Either type a new one in their edit form, or look it up directly on the Users sheet tab (stored in plain text there by deliberate design).
+  </div>
+</section>
+
+<!-- ============================= 11. AUDIT LOG ============================= -->
+<section class="feature" id="audit">
+  <div class="top"><a href="#">↑ top</a></div>
+  <h2>11. Audit Log</h2>
+  <div class="badges"><span class="badge b-admin">Admin</span><span class="badge b-hr">HR</span></div>
+
+  <p>A record of every meaningful action any user took — logins, roster changes, permission edits, KPI confirms — who did it, when, and what it affected.</p>
+
+  <figure>
+    <img src="Screenshot/Audit%20Log.png" alt="Audit Log screen with filters and event list">
+    <figcaption>Filter by date range, username, or event type. Every row shows timestamp, user, role, event, target, and detail.</figcaption>
+  </figure>
+
+  <div class="box note">
+    <b>Note</b>
+    Spot-check this periodically for anything unexpected — failed logins, unexpected deletions, permission changes nobody flagged.
+  </div>
+</section>
+
+</div>
+
+<footer>SalesTrack Pro · KPV Gold &amp; Jewelry Sales Performance System</footer>
+
+</body>
+</html>
