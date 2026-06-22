@@ -21,6 +21,11 @@ const APP_TIMEZONE = 'Asia/Vientiane'
 
 export function fmtDateTime(iso: string | null, opts?: Intl.DateTimeFormatOptions): string {
   if (!iso) return '—'
-  try { return new Date(iso).toLocaleString('en-GB', { timeZone: APP_TIMEZONE, ...opts }) }
+  // SQLite's datetime('now') stores "YYYY-MM-DD HH:MM:SS" — no T, no Z, no offset. JS's
+  // Date constructor reads that shape as LOCAL time, not UTC, so converting "to Vientiane"
+  // became a no-op (already being treated as Vientiane) — the raw UTC number showed through
+  // unconverted, 7h behind real local time. Force it to parse as UTC, like it actually is.
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(iso) ? `${iso.replace(' ', 'T')}Z` : iso
+  try { return new Date(normalized).toLocaleString('en-GB', { timeZone: APP_TIMEZONE, ...opts }) }
   catch { return iso }
 }
