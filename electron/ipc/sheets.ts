@@ -543,15 +543,22 @@ export async function pushMonthlyTargetsIfConfigured(db: Database): Promise<void
 }
 
 // ── Push only the KpiSubmissions tab — exported for kpi.ts ──────────────────
-export async function pushKpiSubmissionsIfConfigured(db: Database): Promise<void> {
+// Returns whether it actually landed on the Sheet, instead of swallowing failures silently —
+// "Save All" used to report success to HR even when this push failed (network blip, auth
+// issue, whatever), leaving the Sheet permanently missing that month's confirmed marker with
+// zero indication anything went wrong until someone happened to check the Sheet directly.
+export async function pushKpiSubmissionsIfConfigured(db: Database): Promise<{ pushed: boolean; error?: string }> {
   const sheetsId = getSetting('sheets_id')
   const saPath   = getSetting('service_account_path')
-  if (!sheetsId || !saPath) return
+  if (!sheetsId || !saPath) return { pushed: false, error: 'Google Sheets not configured on this device.' }
   try {
     const auth   = getServiceAuth(saPath)
     const sheets = google.sheets({ version: 'v4', auth })
     await pushKpiSubmissions(db, sheets, sheetsId)
-  } catch { /* Sheets unavailable — silently skip */ }
+    return { pushed: true }
+  } catch (e: unknown) {
+    return { pushed: false, error: e instanceof Error ? e.message : String(e) }
+  }
 }
 
 // ── Push only the KPIRates tab — exported for kpi.ts ─────────────────────────

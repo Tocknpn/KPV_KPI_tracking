@@ -293,11 +293,18 @@ export default function KpiSettings() {
       // Marks this month as confirmed regardless of whether anything actually changed —
       // HR clicking Save All is the explicit "I reviewed this month" signal we need, not
       // just the values themselves (which might be identical to last month / defaults).
-      await window.api.markMonthSubmitted(token, globalYear, globalMonth)
+      const submitResult = await window.api.markMonthSubmitted(token, globalYear, globalMonth)
       setMonthSubmitted(true)
 
       setDirtyMult(false); setDirtyComm(false); setDirtySupShare(false); setDirtyTargets(false)
-      showToast(`All KPI settings saved for ${MONTH_NAMES[globalMonth - 1]} ${globalYear}.`)
+      // submitResult.synced === false means the local save succeeded but the push to
+      // Google Sheets failed (network/auth issue) — flag it loudly instead of saying "saved"
+      // when other devices/reports reading the Sheet directly won't see this confirmation.
+      if (submitResult?.synced === false) {
+        showToast(`Saved locally, but NOT synced to Google Sheets: ${submitResult.syncError ?? 'unknown error'}. Click Save All again once connection is restored.`)
+      } else {
+        showToast(`All KPI settings saved for ${MONTH_NAMES[globalMonth - 1]} ${globalYear}.`)
+      }
     } catch (e) {
       showToast(`Save failed: ${e instanceof Error ? e.message : String(e)}`)
     } finally { setSavingAll(false) }

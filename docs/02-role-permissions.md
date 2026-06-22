@@ -15,7 +15,7 @@ user's menu access on top of the default, per-user, via Settings → Users → t
 | Upload Status | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 | Roster | — | ✅ | ✅ | — | — | — | — | ✅ |
 | KPI Settings | ✅ | ✅ | — | — | — | — | — | ✅ |
-| Audit Log | ✅ | ✅ | — | — | ✅ | — | — | ✅ |
+| Audit Log | ✅ | ✅ | — | — | — | — | — | — |
 | User Management | ✅ (in Settings) | — | — | — | — | — | — | — |
 | Settings | ✅ | ✅ | — | — | — | — | — | — |
 

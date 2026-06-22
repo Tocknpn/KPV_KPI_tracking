@@ -410,9 +410,15 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     const ym = `${year}${String(month).padStart(2, '0')}`
     prepare(db, `INSERT OR REPLACE INTO kpi_monthly_submissions (year_month, submitted_by, submitted_at) VALUES (?, ?, datetime('now'))`)
       .run(ym, u.username)
-    pushKpiSubmissionsIfConfigured(db).catch(() => {})
+    // Awaited now (not fire-and-forget) — HR needs to know immediately if this didn't reach
+    // the Sheet, not discover it days later when a report reads stale rates from there.
+    const pushResult = await pushKpiSubmissionsIfConfigured(db)
     logAudit(db, u.id, u.username, u.role, 'kpi_month_confirmed', ym, 'kpi_monthly_submissions', ym)
-    return { success: true }
+    return {
+      success: true,
+      synced: pushResult.pushed,
+      syncError: pushResult.pushed ? undefined : pushResult.error,
+    }
   })
 
   // ── Admin-maintained defaults ────────────────────────────────────────────
