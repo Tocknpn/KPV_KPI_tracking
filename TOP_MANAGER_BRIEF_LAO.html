@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="lo">
+<head>
+<meta charset="UTF-8">
+<title>SalesTrack Pro — ສະຫຼຸບສຳລັບຜູ້ບໍລິຫານສູງສຸດ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Lao:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --blue: #004f96; --blue-light: #e8f1fb;
+    --gold: #9c6e1b; --gold-light: #fdf6e8;
+    --green: #1e7a4a; --green-light: #e9f7ef;
+    --ink: #1c2330; --sub: #5b6472; --line: #e3e7ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Noto Sans Lao", -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink); background: #f6f8fc; margin: 0; line-height: 1.75;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 24px 70px; }
+  header.cover {
+    background: linear-gradient(135deg, #004f96, #1e6fb8 55%, #2f9e6b);
+    color: #fff; padding: 60px 24px 50px; text-align: center;
+  }
+  header.cover h1 { font-size: 32px; margin: 0 0 8px; }
+  header.cover p { font-size: 16px; opacity: .92; margin: 0; }
+
+  section { margin: 48px 0; }
+  section h2 {
+    font-size: 22px; margin: 0 0 14px; padding-bottom: 8px;
+    border-bottom: 3px solid var(--blue);
+  }
+  section h3 { font-size: 17px; margin: 28px 0 10px; color: var(--blue); }
+  section p { font-size: 16px; }
+
+  figure { margin: 18px 0; }
+  figure img {
+    width: 100%; border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 6px 18px rgba(20,30,50,.08); display: block;
+  }
+  figcaption { font-size: 13.5px; color: var(--sub); margin-top: 8px; text-align: center; }
+
+  .thumbgrid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 14px;
+  }
+  .thumbgrid figure { margin: 0; }
+  .thumbgrid figcaption { font-size: 13px; }
+
+  .benefits { list-style: none; padding: 0; margin: 0; }
+  .benefits li {
+    background: #fff; border: 1px solid var(--line); border-left: 5px solid var(--green);
+    border-radius: 10px; padding: 14px 18px; margin-bottom: 12px; font-size: 16px;
+  }
+  .benefits b { color: var(--green); }
+
+  .summary-box {
+    background: var(--blue-light); border-left: 4px solid var(--blue);
+    border-radius: 10px; padding: 18px 20px; font-size: 16px; margin: 24px 0;
+  }
+
+  footer { text-align: center; color: var(--sub); font-size: 13px; padding: 36px 0; }
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <h1>SalesTrack Pro</h1>
+  <p>ສະຫຼຸບໄວ — ສຳລັບຜູ້ບໍລິຫານສູງສຸດ</p>
+</header>
+
+<div class="wrap">
+
+<section>
+  <h2>ແອັບນີ້ແມ່ນຫຍັງ</h2>
+  <p>SalesTrack Pro ຕິດຕາມຍອດຂາຍຄຳ ແລະ ເພັດພອຍ ຂອງທຸກສາຂາ ແບບສົດ. ອັບໂຫລດຍອດຂາຍຄັ້ງໃດ, ຄະແນນ KPI ອອກທັນທີຄັ້ງນັ້ນ. ບໍ່ຕ້ອງລໍສິ້ນເດືອນ, ບໍ່ຕ້ອງລໍໃຜສົ່ງລາຍງານໃຫ້.</p>
+</section>
+
+<section>
+  <h2>ເຫັນຫຍັງເມື່ອເປີດແອັບ</h2>
+  <p>ເປີດແອັບ — ເຫັນທັນທີວ່າສາຂາໃດດີ, ສາຂາໃດຕ່ຳກວ່າເປົ້າ, ໃຜຂາຍດີສຸດ.</p>
+
+  <figure>
+    <img src="Screenshot/Dashboard%20Overview.png" alt="ໜ້າ Dashboard">
+    <figcaption>Dashboard — ຍອດຂາຍ ແລະ ຄະແນນ KPI ຂອງເດືອນນີ້, ອັນດັບຄົນຂາຍດີສຸດ.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="Screenshot/KPI%20report%20-%20Company%20Overview.png" alt="ລາຍງານ KPI ພາບລວມບໍລິສັດ">
+    <figcaption>KPI Report — ຄະແນນລວມ, ຄາດຄະເນທ້າຍເດືອນ, ແຍກສາຂາ.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="Screenshot/Sales%20Report%20-%20By%20Branch.png" alt="ລາຍງານຍອດຂາຍ ແຍກສາຂາ">
+    <figcaption>Sale Report — ສ່ວນແບ່ງຍອດຂາຍ ແຕ່ລະສາຂາ, ເບິ່ງອອກວ່າໃຜນຳ.</figcaption>
+  </figure>
+
+  <div class="summary-box">
+    ເລືອກສາຂາ ແລະ ເດືອນ — ຕົວເລກອອກໃຫ້ທັນທີ. ບໍ່ມີໃຜຕ້ອງຄິດໄລ່ ຫຼື ສ້າງລາຍງານໃຫ້ທ່ານ.
+  </div>
+</section>
+
+<section>
+  <h2>ມຸມມອງອື່ນທີ່ມີໃຫ້ — KPI Report</h2>
+  <p>ນອກຈາກພາບລວມບໍລິສັດ, ຍັງມີອີກ 5 ມຸມມອງ ກົດເບິ່ງໄດ້ໃນໜ້າດຽວກັນ:</p>
+  <div class="thumbgrid">
+    <figure>
+      <img src="Screenshot/KPI%20report%20-%20Reps%20Performance.png" alt="Reps Performance">
+      <figcaption><b>Reps Performance</b> — ຄະແນນແຕ່ລະຄົນ, ລຽງລຳດັບໃຜນຳໃຜຕາມຫຼັງໄດ້.</figcaption>
+    </figure>
+    <figure>
+      <img src="Screenshot/KPI%20report%20-%20Supervisor%20Performance.png" alt="Supervisor Performance">
+      <figcaption><b>Supervisor Performance</b> — ຄະແນນແຕ່ລະທີມ, ທຽບກັນລະຫວ່າງຫົວໜ້າທີມ.</figcaption>
+    </figure>
+    <figure>
+      <img src="Screenshot/KPI%20report%20-%20Commission%20Reps.png" alt="Commission">
+      <figcaption><b>Commission</b> — ຄ່າຄອມມິຊັ່ນທີ່ຕ້ອງຈ່າຍ, ທັງລະດັບພະນັກງານ ແລະ ຫົວໜ້າທີມ.</figcaption>
+    </figure>
+    <figure>
+      <img src="Screenshot/KPI%20report%20-%20Customer%20Type%20Report.png" alt="Customer Type Report">
+      <figcaption><b>Customer Type</b> — ປຽບທຽບຍອດຂາຍຍ່ອຍ (B2C) ກັບຂາຍສົ່ງ (B2B).</figcaption>
+    </figure>
+    <figure>
+      <img src="Screenshot/KPI%20report%20-%20Daily%20Tracking.png" alt="Daily Tracking">
+      <figcaption><b>Daily Tracking</b> — ກວດທຸກວັນ ໃຜອັບໂຫລດແລ້ວ ໃຜຍັງ.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <h2>ມຸມມອງອື່ນທີ່ມີໃຫ້ — Sale Report</h2>
+  <p>ສ່ວນຍອດຂາຍດິບ (ບໍ່ຄິດໄລ່ KPI) ກໍ່ມີໃຫ້ເບິ່ງຫຼາຍແບບ:</p>
+  <div class="thumbgrid">
+    <figure>
+      <img src="Screenshot/Sales%20Report%20-%20Overview.png" alt="Sale Report Overview">
+      <figcaption><b>Overview</b> — ນ້ຳໜັກ ແລະ ຈຳນວນຂາຍລວມ, ທຽບອາທິດຕໍ່ອາທິດ.</figcaption>
+    </figure>
+    <figure>
+      <img src="Screenshot/Sales%20Report%20-%20By%20Customer%20Type.png" alt="Sale Report By Customer Type">
+      <figcaption><b>By Customer Type</b> — B2C ກັບ B2B ຄຽງຂ້າງກັນ.</figcaption>
+    </figure>
+    <figure>
+      <img src="Screenshot/Sales%20Report%20-%20Trend.png" alt="Sale Report Trend">
+      <figcaption><b>Trend</b> — ກຣາຟແນວໂນ້ມຍອດຂາຍ, ເພີ່ມ-ຫຼຸດແບບໃດແຕ່ລະອາທິດ/ເດືອນ.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <h2>ໄດ້ຫຍັງຈາກແອັບນີ້</h2>
+  <ul class="benefits">
+    <li><b>ເຫັນໄວ</b> — ບໍ່ຕ້ອງລໍສິ້ນເດືອນ. ອັບໂຫລດແລ້ວ ຄະແນນອອກທັນທີ.</li>
+    <li><b>ຕົວເລກອັນດຽວ</b> — ທຸກສາຂາເຫັນຕົວເລກດຽວກັນ, ບໍ່ມີ Excel ແຍກກັນແຕ່ລະບ່ອນທີ່ອາດບໍ່ກົງກັນ.</li>
+    <li><b>ກວດຄືນໄດ້</b> — ໃຜເຮັດຫຍັງ ເວລາໃດ ບັນທຶກໄວ້ໝົດ, ບໍ່ມີໃຜແກ້ຕົວເລກລັບໆ.</li>
+    <li><b>ແຍກສິດຊັດເຈນ</b> — ຫົວໜ້າທີມແກ້ສາຂາອື່ນບໍ່ໄດ້, ບັນຊີທັບຂໍ້ມູນເກົ່າບໍ່ໄດ້.</li>
+    <li><b>ເນັດບໍ່ດີກໍ່ໃຊ້ໄດ້</b> — ແຕ່ລະອຸປະກອນເກັບຂໍ້ມູນຂອງຕົນ, sync ໃໝ່ເມື່ອມີສັນຍານ.</li>
+    <li><b>ບໍ່ຕ້ອງເກັ່ງ Excel</b> — HR ຕັ້ງສູດຄິດຄະແນນຄັ້งດຽວ, ໃຊ້ໄດ້ກັບທຸກການອັບໂຫລດ.</li>
+    <li><b>ຂະຫຍາຍງ່າຍ</b> — ເພີ່ມສາຂາ ຫຼື ຄົນໃໝ່ ພຽງເພີ່ມໃນບັນຊີພະນັກງານ, ບໍ່ຕ້ອງສ້າງ Excel ໃໝ່.</li>
+  </ul>
+</section>
+
+</div>
+
+<footer>SalesTrack Pro · ລະບົບຕິດຕາມຍອດຂາຍ KPV ຄຳ &amp; ເພັດພອຍ</footer>
+
+</body>
+</html>
