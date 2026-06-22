@@ -1,4 +1,4 @@
-import { IpcMain, dialog } from 'electron'
+import { IpcMain, dialog, BrowserWindow } from 'electron'
 import { google } from 'googleapis'
 import bcrypt from 'bcryptjs'
 import { readFileSync, existsSync } from 'fs'
@@ -926,12 +926,25 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
     return !!(getSetting('sheets_id') && getSetting('service_account_path'))
   })
 
-  ipcMain.handle('sheets:browseFileBootstrap', async () => {
-    const result = await dialog.showOpenDialog({
-      title: 'Select Service Account JSON',
-      filters: [{ name: 'JSON Files', extensions: ['json'] }],
-      properties: ['openFile'],
-    })
+  ipcMain.handle('sheets:browseFileBootstrap', async (e) => {
+    // No parent window passed here previously — on Windows this detaches the native file
+    // picker from the app window's focus chain, so closing it leaves the app window looking
+    // active but not actually receiving keyboard/click input (Alt-tab/Alt-key force-refocus
+    // was the only workaround). Passing the owning window fixes the dialog's modal behavior;
+    // the explicit .focus() after is a belt-and-suspenders safety net for the same class of bug.
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const result = win
+      ? await dialog.showOpenDialog(win, {
+          title: 'Select Service Account JSON',
+          filters: [{ name: 'JSON Files', extensions: ['json'] }],
+          properties: ['openFile'],
+        })
+      : await dialog.showOpenDialog({
+          title: 'Select Service Account JSON',
+          filters: [{ name: 'JSON Files', extensions: ['json'] }],
+          properties: ['openFile'],
+        })
+    win?.focus()
     if (result.canceled || !result.filePaths.length) return null
     return result.filePaths[0]
   })
@@ -1031,13 +1044,21 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
     }
   })
 
-  ipcMain.handle('sheets:browseFile', async (_e, token: string) => {
+  ipcMain.handle('sheets:browseFile', async (e, token: string) => {
     requireAuth(token)
-    const result = await dialog.showOpenDialog({
-      title: 'Select Service Account JSON',
-      filters: [{ name: 'JSON Files', extensions: ['json'] }],
-      properties: ['openFile'],
-    })
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const result = win
+      ? await dialog.showOpenDialog(win, {
+          title: 'Select Service Account JSON',
+          filters: [{ name: 'JSON Files', extensions: ['json'] }],
+          properties: ['openFile'],
+        })
+      : await dialog.showOpenDialog({
+          title: 'Select Service Account JSON',
+          filters: [{ name: 'JSON Files', extensions: ['json'] }],
+          properties: ['openFile'],
+        })
+    win?.focus()
     if (result.canceled || !result.filePaths.length) return null
     return result.filePaths[0]
   })

@@ -8,7 +8,7 @@ import { ROLE_DEFAULTS } from '../../types'
 export default function Login() {
   const navigate = useNavigate()
   const { token, permissions, user, setSession } = useAuthStore()
-  const { setLastSyncedAt } = useAppStore()
+  const { lastSyncedAt, setLastSyncedAt } = useAppStore()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPwd, setShowPwd]   = useState(false)
@@ -73,6 +73,10 @@ export default function Login() {
       setSetupError(e instanceof Error ? e.message : String(e))
     } finally {
       setSetupBusy(false)
+      // window.confirm() (native blocking dialog) and the file-picker IPC call both leave the
+      // app window visually active but not actually receiving keyboard/click input on Windows
+      // — Alt-tab was the only workaround. Force the window/document to reclaim focus here.
+      window.focus()
     }
   }
 
@@ -94,13 +98,25 @@ export default function Login() {
       // device that's been offline (or where someone else made changes elsewhere) doesn't
       // show stale numbers. Never blocks login on failure — e.g. no internet, or Sheets not
       // configured on this device yet — it just proceeds with whatever's already local.
-      setSyncStatus('Connecting to Google Sheets…')
-      try {
-        const sync = await window.api.pullFromCloud(result.token)
-        setSyncStatus(sync.success ? 'Up to date.' : 'Could not sync — using last saved data.')
-        if (sync.success) setLastSyncedAt(new Date().toISOString())
-      } catch {
-        setSyncStatus('Could not sync — using last saved data.')
+      //
+      // Skip if main.ts's own startup pull (fires the instant the window opens, before this
+      // form is even interactive) already succeeded within the last 2 minutes — that pull
+      // does the exact same full table-by-table merge across every config tab + entries,
+      // entirely synchronously on the main process thread (sql.js has no async query API).
+      // Running it twice back-to-back on every normal launch-then-login was doubling that
+      // main-thread CPU burst for zero benefit — same data, seconds apart.
+      const startupPullIsFresh = lastSyncedAt && (Date.now() - new Date(lastSyncedAt).getTime()) < 120_000
+      if (startupPullIsFresh) {
+        setSyncStatus('Up to date.')
+      } else {
+        setSyncStatus('Connecting to Google Sheets…')
+        try {
+          const sync = await window.api.pullFromCloud(result.token)
+          setSyncStatus(sync.success ? 'Up to date.' : 'Could not sync — using last saved data.')
+          if (sync.success) setLastSyncedAt(new Date().toISOString())
+        } catch {
+          setSyncStatus('Could not sync — using last saved data.')
+        }
       }
       await new Promise(r => setTimeout(r, 500)) // let the final status actually be readable
 

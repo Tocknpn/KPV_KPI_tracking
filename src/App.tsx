@@ -19,6 +19,7 @@ export default function App() {
   const [dbReady, setDbReady] = useState(false)
   const [initError, setInitError] = useState<string | null>(null)
   const setSyncBanner = useAppStore(s => s.setSyncBanner)
+  const setLastSyncedAt = useAppStore(s => s.setLastSyncedAt)
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [updateDownloading, setUpdateDownloading] = useState(false)
   const [updateReady, setUpdateReady] = useState(false)
@@ -33,7 +34,13 @@ export default function App() {
     window.api.onAppInitError((message: string) => setInitError(message))
     // Surfaces the startup auto-pull's outcome (configured/success/error) so a device with
     // no admin/hr login still sees why its data looks stale or empty — see TopBar banner.
-    window.api.onStartupSyncResult(r => setSyncBanner(r))
+    window.api.onStartupSyncResult(r => {
+      setSyncBanner(r)
+      // main.ts already ran a full pull before this window was even interactive — record
+      // when, so Login's own post-submit pull can skip re-doing the exact same full
+      // table-by-table merge a few seconds later if nothing's changed since (see Login.tsx).
+      if (r.success) setLastSyncedAt(new Date().toISOString())
+    })
     // electron-updater found a newer GitHub release — user decides whether to download,
     // nothing happens automatically (see main.ts: autoDownload = false).
     window.api.onUpdateAvailable(info => setUpdateVersion(info.version))
