@@ -46,6 +46,23 @@ async function writeTab(
   headers: string[],
   rows: (string | number | null)[][]
 ): Promise<void> {
+  // Guard against wiping a tab that already has real data with an empty/near-empty local
+  // read. This clear+rewrite pattern runs on EVERY edit to the underlying table (e.g. any
+  // roster change re-pushes the whole SupervisorRoster tab) — if the local table backing
+  // it is sparser than what's already on the sheet (a real scenario: supervisor_roster_monthly
+  // only gets rows when a rep edit happens to touch a supervisor_id, so a device that's never
+  // done that locally has an empty table even though the sheet has real history from an
+  // earlier upload), a single unrelated edit anywhere would silently delete that history.
+  // Only skip when the sheet currently has more than just a header row — an intentional
+  // first-time push of zero rows (e.g. brand-new install, nothing uploaded yet) still works.
+  if (rows.length === 0) {
+    const existing = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${tabName}!A1:A2` }).catch(() => null)
+    const hasExistingData = (existing?.data.values?.length ?? 0) > 1
+    if (hasExistingData) {
+      console.warn(`[sheets] Skipped wiping ${tabName} — local data is empty but the sheet already has rows. Push something with real rows to update it instead.`)
+      return
+    }
+  }
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId,
     requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
