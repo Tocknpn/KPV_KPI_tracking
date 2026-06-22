@@ -153,6 +153,10 @@ function RosterUploadModal({ token, onDone, onClose }: {
       const res = await window.api.uploadRoster(token, rows)
       if (res.success) {
         setResult(`Created: ${res.created} · Updated: ${res.updated}${res.skipped ? ` · Skipped: ${res.skipped}` : ''}`)
+        // Backend already sends the exact reason per skipped row (e.g. "IT-010(missing
+        // supervisor info)") — surface it instead of leaving the count as the only signal,
+        // or fixing a skip means guessing which row and why from a bare number.
+        if (res.skippedCodes?.length) setErrors(res.skippedCodes)
         onDone(`Roster uploaded — created ${res.created}, updated ${res.updated}.`)
       } else {
         setErrors([res.error ?? 'Upload failed'])
