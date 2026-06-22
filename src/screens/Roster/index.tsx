@@ -171,9 +171,9 @@ function RosterUploadModal({ token, onDone, onClose }: {
         </div>
         <ul className="text-body-sm text-on-surface-variant mb-3 list-disc pl-5 space-y-1">
           <li>Matching is by <strong>Rep_Code</strong> — same code updates that rep, a new code creates one.</li>
-          <li>Columns: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type, Effective_Date, Sup_Code (optional).</li>
+          <li>Columns: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type, Effective_Date, Sup_Code.</li>
           <li><strong>Effective_Date</strong> (YYYY-MM-DD) is required — decides which month the row counts for.</li>
-          <li><strong>Sup_Code</strong> is safer than typing the supervisor's name — use it if you have it.</li>
+          <li><strong>Every rep needs a supervisor</strong> — fill in Sup_Code or Team_Sup_Name, or the row is skipped. Sup_Code is safer if you have it.</li>
           <li>KPI point targets aren't set here — that's done in KPI Settings.</li>
         </ul>
 

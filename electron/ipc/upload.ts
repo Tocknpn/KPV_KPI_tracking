@@ -295,6 +295,11 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(r.branchCode) as { id: number } | undefined
           if (!branch) { skipped.push(`${r.repCode}(bad branch:${r.branchCode})`); continue }
 
+          // Every rep must report to a supervisor by business rule — a row with neither
+          // Sup_Code nor Team_Sup_Name filled in used to pass silently with supervisor_id
+          // left NULL, which is how reps with a blank Supervisor column kept turning up.
+          if (!r.supervisorCode && !r.supervisorName) { skipped.push(`${r.repCode}(no supervisor)`); continue }
+
           const staffType = r.staffType === 'b2b' ? 'b2b' : 'b2c'
 
           // Resolve supervisor — sup_code first (stable, unique, unlike a name), fall back
