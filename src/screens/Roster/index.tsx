@@ -4,22 +4,12 @@ import { GlassCard } from '../../components/ui/GlassCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useAuthStore } from '../../store/auth.store'
 import type { RosterRow, Supervisor, SupervisorRosterRow } from '../../types'
-import { validateRosterRows, downloadCSV } from '../../utils/csv'
-import { parseXLSX, readFileAsArrayBuffer, generateRosterTemplateXLSX, downloadXLSX } from '../../utils/xlsx'
+import { validateRosterRows } from '../../utils/csv'
+import { parseXLSX, readFileAsArrayBuffer, generateRosterTemplateXLSX, generateRowsXLSX, downloadXLSX } from '../../utils/xlsx'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 function fmtPts(n: number) { return n.toLocaleString('en-US', { maximumFractionDigits: 0 }) }
-
-function toCSV(rows: Array<Record<string, string | number>>): string {
-  if (!rows.length) return ''
-  const headers = Object.keys(rows[0])
-  const esc = (v: string | number) => {
-    const s = String(v ?? '')
-    return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-  }
-  return [headers.join(','), ...rows.map(r => headers.map(h => esc(r[h])).join(','))].join('\n')
-}
 
 // ── Rep create/edit modal ────────────────────────────────────────────────────
 interface RepModalProps {
@@ -179,12 +169,13 @@ function RosterUploadModal({ token, onDone, onClose }: {
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
-        <p className="text-body-sm text-on-surface-variant mb-3">
-          Matches by Rep Code — existing reps update, new codes create new reps. Columns: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type, Effective_Date, Sup_Code (optional).
-          <strong> Effective_Date is required (YYYY-MM-DD)</strong> — it's the only thing that decides which month a row counts for, there is no month picker in the app.
-          <strong> Sup_Code</strong>, if filled in, is matched before Team_Sup_Name — safer than name matching since codes don't collide across Lao text/typos/duplicate names.
-          KPI point target is not part of the roster — it is configured in KPI Settings.
-        </p>
+        <ul className="text-body-sm text-on-surface-variant mb-3 list-disc pl-5 space-y-1">
+          <li>Matching is by <strong>Rep_Code</strong> — same code updates that rep, a new code creates one.</li>
+          <li>Columns: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type, Effective_Date, Sup_Code (optional).</li>
+          <li><strong>Effective_Date</strong> (YYYY-MM-DD) is required — decides which month the row counts for.</li>
+          <li><strong>Sup_Code</strong> is safer than typing the supervisor's name — use it if you have it.</li>
+          <li>KPI point targets aren't set here — that's done in KPI Settings.</li>
+        </ul>
 
         {!file ? (
           <div
@@ -376,13 +367,16 @@ export default function Roster() {
   })
 
   function exportRoster() {
+    // XLSX, not CSV — a plain CSV has no Unicode marker, so Lao names in Branch/Supervisor/
+    // Full_Name come out garbled the moment Excel opens it. XLSX stores text as real Unicode,
+    // no encoding guesswork involved.
     const rows = filteredRoster.map(r => ({
       Month: `${MONTHS[month - 1]} ${year}`,
       Rep_Code: r.rep_code ?? '', Full_Name: r.full_name, Nickname: r.nickname ?? '',
       Branch: r.branch_name, Supervisor: r.supervisor_name ?? '', Type: r.staff_type.toUpperCase(),
       Status: r.active === 1 ? 'Active' : 'Inactive',
     }))
-    downloadCSV(`roster_${MONTHS[month - 1]}_${year}.csv`, toCSV(rows))
+    downloadXLSX(`roster_${MONTHS[month - 1]}_${year}.xlsx`, generateRowsXLSX(rows, 'Roster'))
   }
 
   function handleMonthChange(y: number, m: number) {
@@ -548,7 +542,7 @@ export default function Roster() {
               Template
             </button>
             <button onClick={exportRoster}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high transition-all" title="Export current view to CSV">
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high transition-all" title="Export current view to Excel">
               <span className="material-symbols-outlined text-sm">file_download</span>
               Export
             </button>
