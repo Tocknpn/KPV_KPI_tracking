@@ -6,7 +6,7 @@ import {
   pushMonthlyTargetsIfConfigured, pushKpiRatesIfConfigured, pushQtyTiersIfConfigured,
   pushBranchesIfConfigured, pushKpiSubmissionsIfConfigured,
 } from './sheets'
-import type { Database } from 'sql.js'
+import type { Database } from 'better-sqlite3'
 
 export function computeKpiScore(
   db: Database,

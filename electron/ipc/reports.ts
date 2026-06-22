@@ -23,7 +23,7 @@ function buildSalesmenBranchFilter(ids: number[]): { sql: string; params: number
 
 // staffType, if given, prefers the B2C/B2B override saved in KPI Settings — falls back to
 // the overall branch target when no type-specific override is set for that month.
-export function getBranchPointTarget(db: import('sql.js').Database, branchId: number, year: number, month: number, staffType?: string): number {
+export function getBranchPointTarget(db: import('better-sqlite3').Database, branchId: number, year: number, month: number, staffType?: string): number {
   const monthly = prepare(db, `
     SELECT kpi_point_target, target_b2c, target_b2b FROM branch_kpi_monthly_targets WHERE branch_id=? AND year=? AND month=?
   `).get(branchId, year, month) as { kpi_point_target: number; target_b2c: number | null; target_b2b: number | null } | undefined
@@ -39,7 +39,7 @@ export function getBranchPointTarget(db: import('sql.js').Database, branchId: nu
   return branch?.kpi_point_target ?? 0
 }
 
-export function getIndividualPointTarget(db: import('sql.js').Database, salesmanId: number, yearMonth: string): number | null {
+export function getIndividualPointTarget(db: import('better-sqlite3').Database, salesmanId: number, yearMonth: string): number | null {
   const row = prepare(db, `
     SELECT point_target FROM staff_monthly_targets WHERE salesman_id = ? AND year_month = ?
   `).get(salesmanId, yearMonth) as { point_target: number } | undefined

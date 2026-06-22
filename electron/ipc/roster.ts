@@ -5,7 +5,7 @@ import { requireAuth, logAudit } from './auth'
 import { pushRosterIfConfigured } from './sheets'
 import { snapshotSalesman, snapshotSupervisor, getRosterExactMonth, getSupervisorRosterExactMonth } from '../db/history'
 import { getBranchPointTarget, getIndividualPointTarget } from './reports'
-import type { Database } from 'sql.js'
+import type { Database } from 'better-sqlite3'
 
 function requireRosterManager(token: string) {
   const u = requireAuth(token)

@@ -1,4 +1,4 @@
-import type { Database } from 'sql.js'
+import type { Database } from 'better-sqlite3'
 import { prepare } from './query'
 
 function ym(year: number, month: number): string {

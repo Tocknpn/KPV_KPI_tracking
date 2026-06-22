@@ -16,7 +16,7 @@ interface CommissionConfig {
 // Exact month, or the Admin Defaults sentinel row — NOT a carry-forward from whatever older
 // real month happens to be the most recent. A rate set in January and never touched again must
 // not silently keep pricing every later month off January's number with no signal anywhere.
-function getEffectiveConfig(db: import('sql.js').Database, staffType: string, yearMonth: string): CommissionConfig | undefined {
+function getEffectiveConfig(db: import('better-sqlite3').Database, staffType: string, yearMonth: string): CommissionConfig | undefined {
   return prepare(db, `
     SELECT staff_type, jewelry_rate_lak, bar_rate_lak, qty_rate_lak
     FROM commission_configs
@@ -34,7 +34,7 @@ const DEFAULTS_YM = '000000'
 // Supervisor share is per staff_type now (B2C team share can differ from B2B). Falls back to
 // the old single 'supervisor' key for months saved before this split, so historical commission
 // reports don't silently change. Final fallback is 30%, same as the pre-existing default.
-function getEffectiveSupPct(db: import('sql.js').Database, staffType: 'b2c' | 'b2b', yearMonth: string): number {
+function getEffectiveSupPct(db: import('better-sqlite3').Database, staffType: 'b2c' | 'b2b', yearMonth: string): number {
   const typed = getEffectiveConfig(db, `supervisor_${staffType}`, yearMonth)
   if (typed) return typed.jewelry_rate_lak / 100
   const legacy = getEffectiveConfig(db, 'supervisor', yearMonth)

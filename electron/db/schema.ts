@@ -1,4 +1,10 @@
-import type { Database } from 'sql.js'
+// Minimal sql.js-shaped interface this file's migrations are written against — see
+// connection.ts's getSchemaDb() for the better-sqlite3-backed adapter that implements it.
+export interface SchemaDb {
+  run(sql: string): void
+  exec(sql: string): Array<{ columns: string[]; values: unknown[][] }>
+  prepare(sql: string): { run(params?: unknown[]): unknown }
+}
 
 const SCHEMA_VERSION = 27
 
@@ -261,7 +267,7 @@ function runStep(label: string, fn: () => void): void {
   }
 }
 
-export function applySchema(db: Database): boolean {
+export function applySchema(db: SchemaDb): boolean {
   let currentVersion = 0
   try {
     const result = db.exec(`SELECT value FROM app_settings WHERE key = 'schema_version'`)

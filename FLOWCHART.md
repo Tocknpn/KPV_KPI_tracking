@@ -1,6 +1,6 @@
 # KPV Sales Performance — System Flowcharts
 
-> Version: **v1.8.14** — schema v20. Update this header + diagrams whenever app changes screens, roles, or data flow.
+> Version: **v1.9.0** — schema v27. Update this header + diagrams whenever app changes screens, roles, or data flow.
 
 Paste each diagram block into [mermaid.live](https://mermaid.live) to render.
 
@@ -10,7 +10,7 @@ Paste each diagram block into [mermaid.live](https://mermaid.live) to render.
 
 ```mermaid
 flowchart TD
-    START([App Launch]) --> INIT["Main process: load SQLite WASM,\nrun schema migrations (45s timeout)"]
+    START([App Launch]) --> INIT["Main process: open SQLite file (better-sqlite3, native),\nrun schema migrations (45s timeout)"]
     INIT -->|error| ERRSCREEN["Startup error screen\n+ startup-error.log"]
     INIT -->|ready| LOGIN["/login screen"]
     LOGIN --> AUTH{"Credentials valid?"}
@@ -215,5 +215,7 @@ Releases must be published as **Release**, not **Draft** — `electron-builder.y
 | v1.8.x | 2026-06-19 | Roster: re-added "Show Inactive" checkbox + permanent Delete button (inactive reps only, blocked if rep has upload history) |
 | v1.8.x | 2026-06-19 | PDF export fixed: was exporting 70MB+ files (PNG → JPEG), right-side table columns cut off (nested `overflow-hidden` ancestors weren't un-clipped, only the immediate scroll container was), and fonts rendering wrong (now waits on `document.fonts.ready` before capture) |
 | v1.8.12 | 2026-06-20/21 | Auto-update added via `electron-updater` + GitHub Releases (`Tocknpn/KPV_KPI_tracking`) — see Diagram 7 |
+| v1.8.16 | 2026-06-22 | Fixed: native file-picker dialog (Switch Database "Browse") had no parent window — Windows detached it from the app's focus chain, leaving login inputs unresponsive until Alt-tab forced a refocus. Also halved a redundant double Sheets-pull on every launch (main process pulled on startup, then Login pulled again right after submit — same data, seconds apart) |
+| v1.9.0 | 2026-06-22 | **DB engine swap: `sql.js` (WASM, fully synchronous, parses the whole file into memory on every launch) → `better-sqlite3` (native compiled SQLite).** Root cause of recurring launch lag / "Not Responding" — main process work is still synchronous either way (a worker-thread move would be the full fix, not done), but native code is dramatically faster than WASM-interpreted JS for the same operations. Isolated to `electron/db/connection.ts` + `query.ts` + a `SchemaDb` adapter in `schema.ts` — zero changes to the ~150 call sites across the IPC layer. Existing `.db` files are 100% compatible, no data migration needed (verified directly against a real production file) |
 
 *Diagrams older than v1.7.x described a 4-role system (admin/branch_manager/supervisor/executive) and Manual Entry — fully replaced, kept only in version history above for context.*

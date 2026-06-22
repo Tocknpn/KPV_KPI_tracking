@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from 'fs'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth } from './auth'
-import type { Database } from 'sql.js'
+import type { Database } from 'better-sqlite3'
 
 // ── Tab name registry ─────────────────────────────────────────────────────────
 const TABS = {

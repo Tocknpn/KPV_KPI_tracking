@@ -10,11 +10,10 @@ files:
   - out/**/*
   - "!out/**/*.map"
 
-# Copy sql.js WASM into the packaged app's resources folder
-# Connection.ts reads it from process.resourcesPath at runtime
-extraResources:
-  - from: node_modules/sql.js/dist/sql-wasm.wasm
-    to: sql-wasm.wasm
+# better-sqlite3 ships a native .node binary — must stay unpacked from asar (a native binary
+# can't be loaded/mmap'd from inside the asar archive at runtime).
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**/*"
 
 win:
   target:
