@@ -295,10 +295,11 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(r.branchCode) as { id: number } | undefined
           if (!branch) { skipped.push(`${r.repCode}(bad branch:${r.branchCode})`); continue }
 
-          // Every rep must report to a supervisor by business rule — a row with neither
-          // Sup_Code nor Team_Sup_Name filled in used to pass silently with supervisor_id
-          // left NULL, which is how reps with a blank Supervisor column kept turning up.
-          if (!r.supervisorCode && !r.supervisorName) { skipped.push(`${r.repCode}(no supervisor)`); continue }
+          // Both Sup_Code AND Team_Sup_Name are required now — "either one" let a row through
+          // with just a typed name and no code, which then auto-created a brand-new supervisor
+          // instead of matching the real one whenever the name didn't exactly match what's on
+          // file (typo, nickname, Lao spelling variant). Code is the only unambiguous match.
+          if (!r.supervisorCode || !r.supervisorName) { skipped.push(`${r.repCode}(missing supervisor info)`); continue }
 
           const staffType = r.staffType === 'b2b' ? 'b2b' : 'b2c'
 

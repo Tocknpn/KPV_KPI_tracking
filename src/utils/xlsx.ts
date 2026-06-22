@@ -133,11 +133,12 @@ interface RosterStub {
 // KPI point target is not part of the roster — it is always looked up from HR KPI Setting.
 // Effective_Date (REQUIRED, YYYY-MM-DD) is the month this row counts for — there is no
 // month picker in the app; the file is the only source of truth for which month a row belongs to.
-// Sup_Code is optional but preferred over Team_Sup_Name for matching/creating a supervisor —
-// codes don't collide across Lao text/typos/duplicate names the way names can.
+// Sup_Code AND Team_Sup_Name are both required now — name alone used to silently auto-create
+// a duplicate supervisor whenever it didn't exactly match an existing one (typo, nickname,
+// Lao spelling variant). Code is the only unambiguous match, but the name still has to agree.
 export function generateRosterTemplateXLSX(salesmen: RosterStub[]): Uint8Array {
   const today = new Date().toISOString().split('T')[0]
-  const headers = ['Rep_Code', 'Full_Name', 'Nickname', 'Branch_Code', 'Team_Sup_Name', 'Staff_Type', 'Effective_Date (required)', 'Sup_Code (optional)']
+  const headers = ['Rep_Code', 'Full_Name', 'Nickname', 'Branch_Code', 'Team_Sup_Name (required)', 'Staff_Type', 'Effective_Date (required)', 'Sup_Code (required)']
   const dataRows = salesmen.length > 0
     ? salesmen.map(s => [
         s.rep_code ?? '', s.full_name, s.nickname ?? '', s.branch_code,
