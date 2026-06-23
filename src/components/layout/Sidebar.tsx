@@ -4,6 +4,7 @@ import { useAppStore } from '../../store/app.store'
 import { ROLE_DEFAULTS } from '../../types'
 import type { UserRole } from '../../types'
 import { NAV_ITEMS } from '../../config/navigation'
+import kpvIcon from '../../assets/kpv-icon.png'
 
 const ROLE_COLOR: Record<UserRole, string> = {
   admin:              'bg-error',
@@ -48,8 +49,8 @@ export function Sidebar() {
     >
       {/* ── Brand + toggle ── */}
       <div className={`flex items-center mb-8 px-3 ${c ? 'flex-col gap-2' : 'justify-between gap-3'}`}>
-        <div className="w-10 h-10 rounded-lg bg-primary-container flex-shrink-0 flex items-center justify-center text-on-primary-container">
-          <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>leaderboard</span>
+        <div className="w-10 h-10 rounded-lg flex-shrink-0 overflow-hidden">
+          <img src={kpvIcon} alt="KPV" className="w-full h-full object-cover" />
         </div>
         {!c && (
           <div className="flex-1 min-w-0">

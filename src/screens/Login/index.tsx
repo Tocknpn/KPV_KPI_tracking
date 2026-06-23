@@ -4,6 +4,7 @@ import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import { getHomeRoute } from '../../config/navigation'
 import { ROLE_DEFAULTS } from '../../types'
+import kpvIcon from '../../assets/kpv-icon.png'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -189,16 +190,8 @@ export default function Login() {
       <div className="w-full max-w-sm mx-4">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg mb-4"
-            style={{ background: 'linear-gradient(135deg, #990000 0%, #c62828 100%)' }}
-          >
-            <span
-              className="material-symbols-outlined text-white text-3xl"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              diamond
-            </span>
+          <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-lg mb-4">
+            <img src={kpvIcon} alt="KPV" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-[22px] font-bold text-on-surface tracking-tight">Welcome Back</h1>
           <p className="text-on-surface-variant text-body-sm mt-1 text-center">
