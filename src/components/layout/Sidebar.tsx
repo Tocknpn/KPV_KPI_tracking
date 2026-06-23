@@ -49,8 +49,9 @@ export function Sidebar() {
     >
       {/* ── Brand + toggle ── */}
       <div className={`flex items-center mb-8 px-3 ${c ? 'flex-col gap-2' : 'justify-between gap-3'}`}>
-        <div className="w-10 h-10 rounded-lg flex-shrink-0 overflow-hidden">
-          <img src={kpvIcon} alt="KPV" className="w-full h-full object-cover" />
+        <div className="w-10 h-10 rounded-lg flex-shrink-0 p-1 border-2"
+          style={{ backgroundColor: '#990000', borderColor: '#990000' }}>
+          <img src={kpvIcon} alt="KPV" className="w-full h-full object-contain" style={{ imageRendering: '-webkit-optimize-contrast' }} />
         </div>
         {!c && (
           <div className="flex-1 min-w-0">

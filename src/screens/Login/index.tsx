@@ -190,8 +190,9 @@ export default function Login() {
       <div className="w-full max-w-sm mx-4">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-lg mb-4">
-            <img src={kpvIcon} alt="KPV" className="w-full h-full object-cover" />
+          <div className="w-16 h-16 rounded-2xl shadow-lg mb-4 p-2 border-2"
+            style={{ backgroundColor: '#990000', borderColor: '#990000' }}>
+            <img src={kpvIcon} alt="KPV" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-[22px] font-bold text-on-surface tracking-tight">Welcome Back</h1>
           <p className="text-on-surface-variant text-body-sm mt-1 text-center">
