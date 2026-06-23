@@ -156,7 +156,16 @@ async function pushSupervisorRoster(db: Database, sheets: ReturnType<typeof goog
 
 // Single source of truth for reading the Roster tab back into the DB — column order must
 // stay in lockstep with pushRoster above (same lesson as CommissionConfig's earlier bug).
-export async function pullRosterFromSheet(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<number> {
+//
+// skipKeys/skipRepCodes exist for the pull-merge-then-push flow (see healLocalRosterBeforePush
+// below): when a device is about to push its own fresh edit, it pulls+merges the rest of the
+// tab into local FIRST (healing any staleness so the eventual full-table push doesn't carry
+// stale data for OTHER reps) — but must not let that merge step clobber the edit it's about
+// to push with older remote data, or undo a rep it just permanently deleted.
+export async function pullRosterFromSheet(
+  db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string,
+  skipKeys: Set<string> = new Set(), skipRepCodes: Set<string> = new Set(),
+): Promise<number> {
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Roster!A:I' })
   const allRows = res.data.values ?? []
   const dataRows = allRows.length > 0 && String(allRows[0][0]).toLowerCase().includes('month') ? allRows.slice(1) : allRows
@@ -168,6 +177,8 @@ export async function pullRosterFromSheet(db: Database, sheets: ReturnType<typeo
     const [monthLabel, repCode, fullName, nickname, branchCode, supervisorName, staffTypeRaw, activeStr, supervisorCode] = row
     const yearMonth = parseReadableYearMonth(monthLabel)
     if (!yearMonth || !repCode || !fullName || !branchCode) continue
+    if (skipRepCodes.has(repCode)) continue
+    if (skipKeys.has(`${yearMonth}|${repCode}`)) continue
     const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
     if (!branch) continue
     // sup_code first (stable), fall back to name+branch match for rows without one
@@ -504,6 +515,36 @@ export async function pushRosterIfConfigured(db: Database): Promise<void> {
       pushSupervisorRoster(db, sheets, sheetsId),
     ])
   } catch { /* Sheets unavailable — silently skip */ }
+}
+
+// ── Pull-merge-then-push: heal local staleness before every Roster push ────────
+// The bug this fixes: pushRoster (above) always rewrites the ENTIRE Roster tab from this
+// device's local roster_monthly — every rep, every month. If this device's local copy never
+// received some other rep's recent supervisor change (normal — devices only pull periodically),
+// pushing would silently overwrite the Sheet's correct data with this device's stale copy,
+// for reps nobody on this device even touched tonight.
+//
+// Fix: before pushing, pull the Sheet's CURRENT Roster tab and merge it into local first —
+// healing any staleness — while skipping exactly the keys this call is about to push (so the
+// fresh edit isn't immediately overwritten by the older remote value during its own merge) and
+// any rep just permanently deleted (so the merge doesn't resurrect it from the Sheet). Only
+// after local is healed does the existing full-table pushRosterIfConfigured run — by then the
+// "full table" it sends is accurate for every rep, not just the ones this device edited.
+export async function healLocalRosterBeforePush(
+  db: Database,
+  touchedKeys: Array<{ yearMonth: string; repCode: string }>,
+  deletedRepCodes: string[] = [],
+): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+    const skipKeys = new Set(touchedKeys.map(k => `${k.yearMonth}|${k.repCode}`))
+    await pullRosterFromSheet(db, sheets, sheetsId, skipKeys, new Set(deletedRepCodes))
+  } catch { /* Sheets unavailable or unreachable — push will just go out with whatever
+               local already has, same as before this fix existed. Not worse, not better. */ }
 }
 
 // ── Push only the Users tab — exported for auth.ts ───────────────────────────

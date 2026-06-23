@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin, logAudit } from './auth'
-import { pushRosterIfConfigured, syncEntriesToCloudIfConfigured, deleteEntriesFromCloud } from './sheets'
+import { pushRosterIfConfigured, healLocalRosterBeforePush, syncEntriesToCloudIfConfigured, deleteEntriesFromCloud } from './sheets'
 import { snapshotSalesman, snapshotSupervisor, publishMonth, publishMonthFromDate, getRosterMapAsOf } from '../db/history'
 
 export interface UploadRowResult {
@@ -286,6 +286,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     if (!rows.length) return { success: false, error: 'No rows to import.' }
 
     let created = 0; let updated = 0; const skipped: string[] = []
+    const touchedKeys: Array<{ yearMonth: string; repCode: string }> = []
 
     try {
       transaction(db, () => {
@@ -342,9 +343,14 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           if (supId) snapshotSupervisor(db, supId, r.effectiveDate)
           if (r.effectiveDate) publishMonthFromDate(db, r.effectiveDate)
           else { const n = new Date(); publishMonth(db, n.getFullYear(), n.getMonth() + 1) }
+
+          const yearMonth = r.effectiveDate && /^\d{4}-\d{2}-\d{2}$/.test(r.effectiveDate)
+            ? r.effectiveDate.slice(0, 4) + r.effectiveDate.slice(5, 7)
+            : (() => { const n = new Date(); return `${n.getFullYear()}${String(n.getMonth() + 1).padStart(2, '0')}` })()
+          touchedKeys.push({ yearMonth, repCode: r.repCode })
         }
       })
-      pushRosterIfConfigured(db).catch(() => {})
+      healLocalRosterBeforePush(db, touchedKeys).then(() => pushRosterIfConfigured(db)).catch(() => {})
       logAudit(db, u.id, u.username, u.role, 'roster_bulk_upload',
         `${rows.length} rows — ${created} created, ${updated} updated${skipped.length ? `, ${skipped.length} skipped` : ''}`, 'roster_upload')
       return { success: true, created, updated, skipped: skipped.length, skippedCodes: skipped }

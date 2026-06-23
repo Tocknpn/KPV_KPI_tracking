@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, logAudit } from './auth'
-import { pushRosterIfConfigured } from './sheets'
+import { pushRosterIfConfigured, healLocalRosterBeforePush } from './sheets'
 import { snapshotSalesman, snapshotSupervisor, getRosterExactMonth, getSupervisorRosterExactMonth } from '../db/history'
 import { getBranchPointTarget, getIndividualPointTarget } from './reports'
 import type { Database } from 'better-sqlite3'
@@ -133,7 +133,12 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
       if (data.supervisorId) snapshotSupervisor(db, data.supervisorId, effDate)
       if (prevSupervisorId && prevSupervisorId !== data.supervisorId) snapshotSupervisor(db, prevSupervisorId, effDate)
     })
-    pushRosterIfConfigured(db).catch(() => {})
+    {
+      const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
+      const yearMonth = `${y}${String(m).padStart(2, '0')}`
+      healLocalRosterBeforePush(db, [{ yearMonth, repCode: data.repCode }])
+        .then(() => pushRosterIfConfigured(db)).catch(() => {})
+    }
     logAudit(db, user.id, user.username, user.role, data.id ? 'roster_rep_update' : 'roster_rep_create',
       `${data.repCode} — ${data.fullName} (${data.staffType}, branch ${data.branchId})`, 'salesman', String(salesmanId), data.branchId)
     return { success: true, id: salesmanId }
@@ -143,16 +148,22 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
     const user = requireRosterManager(token)
     const db = getDb()
     let repLabel = String(id)
+    let touchedRepCode: string | null = null
     transaction(db, () => {
       const rep = prepare(db, `SELECT supervisor_id, rep_code, full_name FROM salesmen WHERE id=?`).get(id) as { supervisor_id: number | null; rep_code: string | null; full_name: string } | undefined
-      if (rep) repLabel = `${rep.rep_code ?? id} — ${rep.full_name}`
+      if (rep) { repLabel = `${rep.rep_code ?? id} — ${rep.full_name}`; touchedRepCode = rep.rep_code }
       prepare(db, `UPDATE salesmen SET active=0 WHERE id=?`).run(id)
       const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
       const effDate = effectiveDateFor(y, m)
       snapshotSalesman(db, id, effDate)
       if (rep?.supervisor_id) snapshotSupervisor(db, rep.supervisor_id, effDate)
     })
-    pushRosterIfConfigured(db).catch(() => {})
+    {
+      const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
+      const yearMonth = `${y}${String(m).padStart(2, '0')}`
+      const keys = touchedRepCode ? [{ yearMonth, repCode: touchedRepCode }] : []
+      healLocalRosterBeforePush(db, keys).then(() => pushRosterIfConfigured(db)).catch(() => {})
+    }
     logAudit(db, user.id, user.username, user.role, 'roster_rep_deactivate', repLabel, 'salesman', String(id))
     return { success: true }
   })
@@ -161,16 +172,22 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
     const user = requireRosterManager(token)
     const db = getDb()
     let repLabel = String(id)
+    let touchedRepCode: string | null = null
     transaction(db, () => {
       prepare(db, `UPDATE salesmen SET active=1 WHERE id=?`).run(id)
       const rep = prepare(db, `SELECT supervisor_id, rep_code, full_name FROM salesmen WHERE id=?`).get(id) as { supervisor_id: number | null; rep_code: string | null; full_name: string } | undefined
-      if (rep) repLabel = `${rep.rep_code ?? id} — ${rep.full_name}`
+      if (rep) { repLabel = `${rep.rep_code ?? id} — ${rep.full_name}`; touchedRepCode = rep.rep_code }
       const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
       const effDate = effectiveDateFor(y, m)
       snapshotSalesman(db, id, effDate)
       if (rep?.supervisor_id) snapshotSupervisor(db, rep.supervisor_id, effDate)
     })
-    pushRosterIfConfigured(db).catch(() => {})
+    {
+      const { year: y, month: m } = year && month ? { year, month } : nowYearMonth()
+      const yearMonth = `${y}${String(m).padStart(2, '0')}`
+      const keys = touchedRepCode ? [{ yearMonth, repCode: touchedRepCode }] : []
+      healLocalRosterBeforePush(db, keys).then(() => pushRosterIfConfigured(db)).catch(() => {})
+    }
     logAudit(db, user.id, user.username, user.role, 'roster_rep_reactivate', repLabel, 'salesman', String(id))
     return { success: true }
   })
@@ -197,7 +214,10 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
       prepare(db, `DELETE FROM roster_monthly WHERE salesman_id = ?`).run(id)
       prepare(db, `DELETE FROM salesmen WHERE id = ?`).run(id)
     })
-    pushRosterIfConfigured(db).catch(() => {})
+    // deletedRepCodes (not touchedKeys) — merge must skip resurrecting this rep from the
+    // Sheet entirely, not just for one month, since every month's row for them is now gone.
+    healLocalRosterBeforePush(db, [], rep.rep_code ? [rep.rep_code] : [])
+      .then(() => pushRosterIfConfigured(db)).catch(() => {})
     logAudit(db, user.id, user.username, user.role, 'roster_rep_delete', repLabel, 'salesman', String(id))
     return { success: true }
   })
