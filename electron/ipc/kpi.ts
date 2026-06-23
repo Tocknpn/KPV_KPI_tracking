@@ -4,7 +4,7 @@ import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin, logAudit } from './auth'
 import {
   pushMonthlyTargetsIfConfigured, pushKpiRatesIfConfigured, pushQtyTiersIfConfigured,
-  pushBranchesIfConfigured, pushKpiSubmissionsIfConfigured,
+  pushBranchesIfConfigured, pushKpiSubmissionsIfConfigured, healLocalKpiSubmissionsBeforePush,
 } from './sheets'
 import type { Database } from 'better-sqlite3'
 
@@ -410,8 +410,11 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     const ym = `${year}${String(month).padStart(2, '0')}`
     prepare(db, `INSERT OR REPLACE INTO kpi_monthly_submissions (year_month, submitted_by, submitted_at) VALUES (?, ?, datetime('now'))`)
       .run(ym, u.username)
-    // Awaited now (not fire-and-forget) — HR needs to know immediately if this didn't reach
+    // Heal local from the Sheet first (skipping this month) so the full-table push below
+    // doesn't carry a stale copy of some OTHER month's submitted marker — same fix as Roster.
+    // Awaited (not fire-and-forget) — HR needs to know immediately if this didn't reach
     // the Sheet, not discover it days later when a report reads stale rates from there.
+    await healLocalKpiSubmissionsBeforePush(db, ym)
     const pushResult = await pushKpiSubmissionsIfConfigured(db)
     logAudit(db, u.id, u.username, u.role, 'kpi_month_confirmed', ym, 'kpi_monthly_submissions', ym)
     return {

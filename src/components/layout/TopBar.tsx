@@ -38,6 +38,27 @@ export function TopBar({ title }: Props) {
     const saved = localStorage.getItem(ZOOM_KEY)
     return saved ? parseFloat(saved) : 1.0
   })
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
+
+  // Pull-only, on purpose — every edit (Roster save, KPI submit, entry upload) already
+  // pushes itself the instant it happens, so there's never anything "pending to push"
+  // sitting on this device. The only thing a manual refresh needs to do is catch up on
+  // what OTHER devices already pushed since this device last synced.
+  async function handleRefresh() {
+    if (!token || refreshing) return
+    setRefreshing(true)
+    setRefreshError(null)
+    try {
+      const res = await window.api.pullFromCloud(token)
+      if (res.success) setLastSyncedAt(new Date().toISOString())
+      else setRefreshError(res.error ?? 'Pull failed')
+    } catch (e) {
+      setRefreshError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => {
     document.documentElement.style.zoom = String(zoom)
@@ -98,6 +119,18 @@ export function TopBar({ title }: Props) {
             Sync failed
           </span>
         )}
+
+        {/* Manual refresh — pull-only, see handleRefresh for why push isn't part of this */}
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          title={refreshError ? `Pull failed: ${refreshError}` : 'Refresh data from Google Sheets'}
+          className="p-1.5 text-on-surface-variant hover:bg-surface-variant/30 hover:text-primary rounded-full transition-colors disabled:opacity-60"
+        >
+          <span className={`material-symbols-outlined text-[18px] ${refreshing ? 'animate-spin' : ''}`}>
+            {refreshError ? 'sync_problem' : 'refresh'}
+          </span>
+        </button>
 
         {/* Data freshness — when this device last synced with Google Sheets */}
         {lastSyncedAt && (

@@ -602,6 +602,47 @@ export async function pushKpiSubmissionsIfConfigured(db: Database): Promise<{ pu
   }
 }
 
+// Reusable pull/merge for KpiSubmissions — used both by the full pullAllFromCloud sweep
+// (no skip) and by healLocalKpiSubmissionsBeforePush below (skips the month just submitted
+// on this device, same reasoning as pullRosterFromSheet's skipKeys).
+async function pullKpiSubmissions(
+  db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string,
+  skipYearMonths: Set<string> = new Set(),
+): Promise<number> {
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'KpiSubmissions!A:C' }).catch(() => null)
+  if (!res) return 0
+  const all = res.data.values ?? []
+  const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'month' ? all.slice(1) : all
+  let imported = 0
+  for (const row of data as string[][]) {
+    const [monthLabel, submittedBy, submittedAt] = row
+    const yearMonth = parseReadableYearMonth(monthLabel)
+    if (!yearMonth || skipYearMonths.has(yearMonth)) continue
+    prepare(db, `INSERT OR REPLACE INTO kpi_monthly_submissions (year_month, submitted_by, submitted_at) VALUES (?,?,?)`)
+      .run(yearMonth, submittedBy ?? null, submittedAt ?? new Date().toISOString())
+    imported++
+  }
+  return imported
+}
+
+// ── Pull-merge-then-push for KpiSubmissions — same fix as healLocalRosterBeforePush, same
+// bug shape: pushKpiSubmissions clear+rewrites the WHOLE tab from local kpi_monthly_submissions.
+// A device that never pulled another device's earlier "month confirmed" marker would, on its
+// own next confirm, push its stale local table and silently erase that earlier month's marker
+// from the Sheet. Pull+merge everyone else's markers into local first, skip the month this
+// call is about to write (so the merge can't overwrite the fresh confirm with an older value),
+// then push — the full-table push now carries every month's marker, not just this device's.
+export async function healLocalKpiSubmissionsBeforePush(db: Database, touchedYearMonth: string): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+    await pullKpiSubmissions(db, sheets, sheetsId, new Set([touchedYearMonth]))
+  } catch { /* Sheets unavailable — push proceeds with whatever local already has */ }
+}
+
 // ── Push only the KPIRates tab — exported for kpi.ts ─────────────────────────
 export async function pushKpiRatesIfConfigured(db: Database): Promise<void> {
   const sheetsId = getSetting('sheets_id')
@@ -922,19 +963,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     }
 
     // ── KPI monthly submissions ("HR confirmed this month" marker) ────
-    const kmsRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'KpiSubmissions!A:C' }).catch(() => null)
-    if (kmsRes) {
-      const all = kmsRes.data.values ?? []
-      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'month' ? all.slice(1) : all
-      for (const row of data) {
-        const [monthLabel, submittedBy, submittedAt] = row as string[]
-        const yearMonth = parseReadableYearMonth(monthLabel)
-        if (!yearMonth) continue
-        prepare(db, `INSERT OR REPLACE INTO kpi_monthly_submissions (year_month, submitted_by, submitted_at) VALUES (?,?,?)`)
-          .run(yearMonth, submittedBy ?? null, submittedAt ?? new Date().toISOString())
-        counts.kpiSubmissions++
-      }
-    }
+    counts.kpiSubmissions += await pullKpiSubmissions(db, sheets, sheetsId)
 
     // ── Audit Log (merge — append-only event stream, dedup by content since
     // a local AUTOINCREMENT id is never a stable key across multiple devices) ──
