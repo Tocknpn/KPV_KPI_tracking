@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SalesTrack Pro — All Flowcharts</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --blue: #004f96; --blue-light: #e8f1fb;
+    --ink: #1c2330; --sub: #5b6472; --line: #e3e7ee; --bg: #f6f8fc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink); background: var(--bg); margin: 0; display: flex; min-height: 100vh;
+  }
+  /* ── Sidebar ── */
+  aside {
+    width: 290px; flex-shrink: 0; background: #fff; border-right: 1px solid var(--line);
+    height: 100vh; overflow-y: auto; position: sticky; top: 0; padding: 18px 0;
+  }
+  aside .brand { padding: 0 18px 14px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+  aside .brand b { color: var(--blue); font-size: 17px; }
+  aside .brand div { font-size: 12px; color: var(--sub); margin-top: 2px; }
+  aside input[type=search] {
+    width: calc(100% - 28px); margin: 0 14px 14px; padding: 8px 10px; border: 1px solid var(--line);
+    border-radius: 8px; font-size: 13px;
+  }
+  aside .group-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--sub); padding: 12px 18px 4px; }
+  aside ul { list-style: none; margin: 0; padding: 0; }
+  aside li a {
+    display: block; padding: 7px 18px; font-size: 13.5px; color: var(--ink); text-decoration: none;
+    border-left: 3px solid transparent; cursor: pointer;
+  }
+  aside li a:hover { background: var(--blue-light); }
+  aside li a.active { background: var(--blue-light); border-left-color: var(--blue); color: var(--blue); font-weight: 600; }
+  aside li a.hidden { display: none; }
+
+  /* ── Main ── */
+  main { flex: 1; padding: 30px 40px 80px; max-width: 1100px; }
+  header.page { margin-bottom: 30px; }
+  header.page h1 { font-size: 28px; margin: 0 0 6px; color: var(--blue); }
+  header.page p { color: var(--sub); margin: 0; font-size: 14.5px; }
+
+  section.diagram {
+    background: #fff; border: 1px solid var(--line); border-radius: 14px;
+    padding: 22px 24px; margin-bottom: 34px; scroll-margin-top: 20px;
+  }
+  section.diagram h2 { font-size: 19px; margin: 0 0 4px; }
+  section.diagram .src { font-size: 12px; color: var(--sub); margin: 0 0 14px; }
+  section.diagram p.note { font-size: 14px; color: #41495a; margin: 14px 0 0; }
+  section.diagram code { background: #eef2f8; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+
+  .zoombar { display: flex; gap: 6px; margin-bottom: 10px; }
+  .zoombar button {
+    border: 1px solid var(--line); background: #fff; border-radius: 6px; width: 30px; height: 30px;
+    cursor: pointer; font-size: 15px; color: var(--blue);
+  }
+  .zoombar button:hover { background: var(--blue-light); }
+  .zoombar span { font-size: 12px; color: var(--sub); align-self: center; margin-left: 4px; }
+
+  .mermaidwrap { overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: #fafbfd; padding: 10px; }
+  .mermaidwrap .mermaid { transform-origin: top left; transition: transform .15s; display: inline-block; }
+
+  footer { text-align: center; color: var(--sub); font-size: 13px; padding: 20px 0 50px; }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand"><b>SalesTrack Pro</b><div>All Flowcharts — Combined View</div></div>
+  <input type="search" id="search" placeholder="Filter diagrams…">
+  <nav id="nav"></nav>
+</aside>
+
+<main>
+  <header class="page">
+    <h1>All Flowcharts</h1>
+    <p>Every Mermaid diagram from <code>FLOWCHART.md</code> and <code>docs/01–04</code>, rendered live in one page. Scroll, search the sidebar, or zoom any individual diagram.</p>
+  </header>
+
+  <!-- ============== FROM FLOWCHART.md ============== -->
+
+  <section class="diagram" id="d1" data-group="FLOWCHART.md" data-title="1. Login &amp; Startup Flow">
+    <h2>1. Login &amp; Startup Flow</h2>
+    <p class="src">Source: FLOWCHART.md — Diagram 1</p>
+    <div class="zoombar"><button onclick="zoom('d1',1.15)">+</button><button onclick="zoom('d1',0.87)">−</button><button onclick="zoom('d1',0)">⟲</button><span>zoom</span></div>
+    <div class="mermaidwrap"><div class="mermaid">
+flowchart TD
+    START([App Launch]) --> INIT["Main process: open SQLite file (better-sqlite3, native),\nrun schema migrations (45s timeout)"]
+    INIT -->|error| ERRSCREEN["Startup error screen\n+ startup-error.log"]
+    INIT -->|ready| LOGIN["/login screen"]
+    LOGIN --> AUTH{"Credentials valid?"}
+    AUTH -->|No| LOGIN
+    AUTH -->|Yes| SYNC["Loading screen:\n'Connecting to Google Sheets…'\npulls latest data from cloud"]
+    SYNC -->|success| UPTODATE["'Up to date.'"]
+    SYNC -->|fail / offline / not configured| STALE["'Could not sync — using last saved data.'\n(does not block login)\nTopBar shows a persistent\n'Sheets not connected' / 'Sync failed' pill"]
+    UPTODATE --> HOME["Routed to the FIRST menu item\nthis user's role actually has\n(not always Dashboard)"]
+    STALE --> HOME
+    HOME --> APP["App — role-scoped screen\ne.g. Accountant Officer -> Daily Entry,\nAccountant Manager -> Sale Report,\nHR Support -> Roster"]
+    </div></div>
+    <p class="note">Every login pulls fresh data first. Post-login landing routes to the first menu item the role actually has, not a hardcoded Dashboard. The sync status pill is visible to every role.</p>
+  </section>
+
+  <section class="diagram" id="d2" data-group="FLOWCHART.md" data-title="2. User Roles &amp; Screen Access">
+    <h2>2. User Roles &amp; Screen Access</h2>
+    <p class="src">Source: FLOWCHART.md — Diagram 2</p>
+    <div class="zoombar"><button onclick="zoom('d2',1.15)">+</button><button onclick="zoom('d2',0.87)">−</button><button onclick="zoom('d2',0)">⟲</button><span>zoom</span></div>
+    <div class="mermaidwrap"><div class="mermaid">
+flowchart TD
+    LOGIN[Login] --> ROLE{Role?}
+
+    ROLE -->|admin| ADMIN["Admin\nAll branches"]
+    ROLE -->|sales_sup| SUP["Sales Supervisor\nOwn team only"]
+    ROLE -->|accountant_officer| AO["Accountant Officer\nOwn branch"]
+    ROLE -->|accountant_manager| AM["Accountant Manager\nAll branches"]
+    ROLE -->|branch_manager| BM["Branch Manager\nOwn branch, all teams"]
+    ROLE -->|hr| HR["HR\nAll branches"]
+    ROLE -->|hr_support| HRS["HR Support\nAll branches, limited"]
+    ROLE -->|top_manager| TM["Top Manager\nAll branches, view-only"]
+
+    subgraph MENUS["Menu keys each role gets (ROLE_DEFAULTS)"]
+        M_ADMIN["dashboard · kpi_report · sale_report ·\nupload_history · upload_status ·\naudit_log · user_management · settings\n— NOT daily_entry / kpi_settings / roster"]
+        M_SUP["dashboard · kpi_report ·\nsale_report · upload_status"]
+        M_AO["daily_entry · sale_report ·\nupload_history · upload_status"]
+        M_AM["dashboard · kpi_report · daily_entry ·\nsale_report · upload_history"]
+        M_BM["dashboard · kpi_report ·\nsale_report · upload_status"]
+        M_HR["dashboard · kpi_report · sale_report ·\nupload_history · upload_status ·\nroster · kpi_settings · audit_log · settings\n— NOT user_management / daily_entry"]
+        M_HRS["roster (upload only) · kpi_report"]
+        M_TM["dashboard · kpi_report · sale_report ·\nupload_history · roster · kpi_settings ·\nsettings — view only, no writes"]
+    end
+
+    ADMIN --- M_ADMIN
+    SUP --- M_SUP
+    AO --- M_AO
+    AM --- M_AM
+    BM --- M_BM
+    HR --- M_HR
+    HRS --- M_HRS
+    TM --- M_TM
+    </div></div>
+    <p class="note"><code>ROLE_DEFAULTS</code> lives in two places that must agree: <code>src/types/index.ts</code> (frontend) and <code>electron/ipc/auth.ts</code> (backend). Per-user overrides on top live in <code>user_permissions</code>.</p>
+  </section>
+
+  <section class="diagram" id="d3" data-group="FLOWCHART.md" data-title="3. Daily Sales Upload &amp; Approval Workflow">
+    <h2>3. Daily Sales Upload &amp; Approval Workflow</h2>
+    <p class="src">Source: FLOWCHART.md — Diagram 3</p>
+    <div class="zoombar"><button onclick="zoom('d3',1.15)">+</button><button onclick="zoom('d3',0.87)">−</button><button onclick="zoom('d3',0)">⟲</button><span>zoom</span></div>
+    <div class="mermaidwrap"><div class="mermaid">
+flowchart TD
+    AO["Accountant Officer\nfills/collects daily XLSX\nfor their own branch"] --> UP["Daily Entry → XLSX Upload"]
+    UP --> CHECK{"Existing record\nfor this rep + date?"}
+    CHECK -->|No| INSERT["Insert into daily_entries\ntagged with upload_log_id"]
+    CHECK -->|Yes| REJECT["Row REJECTED\n'ask Accountant Manager\nto clear the conflicting batch'"]
+    INSERT --> AUDIT1["audit_logs: sales_upload_submitted"]
+    REJECT --> ERRMODAL["Error modal shows rejected rows\n(officer can fix typos and resubmit,\nbut a true conflict still needs §below)"]
+
+    AUDIT1 --> SHEET1["Auto-push to Google Sheets\n(synced=0 entries)"]
+
+    AM["Accountant Manager"] --> UH["Upload History →\n'Sales Upload Records — Approval'"]
+    UH --> REVIEW["Reviews batches by branch/officer/date"]
+    REVIEW --> DECIDE{"Bad batch needs\nresubmission?"}
+    DECIDE -->|Yes, whole batch| DELETE["Delete & Allow Resubmit\n→ deletes only THIS batch's daily_entries rows"]
+    DELETE --> AUDIT2["audit_logs: sales_upload_deleted"]
+    AUDIT2 --> AO2["Officer re-uploads\ncorrected rows — now no conflict"]
+    AO2 --> UP
+
+    DECIDE -->|Yes, just one day\nwithin a multi-date file| BYDATE["Delete by Branch + Date tool\nPick branch + exact date (or range)\nLive preview count shown"]
+    BYDATE --> CONFIRM["Confirm dialog"]
+    CONFIRM --> DELETE2["Deletes only daily_entries\nfor that branch + date(s)\n— independent of upload_log_id"]
+    DELETE2 --> AUDIT2
+
+    DECIDE -->|No, batch is fine| DONE["No action needed"]
+    </div></div>
+    <p class="note">Manual Entry was removed app-wide — Daily Entry is XLSX-upload-only for every role. "Delete by Branch + Date" is separate from per-batch "Delete &amp; Allow Resubmit".</p>
+  </section>
+
+  <section class="diagram" id="d4" data-group="FLOWCHART.md" data-title="4. Roster: Carry-Forward by Month">
+    <h2>4. Roster: One Table, Carry-Forward by Month</h2>
+    <p class="src">Source: FLOWCHART.md — Diagram 4</p>
+    <div class="zoombar"><button onclick="zoom('d4',1.15)">+</button><button onclick="zoom('d4',0.87)">−</button><button onclick="zoom('d4',0)">⟲</button><span>zoom</span></div>
+    <div class="mermaidwrap"><div class="mermaid">
+flowchart TD
+    EDIT["HR/Admin edits a rep,\nor uploads roster XLSX\n(Effective_Date decides the month)"] --> ENSURE["ensureMonthMaterialized(year, month)"]
+    ENSURE -->|month already has rows| UPSERT["Upsert this rep's row\nfor that month"]
+    ENSURE -->|month is new| COPY["Copy nearest earlier month's\nfull row-set forward first"]
+    COPY --> UPSERT
+    UPSERT --> TABLE[("roster_monthly\nsalesman_id, year_month,\nbranch_id, supervisor_id,\nstaff_type, active")]
+
+    VIEW["report:monthly / KPI Report\nviewing month X"] --> RESOLVE["resolveYm(X) =\nMAX(year_month) <= X"]
+    RESOLVE --> TABLE
+    TABLE --> SHOW["Shows that resolved month's\nfull snapshot — read-only,\nnever writes"]
+
+    ROSTERVIEW["Roster screen itself,\nviewing month X"] --> EXACT{"Does month X\nhave its own rows?"}
+    EXACT -->|Yes| TABLE
+    EXACT -->|No| EMPTY["Empty table:\n'No roster uploaded for {Month} {Year}'\n(no carry-forward on this screen)"]
+
+    TABLE -.->|push| ROSTERSHEET["Google Sheets: Roster tab\n(one tab, Month column)"]
+    ROSTERSHEET -.->|pull, re-hash/parse| TABLE
+    </div></div>
+    <p class="note">A month nobody touched reads as whatever the last edited month said. Roster screen itself is the one exception — exact-month-only display, no carry-forward.</p>
+  </section>
+
+  <section class="diagram" id="d5" data-group="FLOWCHART.md" data-title="5. Why Past Reports Stay Stable">
+    <h2>5. Why Past Reports Stay Stable Over Time</h2>
+    <p class="src">Source: FLOWCHART.md — Diagram 5</p>
+    <div class="zoombar"><button onclick="zoom('d5',1.15)">+</button><button onclick="zoom('d5',0.87)">−</button><button onclick="zoom('d5',0)">⟲</button><span>zoom</span></div>
+    <div class="mermaidwrap"><div class="mermaid">
+flowchart LR
+    SALE["Daily sale entry\n(Jan, 2026)"] --> STAMP["daily_entries row stamps\nbranch_id + staff_type\nAT THE TIME OF SALE"]
+    STAMP --> SCORE["KPI score = always computed\nfrom the entry's OWN stamped values\n— never re-derived from current roster"]
+
+    ROSTERJAN["roster_monthly: Jan snapshot\n(headcount, who's on which branch)"] --> TARGETJAN["Branch point target for Jan\n= headcount(Jan) × per-person rate"]
+
+    TRANSFER["Rep transfers branch in March"] -.->|does NOT touch| STAMP
+    TRANSFER -.->|does NOT touch| ROSTERJAN
+
+    SCORE --> REPORT["Dashboard / Executive / Team Performance /\nReports screen — viewing January\n(today, or next year — same numbers)"]
+    TARGETJAN --> REPORT
+    </div></div>
+  </section>
+
+  <section class="diagram" id="d6" data-group="FLOWCHART.md" data-title="6. KPI Scoring Engine">
+    <h2>6. KPI Scoring Engine</h2>
+    <p class="src">Source: FLOWCHART.md — Diagram 6</p>
+    <div class="zoombar"><button onclick="zoom('d6',1.15)">+</button><button onclick="zoom('d6',0.87)">−</button><button onclick="zoom('d6',0)">⟲</button><span>zoom</span></div>
+    <div class="mermaidwrap"><div class="mermaid">
+flowchart TD
+    SALE["Daily Sale\nper rep, per day"]
+    SALE --> J["Jewelry weight (Baht)"]
+    SALE --> B["Bar weight (Baht)"]
+    SALE --> Q["Quantity (pcs)"]
+
+    J -->|"rate lookup:\nbranch+month > branch+standing >\nglobal+month > global+standing"| PJ["Jewelry Score = weight × rate"]
+    B -->|"same priority rule"| PB["Bar Score = weight × rate"]
+    Q -->|"tier lookup, same priority rule,\nfirst tier where qty >= threshold"| PQ["Qty Score = qty × tier multiplier"]
+
+    PJ & PB & PQ --> TOTAL["Total KPI Points"]
+    TOTAL --> KPIPCT["KPI % = Total Points ÷ Branch Point Target × 100"]
+
+    KPIPCT --> SUP["Supervisor score = team total × sup_kpi_pct%\n(default 30%, editable)\nTeam target falls back to branch target\nwhen no per-rep override exists\n(fixed: used to always show 0.0%)"]
+    TOTAL --> COMM["Commission = jewelry×rate + bar×rate + qty×rate\n(LAK, per staff_type per month)"]
+    </div></div>
+    <p class="note">Editing a rate today never rewrites how a past month already scored — rates/tiers are year_month / effective_from–effective_to scoped.</p>
+  </section>
+
+  <section class="diagram" id="d7" data-group="FLOWCHART.md" data-title="7. Auto-Update Flow">
+    <h2>7. Auto-Update Flow</h2>
+    <p class="src">Source: FLOWCHART.md — Diagram 7</p>
+    <div class="zoombar"><button onclick="zoom('d7',1.15)">+</button><button onclick="zoom('d7',0.87)">−</button><button onclick="zoom('d7',0)">⟲</button><span>zoom</span></div>
+    <div class="mermaidwrap"><div class="mermaid">
+flowchart TD
+    LAUNCH["App launches\n(packaged build only — skipped in dev)"] --> CHECK["autoUpdater.checkForUpdates()\nqueries GitHub Releases\n(Tocknpn/KPV_KPI_tracking)"]
+    CHECK -->|no newer release| SILENT["No banner — nothing happens"]
+    CHECK -->|newer release found| BANNER["Blue banner:\n'Update available — vX.Y.Z' + Update button"]
+    BANNER -->|user clicks Update| DL["Downloads installer in background\nautoDownload is OFF — never starts without a click"]
+    DL --> READY["Banner changes to\n'Restart & Update' button"]
+    READY -->|user clicks| INSTALL["quitAndInstall() —\napp closes, installer runs, reopens on new version"]
+    READY -->|user ignores| LATER["Stays on old version until they click\n— no forced install"]
+    </div></div>
+    <p class="note">Releases must be published as Release, not Draft — <code>electron-builder.yml</code>'s <code>releaseType: release</code> forces this on every publish.</p>
+  </section>
+
+  <!-- ============== FROM docs/01-04 ============== -->
+
+  <section class="diagram" id="d8" data-group="docs/01-app-overview.md" data-title="High-level Flow">
+    <h2>High-level Flow</h2>
+    <p class="src">Source: docs/01-app-overview.md</p>
+    <div class="zoombar"><button onclick="zoom('d8',1.15)">+</button><button onclick="zoom('d8',0.87)">−</button><button onclick="zoom('d8',0)">⟲</button><span>zoom</span></div>
+    <div class="mermaidwrap"><div class="mermaid">
+flowchart TD
+    A[Open app] --> B[Login screen]
+    B -->|First time / switching DB| C[Connect: Sheet ID + service account JSON]
+    C --> D[Wipes local data, pulls everything fresh from that Sheet]
+    B -->|Normal login| E[Enter username + password]
+    E --> F[Pull latest from Google Sheets]
+    F --> G[App opens — Dashboard]
+    G --> H{Role-based menu}
+    H --> I[HR: Roster + KPI Settings]
+    H --> J[Accountant Officer/Manager: Daily Entry upload]
+    H --> K[Everyone: KPI Report, Sale Report]
+    H --> L[Admin: Users, Connection Settings, KPI Defaults]
+    I --> M[Local DB updated]
+    J --> M
+    L --> M
+    M --> N[Auto-push that change to Google Sheets]
+    N --> O[Other devices pull it on their next login]
+    </div></div>
+  </section>
+
+  <section class="diagram" id="d9" data-group="docs/02-role-permissions.md" data-title="What Each Role Actually Does">
+    <h2>What Each Role Actually Does</h2>
+    <p class="src">Source: docs/02-role-permissions.md</p>
+    <div class="zoombar"><button onclick="zoom('d9',1.15)">+</button><button onclick="zoom('d9',0.87)">−</button><button onclick="zoom('d9',0)">⟲</button><span>zoom</span></div>
+    <div class="mermaidwrap"><div class="mermaid">
+flowchart LR
+    Admin["Admin\n(KPI Defaults, Users, Connection)"] --> DB[(Local DB)]
+    HR["HR\n(Roster upload, Monthly KPI Settings)"] --> DB
+    AccOfficer["Accountant Officer\n(Daily Entry — own branch only)"] --> DB
+    AccManager["Accountant Manager\n(Daily Entry — all branches,\nclear bad upload batches)"] --> DB
+    Supervisor["Sales Supervisor\n(view own team's KPI)"] --> Report[Reports]
+    BranchMgr["Branch Manager\n(view own branch)"] --> Report
+    TopMgr["Top Manager\n(view everything, sets KPI/Roster too)"] --> DB
+    DB --> Report
+    </div></div>
+  </section>
+
+  <section class="diagram" id="d10" data-group="docs/03-daily-routine.md" data-title="Accountant Officer — Daily Routine">
+    <h2>Accountant Officer — Every Working Day</h2>
+    <p class="src">Source: docs/03-daily-routine.md</p>
+    <div class="zoombar"><button onclick="zoom('d10',1.15)">+</button><button onclick="zoom('d10',0.87)">−</button><button onclick="zoom('d10',0)">⟲</button><span>zoom</span></div>
+    <div class="mermaidwrap"><div class="mermaid">
+flowchart TD
+    A[Open app, log in] --> B[Go to Daily Entry Upload]
+    B --> C[Click Export Template]
+    C --> D["Gets .xlsx pre-filled with this month's\nreps for their branch only — date + 3 KPI columns blank"]
+    D --> E[Fill in Date, Jewelry, Bar, Qty for each rep]
+    E --> F[Upload the file back]
+    F --> G{Any rep from another branch in the file?}
+    G -->|Yes| H[Blocked — fix the file, remove that rep, re-upload]
+    G -->|No| I{Rep/date already has a record?}
+    I -->|Yes| J[Blocked — ask Accountant Manager to clear that batch]
+    I -->|No| K[Saved. Auto-pushes to Google Sheets]
+    </div></div>
+  </section>
+
+  <section class="diagram" id="d11" data-group="docs/03-daily-routine.md" data-title="HR — Monthly Routine">
+    <h2>HR — Once a Month</h2>
+    <p class="src">Source: docs/03-daily-routine.md</p>
+    <div class="zoombar"><button onclick="zoom('d11',1.15)">+</button><button onclick="zoom('d11',0.87)">−</button><button onclick="zoom('d11',0)">⟲</button><span>zoom</span></div>
+    <div class="mermaidwrap"><div class="mermaid">
+flowchart TD
+    A[New month starts] --> B[Open Roster screen]
+    B --> C[Upload roster .xlsx — Effective_Date column drives which month each row counts for]
+    C --> D[Open KPI Settings]
+    D --> E[Pick the new month]
+    E --> F[Click Use Defaults — pulls Admin's standing rates/tiers/targets/commission]
+    F --> G{Anything different this month?}
+    G -->|Yes| H[Edit just those fields]
+    G -->|No| I[Leave as-is]
+    H --> J[Click Save All]
+    I --> J
+    J --> K["Month marked Confirmed — warning banner clears\non Dashboard/KPI Report"]
+    </div></div>
+    <p class="note">HR must do this every month, even if nothing changed — skipping leaves the month "Not Confirmed" (numbers still calculate fine, banner stays up until confirmed).</p>
+  </section>
+
+  <section class="diagram" id="d12" data-group="docs/04-modules-and-calculation.md" data-title="Data Links — What Feeds What">
+    <h2>Data Links — What Feeds What</h2>
+    <p class="src">Source: docs/04-modules-and-calculation.md</p>
+    <div class="zoombar"><button onclick="zoom('d12',1.15)">+</button><button onclick="zoom('d12',0.87)">−</button><button onclick="zoom('d12',0)">⟲</button><span>zoom</span></div>
+    <div class="mermaidwrap"><div class="mermaid">
+flowchart LR
+    Roster[Roster\nbranch, type, supervisor — monthly] --> KPIReport[KPI Report]
+    KPIRates[KPI Settings: Jewelry/Bar rates] --> KPIReport
+    QtyTiers[KPI Settings: Qty Tiers] --> KPIReport
+    BranchTargets[KPI Settings: Branch Targets] --> KPIReport
+    DailyEntry[Daily Entry: actual Jewelry/Bar/Qty] --> KPIReport
+    Roster --> CommissionReport[Commission Report]
+    CommissionRates[Commission Settings] --> CommissionReport
+    DailyEntry --> CommissionReport
+    Roster --> SupervisorReport[Supervisor / Team Performance]
+    BranchTargets --> SupervisorReport
+    DailyEntry --> SupervisorReport
+    </div></div>
+    <p class="note">Every box is month-stamped — a report for May only ever reads May's version of each box, never "whatever's current today."</p>
+  </section>
+
+  <footer>SalesTrack Pro · Combined Flowchart Reference</footer>
+</main>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'default', flowchart: { useMaxWidth: false } });
+
+  // Build sidebar nav grouped by data-group, in document order
+  const sections = [...document.querySelectorAll('section.diagram')];
+  const nav = document.getElementById('nav');
+  let lastGroup = null;
+  for (const sec of sections) {
+    const group = sec.dataset.group;
+    if (group !== lastGroup) {
+      const label = document.createElement('div');
+      label.className = 'group-label';
+      label.textContent = group;
+      nav.appendChild(label);
+      lastGroup = group;
+    }
+    const ul = nav.lastElementChild.tagName === 'UL' ? nav.lastElementChild : document.createElement('ul');
+    if (ul.parentElement !== nav) nav.appendChild(ul);
+    const li = document.createElement('li');
+    const a = document.createElement('a');
+    a.textContent = sec.dataset.title;
+    a.href = '#' + sec.id;
+    a.dataset.target = sec.id;
+    li.appendChild(a);
+    ul.appendChild(li);
+  }
+
+  // Active-link highlight on scroll
+  const links = [...document.querySelectorAll('aside a[data-target]')];
+  const observer = new IntersectionObserver(entries => {
+    for (const e of entries) {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const link = links.find(l => l.dataset.target === e.target.id);
+        if (link) link.classList.add('active');
+      }
+    }
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(s => observer.observe(s));
+
+  // Filter sidebar by search
+  document.getElementById('search').addEventListener('input', e => {
+    const q = e.target.value.toLowerCase();
+    links.forEach(l => l.classList.toggle('hidden', q && !l.textContent.toLowerCase().includes(q)));
+  });
+
+  // Zoom controls — scale=0 means reset
+  const zoomState = {};
+  function zoom(id, factor) {
+    const wrap = document.querySelector('#' + id + ' .mermaid');
+    if (!wrap) return;
+    if (factor === 0) { zoomState[id] = 1; }
+    else { zoomState[id] = (zoomState[id] || 1) * factor; }
+    wrap.style.transform = 'scale(' + zoomState[id] + ')';
+  }
+</script>
+
+</body>
+</html>
