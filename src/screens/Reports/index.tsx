@@ -63,7 +63,7 @@ function kpiBgSup(pct: number) {
 }
 function kpiHex(pct: number) {
   if (pct >= 100) return '#16a34a'
-  if (pct >= 70)  return '#004f96'
+  if (pct >= 70)  return '#990000'
   if (pct >= 40)  return '#ca8a04'
   return '#dc2626'
 }
@@ -791,7 +791,7 @@ export default function Reports() {
                       <p className="text-[13px] text-on-surface-variant/50 mt-0.5 font-mono">{dateFrom} → {dateTo} · day {dayOfMonth} of {daysInMonth}</p>
                     </div>
                     <div className="shrink-0 flex items-center justify-center">
-                      <RadialGauge pct={Math.min(execOverallPct, 100)} label="Overall KPI" size={140} color="#004f96" />
+                      <RadialGauge pct={Math.min(execOverallPct, 100)} label="Overall KPI" size={140} color="#990000" />
                     </div>
                   </div>
 

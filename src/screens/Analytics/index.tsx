@@ -12,7 +12,7 @@ import { getDefaultDateRange } from '../../utils/dates'
 interface DailyPoint { entry_date: string; jewelry: number; bar: number; qty: number }
 interface BranchContrib { id: number; name: string; code: string; total_weight: number; total_jewelry: number; total_bar: number; total_qty: number }
 
-const PIE_COLORS = ['#004f96', '#0d7c8f', '#1e9962', '#b07800']
+const PIE_COLORS = ['#990000', '#0d7c8f', '#1e9962', '#b07800']
 
 function groupByWeek(daily: DailyPoint[]) {
   const map = new Map<string, { week: string; jewelry: number; bar: number }>()
@@ -202,8 +202,8 @@ export default function Analytics() {
                     contentStyle={{ borderRadius: 10, fontSize: 12, border: '1px solid #e0e0e0' }}
                   />
                   <Legend iconType="circle" iconSize={8} />
-                  <Line type="monotone" dataKey="jewelry" name="Jewelry (Baht)" stroke="#004f96"
-                    strokeWidth={2.5} dot={{ r: 3, fill: '#004f96' }} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="jewelry" name="Jewelry (Baht)" stroke="#990000"
+                    strokeWidth={2.5} dot={{ r: 3, fill: '#990000' }} activeDot={{ r: 5 }} />
                   <Line type="monotone" dataKey="bar" name="Bar (Baht)" stroke="#b07800"
                     strokeWidth={2.5} dot={{ r: 3, fill: '#b07800' }} activeDot={{ r: 5 }} strokeDasharray="5 3" />
                 </LineChart>

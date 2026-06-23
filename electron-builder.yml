@@ -15,7 +15,15 @@ files:
 asarUnpack:
   - "**/node_modules/better-sqlite3/**/*"
 
+# Copy the app icon into the packaged app's resources folder so main.ts can load it at
+# runtime for the window/taskbar icon (separate from win.icon below, which only sets the
+# installer/.exe/shortcut icon — the running window needs its own reference).
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+
 win:
+  icon: build/icon.png
   target:
     - target: nsis
       arch:

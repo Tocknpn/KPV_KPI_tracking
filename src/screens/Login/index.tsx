@@ -138,7 +138,7 @@ export default function Login() {
       <div className="min-h-screen flex flex-col items-center justify-center gap-6"
         style={{ background: 'linear-gradient(135deg, #eef2ff 0%, #f0f9ff 100%)' }}>
         <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg"
-          style={{ background: 'linear-gradient(135deg, #004f96 0%, #0067c0 100%)' }}>
+          style={{ background: 'linear-gradient(135deg, #990000 0%, #c62828 100%)' }}>
           <span className="material-symbols-outlined animate-spin text-white text-3xl" style={{ animationDuration: '1s' }}>sync</span>
         </div>
         <div className="flex flex-col items-center gap-1">
@@ -191,7 +191,7 @@ export default function Login() {
         <div className="flex flex-col items-center mb-8">
           <div
             className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg mb-4"
-            style={{ background: 'linear-gradient(135deg, #004f96 0%, #0067c0 100%)' }}
+            style={{ background: 'linear-gradient(135deg, #990000 0%, #c62828 100%)' }}
           >
             <span
               className="material-symbols-outlined text-white text-3xl"

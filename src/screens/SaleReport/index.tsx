@@ -66,7 +66,7 @@ interface ReportData {
   meta: { daysInMonth: number; dayOfMonth: number; daysRemaining: number }
 }
 
-const BRANCH_COLORS = ['#004f96', '#9c6e1b', '#6750a4', '#17575c']
+const BRANCH_COLORS = ['#990000', '#9c6e1b', '#6750a4', '#17575c']
 
 type SaleTab = 'overview' | 'branch' | 'type' | 'trends'
 
@@ -130,7 +130,7 @@ function WeekdayHeatmap({ rows }: { rows: DayRow[] }) {
   function cellColor(pct: number): string {
     const intensity = pct / maxContrib // 0..1, relative to the busiest day
     const alpha = 0.08 + intensity * 0.82
-    return `rgba(0, 79, 150, ${alpha.toFixed(2)})`
+    return `rgba(153, 0, 0, ${alpha.toFixed(2)})`
   }
 
   return (
@@ -592,7 +592,7 @@ export default function SaleReport() {
             {/* 4 MTD metric cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-card-gap mb-8">
               <MetricCard
-                icon="diamond" label="Jewelry Weight" color="#004f96"
+                icon="diamond" label="Jewelry Weight" color="#990000"
                 current={d.current.jewelry} prevMTD={d.sameLastMonth.jewelry}
                 estEnd={d.estMonthEnd.jewelry} fullLM={d.fullLastMonth.jewelry}
                 sparkData={d.weeklyTrend} sparkKey="jewelry"
@@ -652,7 +652,7 @@ export default function SaleReport() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-card-gap mb-8">
                 {([
-                  { key: 'jewelry' as const, label: 'Jewelry Weight', color: '#004f96', icon: 'diamond' },
+                  { key: 'jewelry' as const, label: 'Jewelry Weight', color: '#990000', icon: 'diamond' },
                   { key: 'bar'     as const, label: 'Bar Weight',     color: '#9c6e1b', icon: 'payments' },
                   { key: 'total'   as const, label: 'Total Weight',   color: '#17575c', icon: 'scale' },
                 ]).map(({ key, label, color, icon }) => {
@@ -1004,7 +1004,7 @@ export default function SaleReport() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {(['b2c', 'b2b'] as const).map(type => {
                   const r = d.byType.find(x => x.staff_type === type)
-                  const color = type === 'b2b' ? '#6750a4' : '#004f96'
+                  const color = type === 'b2b' ? '#6750a4' : '#990000'
                   const label = type === 'b2c' ? 'B2C (Retail)' : 'B2B (Wholesale)'
                   if (!r) return (
                     <GlassCard key={type} className="p-6 flex items-center justify-center h-40">
@@ -1058,7 +1058,7 @@ export default function SaleReport() {
                         <YAxis tick={{ fontSize: 10 }} tickFormatter={fmtInt} />
                         <Tooltip formatter={(v: number, name: string) => [fmt(v, 1) + ' Baht', name]} contentStyle={{ fontSize: 12, borderRadius: 10 }} />
                         <Legend iconType="circle" iconSize={8} />
-                        <Bar dataKey="jewelry" name="Jewelry" fill="#004f96" radius={[0,0,0,0]} maxBarSize={48} />
+                        <Bar dataKey="jewelry" name="Jewelry" fill="#990000" radius={[0,0,0,0]} maxBarSize={48} />
                         <Bar dataKey="bar"     name="Bar"     fill="#9c6e1b" radius={[3,3,0,0]} maxBarSize={48} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -1106,8 +1106,8 @@ export default function SaleReport() {
                       <AreaChart data={d.dailyTrend} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
                         <defs>
                           <linearGradient id="gradJewelry" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%"  stopColor="#004f96" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#004f96" stopOpacity={0.02} />
+                            <stop offset="5%"  stopColor="#990000" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#990000" stopOpacity={0.02} />
                           </linearGradient>
                           <linearGradient id="gradBar" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%"  stopColor="#9c6e1b" stopOpacity={0.3} />
@@ -1122,7 +1122,7 @@ export default function SaleReport() {
                           contentStyle={{ borderRadius: 10, fontSize: 12 }}
                         />
                         <Legend iconType="circle" iconSize={8} />
-                        <Area type="monotone" dataKey="jewelry" name="Jewelry" stroke="#004f96" strokeWidth={2} fill="url(#gradJewelry)" dot={{ r: 2.5, fill: '#004f96' }} />
+                        <Area type="monotone" dataKey="jewelry" name="Jewelry" stroke="#990000" strokeWidth={2} fill="url(#gradJewelry)" dot={{ r: 2.5, fill: '#990000' }} />
                         <Area type="monotone" dataKey="bar"     name="Bar"     stroke="#9c6e1b" strokeWidth={2} fill="url(#gradBar)"     dot={{ r: 2.5, fill: '#9c6e1b' }} />
                       </AreaChart>
                     </ResponsiveContainer>
@@ -1169,8 +1169,8 @@ export default function SaleReport() {
                           contentStyle={{ borderRadius: 10, fontSize: 12 }}
                         />
                         <Legend iconType="circle" iconSize={8} />
-                        <Bar dataKey="jewelry" name="Jewelry" stackId="w" fill="#004f96" radius={[0,0,0,0]}>
-                          {d.weeklyTrend.map((_, i) => <Cell key={i} fill={i === d.weeklyTrend.length - 1 ? '#004f96' : '#004f9688'} />)}
+                        <Bar dataKey="jewelry" name="Jewelry" stackId="w" fill="#990000" radius={[0,0,0,0]}>
+                          {d.weeklyTrend.map((_, i) => <Cell key={i} fill={i === d.weeklyTrend.length - 1 ? '#990000' : '#99000088'} />)}
                         </Bar>
                         <Bar dataKey="bar" name="Bar" stackId="w" fill="#9c6e1b" radius={[3,3,0,0]}>
                           {d.weeklyTrend.map((_, i) => <Cell key={i} fill={i === d.weeklyTrend.length - 1 ? '#9c6e1b' : '#9c6e1b88'} />)}

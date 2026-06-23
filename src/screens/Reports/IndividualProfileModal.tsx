@@ -210,7 +210,7 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
                     <YAxis yAxisId="qty" orientation="right" tick={{ fontSize: 10, fill: '#666' }} width={40} />
                     <Tooltip content={<ChartTooltip />} />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar yAxisId="vol" dataKey="weight" name="Total Weight (g)" fill="#004f96" fillOpacity={0.75} radius={[3,3,0,0]} />
+                    <Bar yAxisId="vol" dataKey="weight" name="Total Weight (g)" fill="#990000" fillOpacity={0.75} radius={[3,3,0,0]} />
                     <Line yAxisId="qty" type="monotone" dataKey="qty" name="Qty" stroke="#9c6e1b" strokeWidth={2.5} dot={{ r: 3.5, fill: '#9c6e1b' }} strokeDasharray="4 2" />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -363,7 +363,7 @@ export function SupProfileModal({ id, token, onClose }: SupModalProps) {
                   <YAxis yAxisId="qty" orientation="right" tick={{ fontSize: 10, fill: '#666' }} width={50} />
                   <Tooltip content={<ChartTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar yAxisId="vol" dataKey="weight" name="Total Weight (g)" fill="#004f96" fillOpacity={0.75} radius={[3,3,0,0]} />
+                  <Bar yAxisId="vol" dataKey="weight" name="Total Weight (g)" fill="#990000" fillOpacity={0.75} radius={[3,3,0,0]} />
                   <Line yAxisId="qty" type="monotone" dataKey="qty" name="Qty" stroke="#9c6e1b" strokeWidth={2.5} dot={{ r: 3.5, fill: '#9c6e1b' }} strokeDasharray="4 2" />
                 </ComposedChart>
               </ResponsiveContainer>

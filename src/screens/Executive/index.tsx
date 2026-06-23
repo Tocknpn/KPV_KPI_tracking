@@ -15,7 +15,7 @@ function fmtPct(n: number) { return `${n.toFixed(1)}%` }
 
 function kpiColor(pct: number) {
   if (pct >= 100) return '#16a34a'
-  if (pct >= 70)  return '#004f96'
+  if (pct >= 70)  return '#990000'
   if (pct >= 40)  return '#ca8a04'
   return '#dc2626'
 }
@@ -125,7 +125,7 @@ export default function Executive() {
                     {dateFrom} → {dateTo}
                   </p>
                 </div>
-                <RadialGauge pct={Math.min(overallKpiPct, 100)} label="Overall KPI" size={120} color="#004f96" />
+                <RadialGauge pct={Math.min(overallKpiPct, 100)} label="Overall KPI" size={120} color="#990000" />
               </div>
               <div className="grid grid-cols-4 gap-4 pt-6 border-t border-outline-variant/30">
                 {rows.map(r => (

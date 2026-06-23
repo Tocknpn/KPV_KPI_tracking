@@ -9,6 +9,13 @@ import { pullAllFromCloud, getSetting } from './ipc/sheets'
 
 let mainWindow: BrowserWindow | null = null
 
+// Dev: build/icon.png lives at the project root, two levels up from out/main/main.js.
+// Packaged: copied into resources/ via electron-builder.yml's extraResources — win.icon
+// in that file only sets the installer/.exe/shortcut icon, the live window needs its own.
+const iconPath = app.isPackaged
+  ? join(process.resourcesPath, 'icon.png')
+  : join(__dirname, '../../build/icon.png')
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -19,6 +26,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     titleBarStyle: 'default',
     backgroundColor: '#f8f9ff',
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/preload.js'),
       sandbox: false,

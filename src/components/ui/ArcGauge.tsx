@@ -40,7 +40,7 @@ export function ArcGauge({ pct, size = 160 }: ArcGaugeProps) {
         <circle
           cx={cx} cy={cy} r={r}
           fill="none"
-          stroke="#004f96"
+          stroke="#990000"
           strokeWidth={sw}
           strokeLinecap="round"
           strokeDasharray={`${C} ${C}`}

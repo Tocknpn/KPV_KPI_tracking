@@ -362,7 +362,7 @@ export default function Dashboard() {
                 <RadialGauge
                   pct={Math.min(pctJewelry, 100)}
                   label="Jewelry"
-                  color="#004f96"
+                  color="#990000"
                   subLabel={`${fmtPts(s?.kpiScoreJewelry ?? 0)} pts`}
                 />
                 <RadialGauge

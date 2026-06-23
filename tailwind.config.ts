@@ -6,16 +6,16 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Primary — Corporate Blue
-        primary: '#004f96',
+        // Primary — Hero Red (was Corporate Blue #004f96 — see git history)
+        primary: '#990000',
         'on-primary': '#ffffff',
-        'primary-container': '#0067c0',
-        'on-primary-container': '#dbe7ff',
-        'primary-fixed': '#d5e3ff',
-        'primary-fixed-dim': '#a6c8ff',
-        'on-primary-fixed': '#001c3b',
-        'on-primary-fixed-variant': '#004787',
-        'inverse-primary': '#a6c8ff',
+        'primary-container': '#c62828',
+        'on-primary-container': '#ffd9d9',
+        'primary-fixed': '#ffdad4',
+        'primary-fixed-dim': '#ffb4a8',
+        'on-primary-fixed': '#410001',
+        'on-primary-fixed-variant': '#930006',
+        'inverse-primary': '#ffb4a8',
         // Secondary — Gold/Amber
         secondary: '#735c00',
         'on-secondary': '#ffffff',
@@ -91,7 +91,7 @@ const config: Config = {
         glass: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)',
         'glass-hover': '0 10px 15px -3px rgba(0,0,0,0.08)',
         'glass-elevated': '0 10px 15px -3px rgba(0,0,0,0.1)',
-        primary: '0 4px 14px rgba(0,79,150,0.2)',
+        primary: '0 4px 14px rgba(153,0,0,0.2)',
       },
       backgroundImage: {
         'mica': 'radial-gradient(at 0% 0%, rgba(213,227,255,0.4) 0px, transparent 50%), radial-gradient(at 100% 0%, rgba(254,214,91,0.15) 0px, transparent 50%)',
