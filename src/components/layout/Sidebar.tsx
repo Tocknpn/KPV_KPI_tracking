@@ -55,7 +55,7 @@ export function Sidebar() {
         </div>
         {!c && (
           <div className="flex-1 min-w-0">
-            <h1 className="font-headline-md text-[16px] font-bold text-on-surface leading-tight truncate">SalesTrack</h1>
+            <h1 className="font-headline-md text-[16px] font-bold text-on-surface leading-tight truncate">KPV Sale Tracking</h1>
             <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider truncate">
               {portalLabel}
             </p>

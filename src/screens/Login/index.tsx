@@ -143,7 +143,7 @@ export default function Login() {
           <span className="material-symbols-outlined animate-spin text-white text-3xl" style={{ animationDuration: '1s' }}>sync</span>
         </div>
         <div className="flex flex-col items-center gap-1">
-          <p className="text-on-surface font-bold text-lg">SalesTrack Pro</p>
+          <p className="text-on-surface font-bold text-lg">KPV Sale Tracking</p>
           <p className="text-on-surface-variant text-sm">{syncStatus}</p>
         </div>
       </div>
@@ -326,7 +326,7 @@ export default function Login() {
 
         {/* Footer */}
         <p className="text-center text-[11px] text-on-surface-variant/40 mt-6">
-          v{__APP_VERSION__} &nbsp;·&nbsp; SalesTrack Pro &nbsp;·&nbsp; KPV Gold & Jewelry
+          v{__APP_VERSION__} &nbsp;·&nbsp; KPV Sale Tracking &nbsp;·&nbsp; KPV Gold & Jewelry
         </p>
       </div>
     </div>
