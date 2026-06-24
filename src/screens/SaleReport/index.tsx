@@ -9,6 +9,8 @@ import { GlassCard } from '../../components/ui/GlassCard'
 import { MonthDropdown, DateRangeBar } from '../../components/ui/PeriodFilter'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
+import { useLanguage } from '../../i18n/LanguageContext'
+import type { TranslationKey } from '../../i18n/translations'
 import { getDefaultDateRange } from '../../utils/dates'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -117,6 +119,7 @@ function PieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent, change 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 function WeekdayHeatmap({ rows }: { rows: DayRow[] }) {
+  const { t } = useLanguage()
   const byWeekday = WEEKDAY_LABELS.map(() => 0)
   for (const r of rows) {
     const dow = new Date(r.date + 'T00:00:00').getDay()
@@ -135,9 +138,9 @@ function WeekdayHeatmap({ rows }: { rows: DayRow[] }) {
 
   return (
     <GlassCard elevated className="p-6">
-      <h4 className="font-headline-md text-headline-md text-on-surface mb-1">Volume by Day of Week</h4>
+      <h4 className="font-headline-md text-headline-md text-on-surface mb-1">{t('sr_volume_by_weekday')}</h4>
       <p className="text-body-sm text-on-surface-variant mb-4">
-        % contribution to period total (jewelry + bar weight) · busiest: <strong>{WEEKDAY_LABELS[busiestIdx]}</strong>
+        % contribution to period total (jewelry + bar weight) · {t('sr_weekday_busiest')}: <strong>{WEEKDAY_LABELS[busiestIdx]}</strong>
       </p>
       <div className="grid grid-cols-7 gap-2">
         {WEEKDAY_LABELS.map((label, i) => (
@@ -163,42 +166,45 @@ function WeekdayHeatmap({ rows }: { rows: DayRow[] }) {
 
 // ── Weekly & Monthly Detail — WoW/MoM % change, partial-period aware ──────
 function WeeklyMonthlyDetail({ data, loading, trendTo }: { data: TrendDetailData | null; loading: boolean; trendTo: string }) {
+  const { t } = useLanguage()
   if (loading) {
     return <div className="flex items-center justify-center h-32 text-on-surface-variant text-body-sm">
-      <span className="material-symbols-outlined animate-spin-slow mr-2">sync</span>Loading…
+      <span className="material-symbols-outlined animate-spin-slow mr-2">sync</span>{t('sr_loading')}
     </div>
   }
   if (!data || (data.weeklyDetail.length === 0 && data.monthlyDetail.length === 0)) {
-    return <div className="flex items-center justify-center h-32 text-on-surface-variant text-body-sm">No entry data for this range.</div>
+    return <div className="flex items-center justify-center h-32 text-on-surface-variant text-body-sm">{t('sr_no_entry_range')}</div>
   }
 
   const lastMonthly = data.monthlyDetail[data.monthlyDetail.length - 1]
+  const weeklyCols: TranslationKey[] = ['sr_col_week_of','sr_col_days','sr_col_total_col','sr_col_avg_day','sr_col_wow']
+  const monthlyCols: TranslationKey[] = ['sr_col_month','sr_col_days','sr_col_total_col','sr_col_avg_day','sr_col_mom']
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
       {/* Weekly */}
       <div>
-        <p className="font-bold text-body-md text-on-surface mb-0.5">Weekly Detail — WoW % Change</p>
-        <p className="text-[11px] text-on-surface-variant mb-3">First and last weeks are partial (fewer than 6 trading days)</p>
+        <p className="font-bold text-body-md text-on-surface mb-0.5">{t('sr_weekly_detail_wow')}</p>
+        <p className="text-[11px] text-on-surface-variant mb-3">{t('sr_partial_weeks_note')}</p>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-outline-variant/20">
-                {['Week Of','Days','Total','Avg/Day','WoW'].map(h => (
-                  <th key={h} className="py-2 px-2 text-[10px] font-bold uppercase text-on-surface-variant whitespace-nowrap">{h}</th>
+                {weeklyCols.map(h => (
+                  <th key={h} className="py-2 px-2 text-[10px] font-bold uppercase text-on-surface-variant whitespace-nowrap">{t(h)}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/10">
               {data.weeklyDetail.map(w => (
                 <tr key={w.week_start}>
-                  <td className="py-2 px-2 text-body-sm tabular-nums">{w.week_start}{w.partial && <span className="text-[10px] text-on-surface-variant ml-1.5">(partial)</span>}</td>
+                  <td className="py-2 px-2 text-body-sm tabular-nums">{w.week_start}{w.partial && <span className="text-[10px] text-on-surface-variant ml-1.5">({t('sr_partial')})</span>}</td>
                   <td className="py-2 px-2 text-body-sm tabular-nums">{w.days}</td>
                   <td className="py-2 px-2 text-body-sm font-bold tabular-nums">{fmt(w.total)}</td>
                   <td className="py-2 px-2 text-body-sm tabular-nums text-on-surface-variant">{fmt(w.avg_per_day)}</td>
                   <td className="py-2 px-2 text-right">
                     {w.is_base
-                      ? <span className="text-[10px] font-bold uppercase text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">base</span>
+                      ? <span className="text-[10px] font-bold uppercase text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">{t('sr_base')}</span>
                       : <VarChip pct={w.wow_pct} compact />}
                   </td>
                 </tr>
@@ -210,29 +216,29 @@ function WeeklyMonthlyDetail({ data, loading, trendTo }: { data: TrendDetailData
 
       {/* Monthly */}
       <div>
-        <p className="font-bold text-body-md text-on-surface mb-0.5">Monthly Detail — MoM % Change</p>
+        <p className="font-bold text-body-md text-on-surface mb-0.5">{t('sr_monthly_detail_mom')}</p>
         <p className="text-[11px] text-on-surface-variant mb-3">
-          {lastMonthly?.partial ? `${MONTHS[parseInt(lastMonthly.year_month.slice(5,7),10)-1]} reflects data through ${trendTo} only` : ' '}
+          {lastMonthly?.partial ? `${MONTHS[parseInt(lastMonthly.year_month.slice(5,7),10)-1]} ${t('sr_reflects_through')} ${trendTo} ${t('sr_only')}` : ' '}
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-outline-variant/20">
-                {['Month','Days','Total','Avg/Day','MoM'].map(h => (
-                  <th key={h} className="py-2 px-2 text-[10px] font-bold uppercase text-on-surface-variant whitespace-nowrap">{h}</th>
+                {monthlyCols.map(h => (
+                  <th key={h} className="py-2 px-2 text-[10px] font-bold uppercase text-on-surface-variant whitespace-nowrap">{t(h)}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/10">
               {data.monthlyDetail.map(m => (
                 <tr key={m.year_month}>
-                  <td className="py-2 px-2 text-body-sm tabular-nums">{m.year_month}{m.partial && <span className="text-[10px] text-on-surface-variant ml-1.5">(partial)</span>}</td>
+                  <td className="py-2 px-2 text-body-sm tabular-nums">{m.year_month}{m.partial && <span className="text-[10px] text-on-surface-variant ml-1.5">({t('sr_partial')})</span>}</td>
                   <td className="py-2 px-2 text-body-sm tabular-nums">{m.days}</td>
                   <td className="py-2 px-2 text-body-sm font-bold tabular-nums">{fmt(m.total)}</td>
                   <td className="py-2 px-2 text-body-sm tabular-nums text-on-surface-variant">{fmt(m.avg_per_day)}</td>
                   <td className="py-2 px-2 text-right">
                     {m.is_base
-                      ? <span className="text-[10px] font-bold uppercase text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">base</span>
+                      ? <span className="text-[10px] font-bold uppercase text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">{t('sr_base')}</span>
                       : <VarChip pct={m.mom_pct} compact />}
                   </td>
                 </tr>
@@ -256,6 +262,7 @@ function BranchDropdown({ branches, selectedIds, onChange }: {
   branches: Array<{ id: number; name: string; code: string }>
   selectedIds: number[]; onChange: (ids: number[]) => void
 }) {
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -264,9 +271,9 @@ function BranchDropdown({ branches, selectedIds, onChange }: {
     return () => document.removeEventListener('mousedown', onOut)
   }, [])
   const isAll = selectedIds.length === 0
-  const label = isAll ? 'All Branches'
-    : selectedIds.length === 1 ? (branches.find(b => b.id === selectedIds[0])?.name ?? '1 Branch')
-    : `${selectedIds.length} Branches`
+  const label = isAll ? t('sr_all_branches')
+    : selectedIds.length === 1 ? (branches.find(b => b.id === selectedIds[0])?.name ?? `1 ${t('sr_branch_singular')}`)
+    : `${selectedIds.length} ${t('sr_branches_suffix')}`
   function toggle(id: number) {
     if (isAll) { onChange([id]); return }
     const next = selectedIds.includes(id) ? selectedIds.filter(x => x !== id) : [...selectedIds, id]
@@ -284,7 +291,7 @@ function BranchDropdown({ branches, selectedIds, onChange }: {
         <div className="absolute left-0 top-full mt-2 bg-white/95 backdrop-blur-xl shadow-xl rounded-xl border border-white/40 z-[9999] min-w-52 py-1">
           <label className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer">
             <input type="checkbox" checked={isAll} onChange={() => onChange([])} className="accent-primary" />
-            <span className="text-body-sm">All Branches</span>
+            <span className="text-body-sm">{t('sr_all_branches')}</span>
           </label>
           <div className="border-t border-black/5 my-1" />
           {branches.map(b => (
@@ -334,6 +341,7 @@ function MetricCard({
   unit?: string; sparkData: WeekRow[]; sparkKey: 'jewelry' | 'bar' | 'total' | 'qty'
   month: number; year: number
 }) {
+  const { t } = useLanguage()
   const lmYear  = month === 1 ? year - 1 : year
   const lmMonth = month === 1 ? 12 : month - 1
   const lmLabel = `${MONTHS[lmMonth - 1]} '${String(lmYear).slice(2)}`
@@ -352,7 +360,7 @@ function MetricCard({
 
       {/* MTD row */}
       <div className="mb-3 pb-3 border-b border-white/30">
-        <p className="text-[10px] text-on-surface-variant uppercase mb-1 font-semibold tracking-wider" style={{ color }}>MTD</p>
+        <p className="text-[10px] text-on-surface-variant uppercase mb-1 font-semibold tracking-wider" style={{ color }}>{t('sr_mtd')}</p>
         <div className="flex items-baseline gap-2">
           <span className="font-display-xl text-[26px] font-bold text-on-surface tabular-nums">
             {isQty ? fmtInt(current) : fmt(current, 1)}
@@ -361,13 +369,13 @@ function MetricCard({
         </div>
         <div className="flex items-center gap-2 mt-1">
           <VarChip pct={mtdVar} />
-          <span className="text-[10px] text-on-surface-variant">vs {lmLabel} ({isQty ? fmtInt(prevMTD) : fmt(prevMTD, 1)})</span>
+          <span className="text-[10px] text-on-surface-variant">{t('sr_vs')} {lmLabel} ({isQty ? fmtInt(prevMTD) : fmt(prevMTD, 1)})</span>
         </div>
       </div>
 
       {/* Est. Month End row */}
       <div>
-        <p className="text-[10px] text-on-surface-variant uppercase mb-1 font-semibold tracking-wider text-orange-500">Est. End</p>
+        <p className="text-[10px] text-on-surface-variant uppercase mb-1 font-semibold tracking-wider text-orange-500">{t('sr_est_end')}</p>
         <div className="flex items-baseline gap-2">
           <span className="font-display-xl text-[22px] font-bold tabular-nums" style={{ color: '#d97706' }}>
             {isQty ? fmtInt(estEnd) : fmt(estEnd, 1)}
@@ -376,7 +384,7 @@ function MetricCard({
         </div>
         <div className="flex items-center gap-2 mt-1">
           <VarChip pct={eomVar} />
-          <span className="text-[10px] text-on-surface-variant">vs Full {lmLabel} ({isQty ? fmtInt(fullLM) : fmt(fullLM, 1)})</span>
+          <span className="text-[10px] text-on-surface-variant">{t('sr_vs')} {t('sr_full')} {lmLabel} ({isQty ? fmtInt(fullLM) : fmt(fullLM, 1)})</span>
         </div>
       </div>
 
@@ -398,6 +406,7 @@ function WowMiniCard({
   cur: number; prev: number; pct: number | null; diff: number
   chartData: Array<Record<string, unknown>>; dataKey: string
 }) {
+  const { t } = useLanguage()
   return (
     <GlassCard elevated className="p-5 flex flex-col gap-0">
       <div className="flex items-center gap-2 mb-3">
@@ -407,14 +416,14 @@ function WowMiniCard({
         <span className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wide font-bold truncate">{label}</span>
       </div>
 
-      <p className="text-[10px] text-on-surface-variant uppercase mb-1 font-semibold tracking-wider" style={{ color }}>Week {weekNum}</p>
+      <p className="text-[10px] text-on-surface-variant uppercase mb-1 font-semibold tracking-wider" style={{ color }}>{t('sr_week')} {weekNum}</p>
       <div className="flex items-baseline gap-2">
         <span className="font-display-xl text-[26px] font-bold text-on-surface tabular-nums">{fmt(cur, 1)}</span>
-        <span className="text-[11px] text-on-surface-variant">Baht</span>
+        <span className="text-[11px] text-on-surface-variant">{t('sr_unit_baht')}</span>
       </div>
       <div className="flex items-center gap-2 mt-1 mb-3">
         <VarChip pct={pct} />
-        <span className="text-[10px] text-on-surface-variant">vs Week {prevWeekNum} ({fmt(prev, 1)})</span>
+        <span className="text-[10px] text-on-surface-variant">{t('sr_vs')} {t('sr_week')} {prevWeekNum} ({fmt(prev, 1)})</span>
       </div>
 
       {chartData.length > 1 && (
@@ -439,6 +448,7 @@ function WowMiniCard({
 export default function SaleReport() {
   const { token, user, branches } = useAuthStore()
   const { selectedBranchIds, setSelectedBranchIds } = useAppStore()
+  const { t } = useLanguage()
 
   const now = new Date()
   const [year, setYear]   = useState(now.getFullYear())
@@ -473,10 +483,10 @@ export default function SaleReport() {
   const effectiveBranchIds: number[] = isBranchScoped ? [user.branchId ?? 1] : selectedBranchIds
 
   const scopeLabel = isBranchScoped
-    ? branches.find(b => b.id === user?.branchId)?.name ?? 'My Branch'
-    : effectiveBranchIds.length === 0 ? 'All Branches'
-    : effectiveBranchIds.length === 1 ? (branches.find(b => b.id === effectiveBranchIds[0])?.name ?? '1 Branch')
-    : `${effectiveBranchIds.length} Branches`
+    ? branches.find(b => b.id === user?.branchId)?.name ?? t('sr_my_branch')
+    : effectiveBranchIds.length === 0 ? t('sr_all_branches')
+    : effectiveBranchIds.length === 1 ? (branches.find(b => b.id === effectiveBranchIds[0])?.name ?? `1 ${t('sr_branch_singular')}`)
+    : `${effectiveBranchIds.length} ${t('sr_branches_suffix')}`
 
   useEffect(() => {
     if (!token) return
@@ -511,17 +521,17 @@ export default function SaleReport() {
   })()
 
   const TABS = [
-    { key: 'overview' as const, label: 'Overview',         icon: 'dashboard' },
-    { key: 'branch'   as const, label: 'By Branch',        icon: 'corporate_fare' },
-    { key: 'type'     as const, label: 'By Customer Type', icon: 'group' },
-    { key: 'trends'   as const, label: 'Trends',           icon: 'trending_up' },
+    { key: 'overview' as const, label: t('sr_tab_overview'), icon: 'dashboard' },
+    { key: 'branch'   as const, label: t('sr_tab_by_branch'), icon: 'corporate_fare' },
+    { key: 'type'     as const, label: t('sr_tab_by_type'), icon: 'group' },
+    { key: 'trends'   as const, label: t('sr_tab_trends'), icon: 'trending_up' },
   ]
 
   return (
-    <AppShell title="SalesTrack Pro">
+    <AppShell title="KPV Sale Tracking">
       {/* ── Page Header ────────────────────────────────────────────────── */}
       <div className="mb-5">
-        <h2 className="font-headline-lg text-headline-lg text-on-surface">Sale Report</h2>
+        <h2 className="font-headline-lg text-headline-lg text-on-surface">{t('sr_title')}</h2>
         <p className="text-on-surface-variant text-body-md mt-0.5">{scopeLabel} — {MONTHS[month - 1]} {year}</p>
       </div>
 
@@ -535,7 +545,7 @@ export default function SaleReport() {
         )}
         {/* Customer type chips */}
         <div className="flex gap-2 ml-auto">
-          {[{ v: '', l: 'All' }, { v: 'b2c', l: 'B2C' }, { v: 'b2b', l: 'B2B' }].map(({ v, l }) => (
+          {[{ v: '', l: t('sr_filter_all') }, { v: 'b2c', l: t('sr_b2c') }, { v: 'b2b', l: t('sr_b2b') }].map(({ v, l }) => (
             <button key={v} onClick={() => setStaffType(v)}
               className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider transition-colors
                 ${staffType === v
@@ -551,17 +561,17 @@ export default function SaleReport() {
       {!loading && d && (
         <div className="flex flex-wrap items-center gap-4 mb-5 px-5 py-3 rounded-xl bg-primary/5 border border-primary/15">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">MTD Status:</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">{t('sr_mtd_status')}</span>
             <VarChip pct={mtdVsPrevSamePct} />
-            <span className="text-[11px] text-on-surface-variant">vs {lmLabel} same period</span>
+            <span className="text-[11px] text-on-surface-variant">{t('sr_vs')} {lmLabel} {t('sr_vs_same_period')}</span>
           </div>
           <div className="w-px h-4 bg-outline-variant/30" />
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-orange-500">Est. Month End:</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-orange-500">{t('sr_est_month_end_label')}</span>
             <VarChip pct={eomVsFullLmPct} />
-            <span className="text-[11px] text-on-surface-variant">vs Full {lmLabel}</span>
+            <span className="text-[11px] text-on-surface-variant">{t('sr_vs')} {t('sr_full')} {lmLabel}</span>
           </div>
-          <div className="ml-auto text-[11px] text-on-surface-variant font-mono">{dateFrom} → {dateTo} · Day {d.meta.dayOfMonth} of {d.meta.daysInMonth}</div>
+          <div className="ml-auto text-[11px] text-on-surface-variant font-mono">{dateFrom} → {dateTo} · {t('sr_day_of')} {d.meta.dayOfMonth} {t('sr_of')} {d.meta.daysInMonth}</div>
         </div>
       )}
 
@@ -592,28 +602,28 @@ export default function SaleReport() {
             {/* 4 MTD metric cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-card-gap mb-8">
               <MetricCard
-                icon="diamond" label="Jewelry Weight" color="#990000"
+                icon="diamond" label={t('sr_jewelry_weight')} color="#990000"
                 current={d.current.jewelry} prevMTD={d.sameLastMonth.jewelry}
                 estEnd={d.estMonthEnd.jewelry} fullLM={d.fullLastMonth.jewelry}
                 sparkData={d.weeklyTrend} sparkKey="jewelry"
                 month={month} year={year}
               />
               <MetricCard
-                icon="payments" label="Bar Weight" color="#9c6e1b"
+                icon="payments" label={t('sr_bar_weight')} color="#9c6e1b"
                 current={d.current.bar} prevMTD={d.sameLastMonth.bar}
                 estEnd={d.estMonthEnd.bar} fullLM={d.fullLastMonth.bar}
                 sparkData={d.weeklyTrend} sparkKey="bar"
                 month={month} year={year}
               />
               <MetricCard
-                icon="scale" label="Total Weight" color="#17575c"
+                icon="scale" label={t('sr_total_weight')} color="#17575c"
                 current={d.current.total} prevMTD={d.sameLastMonth.total}
                 estEnd={d.estMonthEnd.total} fullLM={d.fullLastMonth.total}
                 sparkData={d.weeklyTrend} sparkKey="total"
                 month={month} year={year}
               />
               <MetricCard
-                icon="inventory_2" label="Quantity" color="#6750a4" unit="pcs"
+                icon="inventory_2" label={t('sr_quantity')} color="#6750a4" unit={t('sr_unit_pcs')}
                 current={d.current.qty} prevMTD={d.sameLastMonth.qty}
                 estEnd={d.estMonthEnd.qty} fullLM={d.fullLastMonth.qty}
                 sparkData={d.weeklyTrend} sparkKey="qty"
@@ -624,10 +634,10 @@ export default function SaleReport() {
             {/* Period comparison summary bar */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-card-gap mb-8">
               {[
-                { label: 'Active Reps',    value: fmtInt(d.current.reps),    icon: 'people',        color: 'border-primary' },
-                { label: 'Days Remaining', value: String(d.meta.daysRemaining), icon: 'calendar_today', color: 'border-secondary' },
-                { label: 'Vs Prev Period', value: d.prevPeriod.total > 0 ? fmtPct((d.current.total - d.prevPeriod.total) / d.prevPeriod.total * 100) : '—', icon: 'compare_arrows', color: 'border-tertiary', isVar: true, varPct: d.prevPeriod.total > 0 ? (d.current.total - d.prevPeriod.total) / d.prevPeriod.total * 100 : null },
-                { label: 'Est. Month End', value: `${fmt(d.estMonthEnd.total, 1)} Baht`, icon: 'event_available', color: 'border-outline-variant' },
+                { label: t('sr_active_reps'),    value: fmtInt(d.current.reps),    icon: 'people',        color: 'border-primary' },
+                { label: t('sr_days_remaining'), value: String(d.meta.daysRemaining), icon: 'calendar_today', color: 'border-secondary' },
+                { label: t('sr_vs_prev_period'), value: d.prevPeriod.total > 0 ? fmtPct((d.current.total - d.prevPeriod.total) / d.prevPeriod.total * 100) : '—', icon: 'compare_arrows', color: 'border-tertiary', isVar: true, varPct: d.prevPeriod.total > 0 ? (d.current.total - d.prevPeriod.total) / d.prevPeriod.total * 100 : null },
+                { label: t('sr_est_month_end'), value: `${fmt(d.estMonthEnd.total, 1)} ${t('sr_unit_baht')}`, icon: 'event_available', color: 'border-outline-variant' },
               ].map(k => (
                 <GlassCard key={k.label} className={`p-5 border-l-4 ${k.color}`}>
                   <div className="flex items-center gap-2 mb-1">
@@ -645,16 +655,16 @@ export default function SaleReport() {
             {/* Week-over-Week (Sun–Sat calendar weeks) */}
             {d.weeklyTrendCal.length >= 2 && (<>
               <div className="mb-3">
-                <h4 className="font-headline-md text-headline-md text-on-surface">Week-over-Week</h4>
+                <h4 className="font-headline-md text-headline-md text-on-surface">{t('sr_week_over_week')}</h4>
                 <p className="text-body-sm text-on-surface-variant">
-                  This week ({d.weeklyTrendCal[d.weeklyTrendCal.length - 1].label}) vs last week ({d.weeklyTrendCal[d.weeklyTrendCal.length - 2].label}) · Sun–Sat calendar weeks
+                  {t('sr_this_week')} ({d.weeklyTrendCal[d.weeklyTrendCal.length - 1].label}) {t('sr_vs')} {t('sr_last_week')} ({d.weeklyTrendCal[d.weeklyTrendCal.length - 2].label}) · {t('sr_cal_weeks')}
                 </p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-card-gap mb-8">
                 {([
-                  { key: 'jewelry' as const, label: 'Jewelry Weight', color: '#990000', icon: 'diamond' },
-                  { key: 'bar'     as const, label: 'Bar Weight',     color: '#9c6e1b', icon: 'payments' },
-                  { key: 'total'   as const, label: 'Total Weight',   color: '#17575c', icon: 'scale' },
+                  { key: 'jewelry' as const, label: t('sr_jewelry_weight'), color: '#990000', icon: 'diamond' },
+                  { key: 'bar'     as const, label: t('sr_bar_weight'),     color: '#9c6e1b', icon: 'payments' },
+                  { key: 'total'   as const, label: t('sr_total_weight'),   color: '#17575c', icon: 'scale' },
                 ]).map(({ key, label, color, icon }) => {
                   const w = d.companyWow[key]
                   const curWk  = d.weeklyTrendCal[d.weeklyTrendCal.length - 1]
@@ -671,8 +681,8 @@ export default function SaleReport() {
               {/* Branch WoW — one card per branch, same compact style */}
               {d.branchWow.length > 0 && (<>
                 <div className="mb-3">
-                  <h4 className="font-headline-md text-headline-md text-on-surface">Branch Total Weight — Week-over-Week</h4>
-                  <p className="text-body-sm text-on-surface-variant">Sun–Sat weeks · current + previous 5 weeks</p>
+                  <h4 className="font-headline-md text-headline-md text-on-surface">{t('sr_branch_total_wow')}</h4>
+                  <p className="text-body-sm text-on-surface-variant">{t('sr_cur_prev_5wk')}</p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-card-gap mb-8">
                   {d.branchWow.map((b, i) => {
@@ -698,12 +708,12 @@ export default function SaleReport() {
               {/* Branch pie charts */}
               {d.byBranch.length > 0 && (
                 <GlassCard elevated className="p-6">
-                  <h4 className="font-headline-md text-headline-md text-on-surface mb-1">Branch Weight Contribution</h4>
-                  <p className="text-body-sm text-on-surface-variant mb-6">{MONTHS[month - 1]} {year} — vs {lmLabel}</p>
+                  <h4 className="font-headline-md text-headline-md text-on-surface mb-1">{t('sr_branch_weight_contrib')}</h4>
+                  <p className="text-body-sm text-on-surface-variant mb-6">{MONTHS[month - 1]} {year} — {t('sr_vs')} {lmLabel}</p>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {/* Jewelry Weight % Contribution */}
                     <div className="rounded-xl border border-outline-variant/20 p-4">
-                      <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">Jewelry Weight % Contribution</h5>
+                      <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">{t('sr_jewelry_pct_contrib')}</h5>
                       <div className="h-80">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
@@ -736,7 +746,7 @@ export default function SaleReport() {
                                 const change = props.payload.change
                                 const changeStr = change != null ? (change >= 0 ? `(+${change.toFixed(1)}%)` : `(${change.toFixed(1)}%)`) : 'N/A'
                                 return [
-                                  `${fmt(value, 1)} Baht`,
+                                  `${fmt(value, 1)} ${t('sr_unit_baht')}`,
                                   props.payload.branchCode
                                 ]
                               }}
@@ -749,7 +759,7 @@ export default function SaleReport() {
 
                     {/* Bar Weight % Contribution */}
                     <div className="rounded-xl border border-outline-variant/20 p-4">
-                      <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">Bar Weight % Contribution</h5>
+                      <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">{t('sr_bar_pct_contrib')}</h5>
                       <div className="h-80">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
@@ -782,7 +792,7 @@ export default function SaleReport() {
                                 const change = props.payload.change
                                 const changeStr = change != null ? (change >= 0 ? `(+${change.toFixed(1)}%)` : `(${change.toFixed(1)}%)`) : 'N/A'
                                 return [
-                                  `${fmt(value, 1)} Baht`,
+                                  `${fmt(value, 1)} ${t('sr_unit_baht')}`,
                                   props.payload.branchCode
                                 ]
                               }}
@@ -795,7 +805,7 @@ export default function SaleReport() {
 
                     {/* Total Weight % Contribution */}
                     <div className="rounded-xl border border-outline-variant/20 p-4">
-                      <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">Total Weight % Contribution</h5>
+                      <h5 className="font-label-md text-label-md text-on-surface mb-3 text-center">{t('sr_total_pct_contrib')}</h5>
                       <div className="h-80">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
@@ -828,7 +838,7 @@ export default function SaleReport() {
                                 const change = props.payload.change
                                 const changeStr = change != null ? (change >= 0 ? `(+${change.toFixed(1)}%)` : `(${change.toFixed(1)}%)`) : 'N/A'
                                 return [
-                                  `${fmt(value, 1)} Baht`,
+                                  `${fmt(value, 1)} ${t('sr_unit_baht')}`,
                                   props.payload.branchCode
                                 ]
                               }}
@@ -855,8 +865,8 @@ export default function SaleReport() {
               {/* Branch Analyst section */}
               {d.byBranch.length > 0 && (
                 <GlassCard elevated className="p-6">
-                  <h4 className="font-headline-md text-headline-md text-on-surface mb-1">Branch Analyst</h4>
-                  <p className="text-body-sm text-on-surface-variant mb-6">{MONTHS[month - 1]} {year} — vs {lmLabel}</p>
+                  <h4 className="font-headline-md text-headline-md text-on-surface mb-1">{t('sr_branch_analyst')}</h4>
+                  <p className="text-body-sm text-on-surface-variant mb-6">{MONTHS[month - 1]} {year} — {t('sr_vs')} {lmLabel}</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {d.byBranch.map(branch => (
                       <div key={branch.branch_id} className="rounded-xl p-4 border border-white/20" style={{ background: BRANCH_COLORS[d.byBranch.indexOf(branch) % BRANCH_COLORS.length] + '15', borderTop: `3px solid ${BRANCH_COLORS[d.byBranch.indexOf(branch) % BRANCH_COLORS.length]}` }}>
@@ -866,16 +876,16 @@ export default function SaleReport() {
                           </div>
                           <div>
                             <p className="font-bold text-body-sm text-on-surface">{branch.branch_name}</p>
-                            <p className="text-[10px] text-on-surface-variant">{fmt(branch.total, 1)} Baht</p>
+                            <p className="text-[10px] text-on-surface-variant">{fmt(branch.total, 1)} {t('sr_unit_baht')}</p>
                           </div>
                         </div>
 
                         {/* Gold Type Breakdown */}
                         <div className="mb-4">
-                          <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-2">Gold Type</p>
+                          <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-2">{t('sr_gold_type')}</p>
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs text-on-surface">Jewelry</span>
+                              <span className="text-xs text-on-surface">{t('sr_jewelry')}</span>
                               <div className="flex items-center gap-2">
                                 <span className="text-xs font-bold tabular-nums">{branch.jewelry_pct.toFixed(1)}%</span>
                                 <VarChip pct={branch.jewelry_pct_change} compact />
@@ -885,7 +895,7 @@ export default function SaleReport() {
                               <div className="h-full bg-primary rounded-full" style={{ width: `${branch.jewelry_pct}%` }} />
                             </div>
                             <div className="flex items-center justify-between">
-                              <span className="text-xs text-on-surface">Bar</span>
+                              <span className="text-xs text-on-surface">{t('sr_bar')}</span>
                               <div className="flex items-center gap-2">
                                 <span className="text-xs font-bold tabular-nums">{branch.bar_pct.toFixed(1)}%</span>
                                 <VarChip pct={branch.bar_pct_change} compact />
@@ -899,10 +909,10 @@ export default function SaleReport() {
 
                         {/* Customer Type Breakdown */}
                         <div>
-                          <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-2">Customer Type</p>
+                          <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-2">{t('sr_customer_type')}</p>
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs text-on-surface">B2C</span>
+                              <span className="text-xs text-on-surface">{t('sr_b2c')}</span>
                               <div className="flex items-center gap-2">
                                 <span className="text-xs font-bold tabular-nums">{branch.b2c_pct.toFixed(1)}%</span>
                                 <VarChip pct={branch.b2c_pct_change} compact />
@@ -912,7 +922,7 @@ export default function SaleReport() {
                               <div className="h-full bg-secondary rounded-full" style={{ width: `${branch.b2c_pct}%` }} />
                             </div>
                             <div className="flex items-center justify-between">
-                              <span className="text-xs text-on-surface">B2B</span>
+                              <span className="text-xs text-on-surface">{t('sr_b2b')}</span>
                               <div className="flex items-center gap-2">
                                 <span className="text-xs font-bold tabular-nums">{branch.b2b_pct.toFixed(1)}%</span>
                                 <VarChip pct={branch.b2b_pct_change} compact />
@@ -932,14 +942,14 @@ export default function SaleReport() {
               {/* Branch table */}
               <GlassCard elevated className="overflow-hidden">
                 <div className="px-5 py-4 border-b border-white/30">
-                  <h4 className="font-headline-md text-headline-md text-on-surface">Branch Performance</h4>
+                  <h4 className="font-headline-md text-headline-md text-on-surface">{t('sr_branch_performance')}</h4>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-surface-variant/20 border-b border-white/40">
-                        {['Branch','Jewelry (Baht)','Bar (Baht)','Total (Baht)','% Weight Contrib','Qty (pcs)','% Qty Contrib','vs LM%','Reps'].map(h => (
-                          <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
+                        {(['sr_col_branch','sr_col_jewelry_baht','sr_col_bar_baht','sr_col_total_baht','sr_col_weight_contrib','sr_col_qty_pcs','sr_col_qty_contrib','sr_col_vs_lm','sr_col_reps'] as TranslationKey[]).map(h => (
+                          <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{t(h)}</th>
                         ))}
                       </tr>
                     </thead>
@@ -977,7 +987,7 @@ export default function SaleReport() {
                     {d.byBranch.length > 0 && (
                       <tfoot>
                         <tr className="bg-surface-variant/20 border-t border-white/40 font-bold">
-                          <td className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase">Total</td>
+                          <td className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase">{t('sr_total')}</td>
                           <td className="px-5 py-3 tabular-nums">{fmt(d.current.jewelry, 1)}</td>
                           <td className="px-5 py-3 tabular-nums">{fmt(d.current.bar, 1)}</td>
                           <td className="px-5 py-3 tabular-nums">{fmt(d.current.total, 1)}</td>
@@ -1005,10 +1015,10 @@ export default function SaleReport() {
                 {(['b2c', 'b2b'] as const).map(type => {
                   const r = d.byType.find(x => x.staff_type === type)
                   const color = type === 'b2b' ? '#6750a4' : '#990000'
-                  const label = type === 'b2c' ? 'B2C (Retail)' : 'B2B (Wholesale)'
+                  const label = type === 'b2c' ? t('sr_b2c_retail') : t('sr_b2b_wholesale')
                   if (!r) return (
                     <GlassCard key={type} className="p-6 flex items-center justify-center h-40">
-                      <p className="text-on-surface-variant text-body-sm">No {type.toUpperCase()} data this period</p>
+                      <p className="text-on-surface-variant text-body-sm">{type.toUpperCase()} {t('sr_no_type_data')}</p>
                     </GlassCard>
                   )
                   return (
@@ -1018,16 +1028,16 @@ export default function SaleReport() {
                           <span className="px-3 py-1 rounded-full text-white font-bold text-sm" style={{ background: color }}>{type.toUpperCase()}</span>
                           <span className="font-headline-md text-headline-md text-on-surface">{label}</span>
                         </div>
-                        <span className="text-on-surface-variant text-body-sm">{r.reps} reps</span>
+                        <span className="text-on-surface-variant text-body-sm">{r.reps} {t('sr_reps')}</span>
                       </div>
                       <div className="grid grid-cols-2 gap-3 mb-4">
                         {[
-                          { l: 'Jewelry MTD',      v: fmt(r.jewelry, 1) + ' Baht' },
-                          { l: 'Bar MTD',          v: fmt(r.bar, 1) + ' Baht'     },
-                          { l: 'Total Weight MTD', v: fmt(r.total, 1) + ' Baht', bold: true },
-                          { l: 'Qty MTD',          v: fmtInt(r.qty) + ' pcs'      },
-                          { l: 'Weight % Contrib', v: r.weight_contrib.toFixed(1) + '%' },
-                          { l: 'Qty % Contrib',    v: r.qty_contrib.toFixed(1) + '%'    },
+                          { l: t('sr_jewelry_mtd'),      v: fmt(r.jewelry, 1) + ' ' + t('sr_unit_baht') },
+                          { l: t('sr_bar_mtd'),          v: fmt(r.bar, 1) + ' ' + t('sr_unit_baht')     },
+                          { l: t('sr_total_weight_mtd'), v: fmt(r.total, 1) + ' ' + t('sr_unit_baht'), bold: true },
+                          { l: t('sr_qty_mtd'),          v: fmtInt(r.qty) + ' ' + t('sr_unit_pcs')      },
+                          { l: t('sr_weight_contrib'),   v: r.weight_contrib.toFixed(1) + '%' },
+                          { l: t('sr_qty_contrib'),      v: r.qty_contrib.toFixed(1) + '%'    },
                         ].map(item => (
                           <div key={item.l} className="rounded-xl p-3" style={{ background: `${color}12` }}>
                             <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-1">{item.l}</p>
@@ -1038,7 +1048,7 @@ export default function SaleReport() {
                         ))}
                       </div>
                       <div className="flex items-center gap-3 pt-3 border-t border-white/20">
-                        <span className="text-[11px] text-on-surface-variant">vs {lmLabel} same period:</span>
+                        <span className="text-[11px] text-on-surface-variant">{t('sr_vs')} {lmLabel} {t('sr_vs_same_period')}:</span>
                         <VarChip pct={r.var_total_pct} />
                       </div>
                     </GlassCard>
@@ -1049,17 +1059,17 @@ export default function SaleReport() {
               {/* B2C vs B2B side-by-side bar */}
               {d.byType.length > 0 && (
                 <GlassCard elevated className="p-6">
-                  <h4 className="font-headline-md text-headline-md text-on-surface mb-4">B2C vs B2B Comparison</h4>
+                  <h4 className="font-headline-md text-headline-md text-on-surface mb-4">{t('sr_b2c_vs_b2b')}</h4>
                   <div className="h-52">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={d.byType} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="staff_type" tickFormatter={v => v.toUpperCase()} tick={{ fontSize: 12, fontWeight: 700 }} />
                         <YAxis tick={{ fontSize: 10 }} tickFormatter={fmtInt} />
-                        <Tooltip formatter={(v: number, name: string) => [fmt(v, 1) + ' Baht', name]} contentStyle={{ fontSize: 12, borderRadius: 10 }} />
+                        <Tooltip formatter={(v: number, name: string) => [fmt(v, 1) + ' ' + t('sr_unit_baht'), name]} contentStyle={{ fontSize: 12, borderRadius: 10 }} />
                         <Legend iconType="circle" iconSize={8} />
-                        <Bar dataKey="jewelry" name="Jewelry" fill="#990000" radius={[0,0,0,0]} maxBarSize={48} />
-                        <Bar dataKey="bar"     name="Bar"     fill="#9c6e1b" radius={[3,3,0,0]} maxBarSize={48} />
+                        <Bar dataKey="jewelry" name={t('sr_jewelry')} fill="#990000" radius={[0,0,0,0]} maxBarSize={48} />
+                        <Bar dataKey="bar"     name={t('sr_bar')}     fill="#9c6e1b" radius={[3,3,0,0]} maxBarSize={48} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -1076,7 +1086,7 @@ export default function SaleReport() {
               {/* Weekly/Monthly Detail — free date range, can cross months/years */}
               <GlassCard elevated className="p-5">
                 <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
-                  <p className="font-headline-md text-headline-md text-on-surface">Weekly & Monthly Detail</p>
+                  <p className="font-headline-md text-headline-md text-on-surface">{t('sr_weekly_monthly_detail')}</p>
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container border border-white/20">
                     <span className="material-symbols-outlined text-sm text-primary">date_range</span>
                     <input type="date" value={trendFrom} max={trendTo}
@@ -1089,7 +1099,7 @@ export default function SaleReport() {
                   </div>
                 </div>
                 <p className="text-body-sm text-on-surface-variant mb-4">
-                  Independent of the Month filter above — pick any range, even across multiple months or years.
+                  {t('sr_trend_independent')}
                 </p>
                 <WeeklyMonthlyDetail data={trendData} loading={trendLoading} trendTo={trendTo} />
               </GlassCard>
@@ -1097,9 +1107,9 @@ export default function SaleReport() {
               {/* Daily area chart */}
               {d.dailyTrend.length > 0 && (
                 <GlassCard elevated className="p-6">
-                  <h4 className="font-headline-md text-headline-md text-on-surface mb-1">Daily Sales Trend</h4>
+                  <h4 className="font-headline-md text-headline-md text-on-surface mb-1">{t('sr_daily_sales_trend')}</h4>
                   <p className="text-body-sm text-on-surface-variant mb-4">
-                    Jewelry + Bar weight per day · {dateFrom} → {dateTo}
+                    {t('sr_jewelry_bar_per_day')} · {dateFrom} → {dateTo}
                   </p>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
@@ -1118,12 +1128,12 @@ export default function SaleReport() {
                         <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={d => d.slice(5)} />
                         <YAxis tick={{ fontSize: 10 }} tickFormatter={fmtInt} />
                         <Tooltip
-                          formatter={(v: number, name: string) => [fmt(v, 1) + ' Baht', name]}
+                          formatter={(v: number, name: string) => [fmt(v, 1) + ' ' + t('sr_unit_baht'), name]}
                           contentStyle={{ borderRadius: 10, fontSize: 12 }}
                         />
                         <Legend iconType="circle" iconSize={8} />
-                        <Area type="monotone" dataKey="jewelry" name="Jewelry" stroke="#990000" strokeWidth={2} fill="url(#gradJewelry)" dot={{ r: 2.5, fill: '#990000' }} />
-                        <Area type="monotone" dataKey="bar"     name="Bar"     stroke="#9c6e1b" strokeWidth={2} fill="url(#gradBar)"     dot={{ r: 2.5, fill: '#9c6e1b' }} />
+                        <Area type="monotone" dataKey="jewelry" name={t('sr_jewelry')} stroke="#990000" strokeWidth={2} fill="url(#gradJewelry)" dot={{ r: 2.5, fill: '#990000' }} />
+                        <Area type="monotone" dataKey="bar"     name={t('sr_bar')}     stroke="#9c6e1b" strokeWidth={2} fill="url(#gradBar)"     dot={{ r: 2.5, fill: '#9c6e1b' }} />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -1136,16 +1146,16 @@ export default function SaleReport() {
               {/* Qty daily line */}
               {d.dailyTrend.length > 0 && (
                 <GlassCard elevated className="p-6">
-                  <h4 className="font-headline-md text-headline-md text-on-surface mb-1">Daily Quantity Trend</h4>
-                  <p className="text-body-sm text-on-surface-variant mb-4">Units sold per day</p>
+                  <h4 className="font-headline-md text-headline-md text-on-surface mb-1">{t('sr_daily_qty_trend')}</h4>
+                  <p className="text-body-sm text-on-surface-variant mb-4">{t('sr_units_per_day')}</p>
                   <div className="h-48">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={d.dailyTrend} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e0e0" />
                         <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={d => d.slice(5)} />
                         <YAxis tick={{ fontSize: 10 }} />
-                        <Tooltip formatter={(v: number) => [fmtInt(v) + ' pcs', 'Qty']} contentStyle={{ borderRadius: 10, fontSize: 12 }} />
-                        <Line type="monotone" dataKey="qty" name="Quantity" stroke="#6750a4" strokeWidth={2.5} dot={{ r: 3, fill: '#6750a4' }} />
+                        <Tooltip formatter={(v: number) => [fmtInt(v) + ' ' + t('sr_unit_pcs'), t('sr_quantity')]} contentStyle={{ borderRadius: 10, fontSize: 12 }} />
+                        <Line type="monotone" dataKey="qty" name={t('sr_quantity')} stroke="#6750a4" strokeWidth={2.5} dot={{ r: 3, fill: '#6750a4' }} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -1155,8 +1165,8 @@ export default function SaleReport() {
               {/* Weekly summary bar chart (last 8 weeks) */}
               {d.weeklyTrend.length > 0 && (
                 <GlassCard elevated className="p-6">
-                  <h4 className="font-headline-md text-headline-md text-on-surface mb-1">Weekly Trend (Last 8 Weeks)</h4>
-                  <p className="text-body-sm text-on-surface-variant mb-4">Total weight per week · Latest week highlighted</p>
+                  <h4 className="font-headline-md text-headline-md text-on-surface mb-1">{t('sr_weekly_trend_8wk')}</h4>
+                  <p className="text-body-sm text-on-surface-variant mb-4">{t('sr_weekly_trend_sub')}</p>
                   <div className="h-56">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={d.weeklyTrend} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
@@ -1164,15 +1174,15 @@ export default function SaleReport() {
                         <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                         <YAxis tick={{ fontSize: 10 }} tickFormatter={fmtInt} />
                         <Tooltip
-                          formatter={(v: number, name: string) => [fmt(v, 1) + ' Baht', name]}
+                          formatter={(v: number, name: string) => [fmt(v, 1) + ' ' + t('sr_unit_baht'), name]}
                           labelFormatter={(_l, p) => `${p?.[0]?.payload?.label ?? _l} (${p?.[0]?.payload?.week_start ?? ''})`}
                           contentStyle={{ borderRadius: 10, fontSize: 12 }}
                         />
                         <Legend iconType="circle" iconSize={8} />
-                        <Bar dataKey="jewelry" name="Jewelry" stackId="w" fill="#990000" radius={[0,0,0,0]}>
+                        <Bar dataKey="jewelry" name={t('sr_jewelry')} stackId="w" fill="#990000" radius={[0,0,0,0]}>
                           {d.weeklyTrend.map((_, i) => <Cell key={i} fill={i === d.weeklyTrend.length - 1 ? '#990000' : '#99000088'} />)}
                         </Bar>
-                        <Bar dataKey="bar" name="Bar" stackId="w" fill="#9c6e1b" radius={[3,3,0,0]}>
+                        <Bar dataKey="bar" name={t('sr_bar')} stackId="w" fill="#9c6e1b" radius={[3,3,0,0]}>
                           {d.weeklyTrend.map((_, i) => <Cell key={i} fill={i === d.weeklyTrend.length - 1 ? '#9c6e1b' : '#9c6e1b88'} />)}
                         </Bar>
                       </BarChart>
@@ -1184,7 +1194,7 @@ export default function SaleReport() {
               {/* No data fallback */}
               {d.dailyTrend.length === 0 && d.weeklyTrend.length === 0 && (
                 <div className="flex items-center justify-center h-48 text-on-surface-variant text-body-sm">
-                  No entry data for this period.
+                  {t('sr_no_entry_period')}
                 </div>
               )}
             </div>
