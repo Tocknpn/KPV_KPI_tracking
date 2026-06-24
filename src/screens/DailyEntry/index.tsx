@@ -4,6 +4,7 @@ import { GlassCard } from '../../components/ui/GlassCard'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import { validateDailyRows } from '../../utils/csv'
+import { useLanguage } from '../../i18n/LanguageContext'
 import { parseXLSX, readFileAsArrayBuffer, generateDailyTemplateXLSX, downloadXLSX } from '../../utils/xlsx'
 
 function fmt(n: number) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
@@ -12,6 +13,7 @@ interface UploadSummary { totalRecords: number; totalJewelry: number; totalBar: 
 interface ErrorRow { row: number; data: { date: string; repCode: string; jewelryWeightG: number; barWeightG: number; quantity: number }; reason: string }
 
 export default function DailyEntry() {
+  const { t } = useLanguage()
   const { token, user, branches } = useAuthStore()
   const { selectedBranchId } = useAppStore()
   const [date] = useState(new Date().toISOString().split('T')[0])
@@ -128,18 +130,18 @@ export default function DailyEntry() {
   }
 
   return (
-    <AppShell title="SalesTrack Pro">
+    <AppShell title="KPV Sale Tracking">
       {/* Header */}
       <div className="flex justify-between items-end mb-6">
         <div>
-          <h2 className="font-headline-lg text-headline-lg text-on-surface">Daily XLSX Upload</h2>
+          <h2 className="font-headline-lg text-headline-lg text-on-surface">{t('de_title')}</h2>
           <p className="text-on-surface-variant text-body-md">{branchName}</p>
         </div>
       </div>
 
       <CSVUploadPanel
-        title="Daily Performance Upload"
-        description="Upload daily KPI data for one or more dates. If a record already exists for a rep + date, the row is rejected — ask an Accountant Manager to clear the conflicting upload batch before re-uploading."
+        title={t('de_panel_title')}
+        description={t('de_panel_desc')}
         templateNote="Format: Date (YYYY-MM-DD), Staff_ID, Full_Name, Branch_ID, KPI_1 (Jewelry g), KPI_2 (Bar g), KPI_3 (Quantity)"
         onDownloadTemplate={downloadDailyTemplate}
         templateFilename={`daily_template_${date}.xlsx`}
@@ -154,7 +156,7 @@ export default function DailyEntry() {
         isDragging={isDragging}
         setIsDragging={setIsDragging}
         fileRef={fileRef}
-        submitLabel="Import Daily Data"
+        submitLabel={t('de_import_daily_data')}
         accent="primary"
       />
 
@@ -163,16 +165,16 @@ export default function DailyEntry() {
         <GlassCard elevated className="p-6 mt-6">
           <h4 className="font-headline-md text-headline-md text-on-surface mb-4 flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">fact_check</span>
-            Results after upload
+            {t('de_results_after_upload')}
           </h4>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
             {[
-              { l: 'Total Record',  v: uploadSummary.totalRecords },
-              { l: 'Total Jewelry', v: fmt(uploadSummary.totalJewelry) + ' g' },
-              { l: 'Total Bar',     v: fmt(uploadSummary.totalBar) + ' g' },
-              { l: 'Total Qty',     v: uploadSummary.totalQty },
-              { l: 'Total Weight',  v: fmt(uploadSummary.totalWeight) + ' g' },
-              { l: 'Complete',      v: uploadSummary.complete },
+              { l: t('de_total_record'),  v: uploadSummary.totalRecords },
+              { l: t('de_total_jewelry'), v: fmt(uploadSummary.totalJewelry) + ' g' },
+              { l: t('de_total_bar'),     v: fmt(uploadSummary.totalBar) + ' g' },
+              { l: t('de_total_qty'),     v: uploadSummary.totalQty },
+              { l: t('de_total_weight'),  v: fmt(uploadSummary.totalWeight) + ' g' },
+              { l: t('de_complete'),      v: uploadSummary.complete },
             ].map(item => (
               <div key={item.l} className="bg-surface-container/40 rounded-xl p-3">
                 <p className="text-[9px] text-on-surface-variant uppercase font-bold mb-1">{item.l}</p>
@@ -184,17 +186,17 @@ export default function DailyEntry() {
             <div className="flex items-center justify-between bg-error-container/20 border border-error/20 rounded-xl px-5 py-3">
               <p className="text-body-sm text-error font-bold flex items-center gap-2">
                 <span className="material-symbols-outlined text-sm">error</span>
-                {uploadSummary.errors} record{uploadSummary.errors > 1 ? 's' : ''} failed to import
+                {uploadSummary.errors} {t('de_records_failed')}
               </p>
               <button onClick={() => setShowErrorModal(true)}
                 className="px-4 py-2 rounded-lg bg-error text-white font-label-md text-label-md hover:opacity-90 transition-all">
-                View &amp; Fix Errors
+                {t('de_view_fix_errors')}
               </button>
             </div>
           ) : (
             <div className="flex items-center gap-2 bg-tertiary-fixed/30 text-on-tertiary-fixed-variant px-5 py-3 rounded-xl">
               <span className="material-symbols-outlined text-tertiary">cloud_done</span>
-              <p className="text-body-sm font-medium">All {uploadSummary.complete} records imported and published to the cloud.</p>
+              <p className="text-body-sm font-medium">{t('de_all_imported')} {uploadSummary.complete} {t('de_records_imported')}</p>
             </div>
           )}
         </GlassCard>
@@ -225,6 +227,7 @@ interface PanelProps {
 }
 
 function CSVUploadPanel({ title, description, templateNote, onDownloadTemplate, onFilePick, uploadFile, uploading, preview, errors, result, onSubmit, onReset, isDragging, setIsDragging, fileRef, submitLabel, accent }: PanelProps) {
+  const { t } = useLanguage()
   const accentBtn = accent === 'secondary'
     ? 'bg-secondary text-white hover:opacity-90'
     : 'bg-primary text-white hover:opacity-90'
@@ -245,7 +248,7 @@ function CSVUploadPanel({ title, description, templateNote, onDownloadTemplate, 
           <button onClick={onDownloadTemplate}
             className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 border border-outline-variant rounded-lg text-on-surface-variant font-label-md text-label-md hover:bg-surface-container transition-colors">
             <span className="material-symbols-outlined text-sm">download</span>
-            Download Template
+            {t('de_download_template')}
           </button>
         </div>
       </GlassCard>
@@ -262,8 +265,8 @@ function CSVUploadPanel({ title, description, templateNote, onDownloadTemplate, 
           <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) onFilePick(f) }} />
           <span className="material-symbols-outlined text-4xl text-on-surface-variant/40 mb-3">upload_file</span>
-          <p className="font-label-md text-label-md text-on-surface-variant">Drop XLSX file here or click to browse</p>
-          <p className="text-[11px] text-on-surface-variant/50 mt-1">Accepts .xlsx — supports Lao text</p>
+          <p className="font-label-md text-label-md text-on-surface-variant">{t('de_drop_file')}</p>
+          <p className="text-[11px] text-on-surface-variant/50 mt-1">{t('de_accepts_lao')}</p>
         </div>
       )}
 
@@ -303,7 +306,7 @@ function CSVUploadPanel({ title, description, templateNote, onDownloadTemplate, 
                 </tbody>
               </table>
               <p className="px-4 py-2 text-[11px] text-on-surface-variant/60 border-t border-outline-variant/10">
-                Showing first 3 rows preview
+                {t('de_showing_3_rows')}
               </p>
             </div>
           )}
@@ -311,7 +314,7 @@ function CSVUploadPanel({ title, description, templateNote, onDownloadTemplate, 
           {/* Errors */}
           {errors.length > 0 && (
             <div className="p-4 bg-error-container/20 border-t border-error/10">
-              <p className="font-label-md text-label-md text-error mb-2">⚠ Warnings ({errors.length})</p>
+              <p className="font-label-md text-label-md text-error mb-2">⚠ {t('de_warnings')} ({errors.length})</p>
               <ul className="space-y-1 max-h-32 overflow-y-auto">
                 {errors.map((e, i) => <li key={i} className="text-[11px] text-on-error-container">{e}</li>)}
               </ul>
@@ -320,14 +323,14 @@ function CSVUploadPanel({ title, description, templateNote, onDownloadTemplate, 
 
           <div className="p-4 flex gap-3 border-t border-outline-variant/10">
             <button onClick={onReset} className="px-4 py-2 rounded-lg border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container transition-colors">
-              Change File
+              {t('de_change_file')}
             </button>
             <button onClick={onSubmit} disabled={uploading}
               className={`px-6 py-2 rounded-lg font-label-md text-label-md flex items-center gap-2 transition-all disabled:opacity-60 ${accentBtn}`}>
               <span className={`material-symbols-outlined text-sm ${uploading ? 'animate-spin-slow' : ''}`}>
                 {uploading ? 'sync' : 'cloud_upload'}
               </span>
-              {uploading ? 'Processing...' : submitLabel}
+              {uploading ? t('de_processing') : submitLabel}
             </button>
           </div>
         </GlassCard>
@@ -350,6 +353,7 @@ function ErrorFixModal({ rows, onReupload, onClose }: {
   onReupload: (fixed: ErrorRow[]) => Promise<void>
   onClose: () => void
 }) {
+  const { t } = useLanguage()
   const [local, setLocal] = useState<ErrorRow[]>(rows)
   const [submitting, setSubmitting] = useState(false)
 
@@ -375,8 +379,8 @@ function ErrorFixModal({ rows, onReupload, onClose }: {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col animate-slide-in">
         <div className="flex justify-between items-center p-6 border-b border-outline-variant/10">
           <div>
-            <h3 className="font-headline-md text-on-surface">Fix Error Records</h3>
-            <p className="text-body-sm text-on-surface-variant mt-0.5">Edit the fields below, then reupload. Completed records were already published to the cloud.</p>
+            <h3 className="font-headline-md text-on-surface">{t('de_fix_error_records')}</h3>
+            <p className="text-body-sm text-on-surface-variant mt-0.5">{t('de_fix_modal_desc')}</p>
           </div>
           <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors">
             <span className="material-symbols-outlined">close</span>
@@ -385,30 +389,30 @@ function ErrorFixModal({ rows, onReupload, onClose }: {
         <div className="overflow-y-auto flex-1 p-6 space-y-3">
           {local.map((r, i) => (
             <div key={i} className="border border-error/20 bg-error-container/10 rounded-xl p-4">
-              <p className="text-[11px] text-error font-bold mb-2">Row {r.row}: {r.reason}</p>
+              <p className="text-[11px] text-error font-bold mb-2">{t('de_row')} {r.row}: {r.reason}</p>
               <div className="grid grid-cols-5 gap-3">
                 <div>
-                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">Date</label>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('de_field_date')}</label>
                   <input value={r.data.date} onChange={e => updateField(i, 'date', e.target.value)}
                     className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
                 </div>
                 <div>
-                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">Rep Code</label>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('de_field_rep_code')}</label>
                   <input value={r.data.repCode} onChange={e => updateField(i, 'repCode', e.target.value)}
                     className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
                 </div>
                 <div>
-                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">Jewelry</label>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('de_field_jewelry')}</label>
                   <input type="number" value={r.data.jewelryWeightG} onChange={e => updateField(i, 'jewelryWeightG', e.target.value)}
                     className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
                 </div>
                 <div>
-                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">Bar</label>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('de_field_bar')}</label>
                   <input type="number" value={r.data.barWeightG} onChange={e => updateField(i, 'barWeightG', e.target.value)}
                     className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
                 </div>
                 <div>
-                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">Qty</label>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('de_field_qty')}</label>
                   <input type="number" value={r.data.quantity} onChange={e => updateField(i, 'quantity', e.target.value)}
                     className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
                 </div>
@@ -418,12 +422,12 @@ function ErrorFixModal({ rows, onReupload, onClose }: {
         </div>
         <div className="flex gap-3 p-6 border-t border-outline-variant/10">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border border-outline-variant text-on-surface-variant font-label-md hover:bg-surface-container transition-colors">
-            Close
+            {t('de_close')}
           </button>
           <button onClick={handleReupload} disabled={submitting}
             className="flex-1 py-2.5 rounded-lg bg-primary text-white font-label-md flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 shadow-primary">
             <span className={`material-symbols-outlined text-sm ${submitting ? 'animate-spin-slow' : ''}`}>{submitting ? 'sync' : 'cloud_upload'}</span>
-            {submitting ? 'Reuploading...' : 'Reupload Fixed Records'}
+            {submitting ? t('de_reuploading') : t('de_reupload_fixed')}
           </button>
         </div>
       </div>
