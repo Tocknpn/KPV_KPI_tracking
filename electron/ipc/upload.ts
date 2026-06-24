@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin, logAudit } from './auth'
-import { pushRosterIfConfigured, healLocalRosterBeforePush, syncEntriesToCloudIfConfigured, deleteEntriesFromCloud } from './sheets'
+import { pushRosterIfConfigured, healLocalRosterBeforePush, syncEntriesToCloudIfConfigured, deleteEntriesFromCloud, syncUploadLogsToCloudIfConfigured } from './sheets'
 import { snapshotSalesman, snapshotSupervisor, publishMonth, publishMonthFromDate, getRosterMapAsOf } from '../db/history'
 
 export interface UploadRowResult {
@@ -133,6 +133,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
 
       // Completed records are saved locally above; auto-publish them to the cloud now
       syncEntriesToCloudIfConfigured(db).catch(() => {})
+      syncUploadLogsToCloudIfConfigured(db).catch(() => {})
       return {
         success: true, count: imported, skipped: skippedCodes.length, results, errorRows,
         summary: {
@@ -143,6 +144,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       prepare(db, `UPDATE upload_logs SET status = 'error', notes = ? WHERE id = ?`).run(msg, logId)
+      syncUploadLogsToCloudIfConfigured(db).catch(() => {})
       return { success: false, error: msg }
     }
   })
@@ -270,11 +272,13 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
         VALUES (?, ?, 'target', ?, ?, ?, ?, 'success', ?)
       `).run(meta.branchId, user.id, meta.filename, imported, month, year,
         skipped.length ? `Skipped unknown codes: ${skipped.slice(0,5).join(', ')}` : null)
+      syncUploadLogsToCloudIfConfigured(db).catch(() => {})
 
       return { success: true, count: imported, skipped: skipped.length }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       prepare(db, `INSERT INTO upload_logs (branch_id, user_id, upload_type, filename, records_count, month, year, status, notes) VALUES (?, ?, 'target', ?, 0, ?, ?, 'error', ?)`).run(meta.branchId, user.id, meta.filename, month, year, msg)
+      syncUploadLogsToCloudIfConfigured(db).catch(() => {})
       return { success: false, error: msg }
     }
   })

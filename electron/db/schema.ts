@@ -6,7 +6,7 @@ export interface SchemaDb {
   prepare(sql: string): { run(params?: unknown[]): unknown }
 }
 
-const SCHEMA_VERSION = 27
+const SCHEMA_VERSION = 28
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -251,7 +251,8 @@ const V2_TABLES = `
     month         INTEGER,
     year          INTEGER,
     status        TEXT    NOT NULL DEFAULT 'success',
-    notes         TEXT
+    notes         TEXT,
+    synced        INTEGER NOT NULL DEFAULT 0
   );
 `
 
@@ -709,6 +710,14 @@ export function applySchema(db: SchemaDb): boolean {
     // writers — never clears/rewrites the sheet, only appends new rows).
     try { db.run(`ALTER TABLE audit_logs ADD COLUMN synced INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '27')`).run()
+  }
+
+  if (currentVersion < 28) {
+    // upload_logs (Upload History screen) was local-only — wiped permanently on every
+    // reinstall/reconnect with no cloud copy to pull back from. Same append-only fix as
+    // audit_logs above: synced=0 marks rows not yet pushed.
+    try { db.run(`ALTER TABLE upload_logs ADD COLUMN synced INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '28')`).run()
   }
 
   // Self-heal columns that BASE_TABLES was historically missing (salesmen.supervisor_id,

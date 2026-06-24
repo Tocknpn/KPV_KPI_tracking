@@ -22,6 +22,7 @@ const TABS = {
   MONTHLY_TARGETS: 'MonthlyBranchTargets',
   KPI_SUBMISSIONS: 'KpiSubmissions',
   AUDIT_LOG: 'AuditLog',
+  UPLOAD_LOG: 'UploadLog',
 } as const
 
 const SHEET_HEADERS = ['Date', 'Branch', 'Rep Code', 'Salesman Name', 'Jewelry (Baht)', 'Bar (Baht)', 'Qty']
@@ -446,6 +447,50 @@ export async function syncAuditLogsToCloudIfConfigured(db: Database): Promise<vo
   } catch { /* Sheets unavailable — silently skip */ }
 }
 
+// ── Push unsynced upload-history records (append-only, same pattern as audit logs) ──
+// upload_logs (Upload History screen) was local-only — every record on it was wiped for
+// good on any reinstall/reconnect (the wipe-then-pull in bootstrapConnect deletes it, and
+// there was no cloud copy to pull back). Append-only like audit_logs: never clear+rewrite,
+// safe under concurrent writers across devices.
+export async function syncUploadLogsToCloudIfConfigured(db: Database): Promise<void> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return
+  try {
+    const auth   = getServiceAuth(saPath)
+    const sheets = google.sheets({ version: 'v4', auth })
+
+    const unsynced = prepare(db, `
+      SELECT ul.id, ul.uploaded_at, b.code AS branch_code, u.username, ul.upload_type, ul.filename,
+             ul.records_count, ul.date_from, ul.date_to, ul.month, ul.year, ul.status, ul.notes
+      FROM upload_logs ul
+      JOIN branches b ON b.id = ul.branch_id
+      JOIN users u ON u.id = ul.user_id
+      WHERE ul.synced=0 ORDER BY ul.id
+    `).all() as Array<{
+      id: number; uploaded_at: string; branch_code: string; username: string; upload_type: string; filename: string
+      records_count: number; date_from: string | null; date_to: string | null; month: number | null; year: number | null
+      status: string; notes: string | null
+    }>
+
+    if (!unsynced.length) return
+
+    const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: `${TABS.UPLOAD_LOG}!A1` }).catch(() => null)
+    if (!headerCheck?.data?.values?.[0]?.[0]) {
+      await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetsId, requestBody: { requests: [{ addSheet: { properties: { title: TABS.UPLOAD_LOG } } }] } }).catch(() => {})
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: sheetsId, range: `${TABS.UPLOAD_LOG}!A1`, valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [['uploaded_at', 'branch_code', 'username', 'upload_type', 'filename', 'records_count', 'date_from', 'date_to', 'month', 'year', 'status', 'notes']] },
+      })
+    }
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: sheetsId, range: `${TABS.UPLOAD_LOG}!A:L`, valueInputOption: 'USER_ENTERED',
+      requestBody: { values: unsynced.map(r => [r.uploaded_at, r.branch_code, r.username, r.upload_type, r.filename, r.records_count, r.date_from ?? '', r.date_to ?? '', r.month ?? '', r.year ?? '', r.status, r.notes ?? '']) },
+    })
+    unsynced.forEach(r => prepare(db, `UPDATE upload_logs SET synced=1 WHERE id=?`).run(r.id))
+  } catch { /* Sheets unavailable — silently skip */ }
+}
+
 // ── Delete matching daily entries from Google Sheets ───────────────────────
 export async function deleteEntriesFromCloud(
   db: Database,
@@ -705,10 +750,10 @@ export async function pushAllConfigIfConfigured(db: Database): Promise<void> {
 // ── Pull all config + entries from Sheets (standalone, callable from main.ts) ─
 export async function pullAllFromCloud(sheetsId: string, saPath: string): Promise<{
   success: boolean
-  counts: { entries: number; configs: number; settings: number; branches: number; kpiRates: number; roster: number; qtyTiers: number; users: number; supervisors: number; monthlyTargets: number; kpiSubmissions: number; auditLogs: number }
+  counts: { entries: number; configs: number; settings: number; branches: number; kpiRates: number; roster: number; qtyTiers: number; users: number; supervisors: number; monthlyTargets: number; kpiSubmissions: number; auditLogs: number; uploadLogs: number }
   error?: string
 }> {
-  const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, supervisorRoster: 0, qtyTiers: 0, users: 0, supervisors: 0, monthlyTargets: 0, kpiSubmissions: 0, auditLogs: 0 }
+  const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, supervisorRoster: 0, qtyTiers: 0, users: 0, supervisors: 0, monthlyTargets: 0, kpiSubmissions: 0, auditLogs: 0, uploadLogs: 0 }
   const sectionErrors: string[] = []
   try {
     const auth   = getServiceAuth(saPath)
@@ -986,6 +1031,32 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
           VALUES (?,?,?,?,?,?,?,?,1)
         `).run(occurredAt, username ?? '', role ?? '', eventType, targetType || null, targetId || null, detail || null, isNaN(branchId) ? null : branchId)
         counts.auditLogs++
+      }
+    }
+
+    // ── Upload History (merge — append-only, same dedup-by-content shape as Audit Log) ──
+    const uploadRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: `${TABS.UPLOAD_LOG}!A:L` }).catch(() => null)
+    if (uploadRes) {
+      const all = uploadRes.data.values ?? []
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'uploaded_at' ? all.slice(1) : all
+      for (const row of data) {
+        const [uploadedAt, branchCode, username, uploadType, filename, recordsCountStr, dateFrom, dateTo, monthStr, yearStr, status, notes] = row as string[]
+        if (!uploadedAt || !uploadType) continue
+        const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
+        const u = prepare(db, `SELECT id FROM users WHERE username = ?`).get(username) as { id: number } | undefined
+        if (!branch || !u) continue // can't satisfy NOT NULL branch_id/user_id — skip rather than guess
+        const exists = prepare(db, `
+          SELECT 1 FROM upload_logs
+          WHERE uploaded_at=? AND user_id=? AND upload_type=? AND filename=? AND IFNULL(notes,'')=?
+          LIMIT 1
+        `).get(uploadedAt, u.id, uploadType, filename ?? '', notes ?? '')
+        if (exists) continue
+        const month = parseInt(monthStr, 10); const year = parseInt(yearStr, 10)
+        prepare(db, `
+          INSERT INTO upload_logs (uploaded_at, branch_id, user_id, upload_type, filename, records_count, date_from, date_to, month, year, status, notes, synced)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)
+        `).run(uploadedAt, branch.id, u.id, uploadType, filename ?? '', parseInt(recordsCountStr, 10) || 0, dateFrom || null, dateTo || null, isNaN(month) ? null : month, isNaN(year) ? null : year, status || 'success', notes || null)
+        counts.uploadLogs++
       }
     }
 
