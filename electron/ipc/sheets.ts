@@ -1063,36 +1063,39 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       // seeds test accounts/rates/tiers on a brand-new install too, so a fresh reinstall
       // has just as much to wipe as a database switch on an already-running device.
       const db = getDb()
-      transaction(db, () => {
-        // admin is the one user row this wipe keeps (WHERE username != 'admin' below) — if it
-        // was ever assigned a branch_id/supervisor_id, those FKs must be cleared before
-        // branches/supervisors get reset/deleted, or the delete below throws FOREIGN KEY
-        // constraint failed (a surviving row still pointing at a row about to vanish).
-        prepare(db, `UPDATE users SET branch_id = NULL, supervisor_id = NULL WHERE username = 'admin'`).run()
-        prepare(db, `DELETE FROM daily_entries`).run()
-        prepare(db, `DELETE FROM targets`).run()
-        prepare(db, `DELETE FROM staff_monthly_targets`).run()
-        prepare(db, `DELETE FROM commission_configs`).run()
-        prepare(db, `DELETE FROM roster_monthly`).run()
-        prepare(db, `DELETE FROM supervisor_roster_monthly`).run()
-        prepare(db, `DELETE FROM upload_logs`).run()
-        prepare(db, `DELETE FROM audit_logs`).run()
-        prepare(db, `DELETE FROM sessions`).run()
-        prepare(db, `DELETE FROM user_permissions`).run()
-        prepare(db, `DELETE FROM salesmen`).run()
-        // Non-admin users (branch_manager/supervisor/etc accounts) can hold a supervisor_id —
-        // must be gone before supervisors itself is deleted, or any such row still alive at
-        // that moment throws FOREIGN KEY constraint failed (same shape as the admin-row fix
-        // above, just for every OTHER user this device actually has).
-        prepare(db, `DELETE FROM users WHERE username != 'admin'`).run()
-        prepare(db, `DELETE FROM supervisors`).run()
-        prepare(db, `DELETE FROM kpi_monthly_submissions`).run()
-        prepare(db, `DELETE FROM branch_kpi_monthly_targets`).run()
-        prepare(db, `DELETE FROM kpi_metric_type_rates`).run()
-        prepare(db, `DELETE FROM kpi_tiers`).run()
-        prepare(db, `DELETE FROM kpi_tier_configs`).run()
-        prepare(db, `UPDATE branches SET kpi_point_target=0, target_b2c_default=0, target_b2b_default=0`).run()
-      })
+      // This wipe deletes ~15 FK-linked tables before re-pulling fresh data — every table
+      // added since has been another chance to get delete order wrong (admin's own
+      // branch/supervisor refs, other seeded users' refs, the next thing someone adds a FK
+      // to tomorrow). Turning FK enforcement off for just this wipe removes the ordering
+      // problem entirely instead of chasing it one table at a time. PRAGMA changes are
+      // ignored mid-transaction in SQLite, so this must wrap the transaction, not sit inside it.
+      db.pragma('foreign_keys = OFF')
+      try {
+        transaction(db, () => {
+          prepare(db, `DELETE FROM daily_entries`).run()
+          prepare(db, `DELETE FROM targets`).run()
+          prepare(db, `DELETE FROM staff_monthly_targets`).run()
+          prepare(db, `DELETE FROM commission_configs`).run()
+          prepare(db, `DELETE FROM roster_monthly`).run()
+          prepare(db, `DELETE FROM supervisor_roster_monthly`).run()
+          prepare(db, `DELETE FROM upload_logs`).run()
+          prepare(db, `DELETE FROM audit_logs`).run()
+          prepare(db, `DELETE FROM sessions`).run()
+          prepare(db, `DELETE FROM user_permissions`).run()
+          prepare(db, `DELETE FROM salesmen`).run()
+          prepare(db, `DELETE FROM users WHERE username != 'admin'`).run()
+          prepare(db, `UPDATE users SET branch_id = NULL, supervisor_id = NULL WHERE username = 'admin'`).run()
+          prepare(db, `DELETE FROM supervisors`).run()
+          prepare(db, `DELETE FROM kpi_monthly_submissions`).run()
+          prepare(db, `DELETE FROM branch_kpi_monthly_targets`).run()
+          prepare(db, `DELETE FROM kpi_metric_type_rates`).run()
+          prepare(db, `DELETE FROM kpi_tiers`).run()
+          prepare(db, `DELETE FROM kpi_tier_configs`).run()
+          prepare(db, `UPDATE branches SET kpi_point_target=0, target_b2c_default=0, target_b2b_default=0`).run()
+        })
+      } finally {
+        db.pragma('foreign_keys = ON')
+      }
 
       // Persist sheets_id/service_account_path only AFTER a successful pull — otherwise a
       // pull failure (network drop mid-sync, bad tab, etc.) leaves the device marked
