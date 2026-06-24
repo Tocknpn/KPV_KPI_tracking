@@ -6,7 +6,7 @@ export interface SchemaDb {
   prepare(sql: string): { run(params?: unknown[]): unknown }
 }
 
-const SCHEMA_VERSION = 28
+const SCHEMA_VERSION = 29
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -77,6 +77,19 @@ const BASE_TABLES = `
     created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE(salesman_id, entry_date)
+  );
+  -- Tombstones for daily_entries removals — pull only ever did inserts/updates from
+  -- whatever rows it found on the Sheet, never reconciled rows that vanished there (a
+  -- delete on one device never propagated to any other device's local copy, forever).
+  -- Recording the delete here lets the push side append a "Deleted" marker row to the
+  -- Entries tab and the pull side apply that one exact salesman_id+entry_date deletion
+  -- locally — scoped to a single key, never a bulk wipe.
+  CREATE TABLE IF NOT EXISTS entry_deletions (
+    salesman_id INTEGER NOT NULL REFERENCES salesmen(id),
+    entry_date  TEXT    NOT NULL,
+    deleted_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    synced      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (salesman_id, entry_date)
   );
   CREATE TABLE IF NOT EXISTS kpi_metrics (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -718,6 +731,23 @@ export function applySchema(db: SchemaDb): boolean {
     // audit_logs above: synced=0 marks rows not yet pushed.
     try { db.run(`ALTER TABLE upload_logs ADD COLUMN synced INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '28')`).run()
+  }
+
+  if (currentVersion < 29) {
+    // See entry_deletions comment in BASE_TABLES — daily_entries deletes never propagated
+    // to other devices since pull only ever inserted/updated rows it found, never noticed
+    // rows that disappeared. This tombstone table is what upload.ts's two real delete
+    // actions now write to, so the Sheet (and every other device's pull) learns about it.
+    db.run(`
+      CREATE TABLE IF NOT EXISTS entry_deletions (
+        salesman_id INTEGER NOT NULL REFERENCES salesmen(id),
+        entry_date  TEXT    NOT NULL,
+        deleted_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+        synced      INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (salesman_id, entry_date)
+      )
+    `)
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '29')`).run()
   }
 
   // Self-heal columns that BASE_TABLES was historically missing (salesmen.supervisor_id,

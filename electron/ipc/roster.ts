@@ -212,6 +212,10 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
     const repLabel = `${rep.rep_code ?? id} — ${rep.full_name}`
     transaction(db, () => {
       prepare(db, `DELETE FROM roster_monthly WHERE salesman_id = ?`).run(id)
+      // A rep with zero current daily_entries can still have entry_deletions tombstones from
+      // an earlier batch-delete (those rows still reference salesman_id) — clear them too or
+      // the salesmen delete below throws FOREIGN KEY constraint failed.
+      prepare(db, `DELETE FROM entry_deletions WHERE salesman_id = ?`).run(id)
       prepare(db, `DELETE FROM salesmen WHERE id = ?`).run(id)
     })
     // deletedRepCodes (not touchedKeys) — merge must skip resurrecting this rep from the

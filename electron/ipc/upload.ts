@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin, logAudit } from './auth'
-import { pushRosterIfConfigured, healLocalRosterBeforePush, syncEntriesToCloudIfConfigured, deleteEntriesFromCloud, syncUploadLogsToCloudIfConfigured } from './sheets'
+import { pushRosterIfConfigured, healLocalRosterBeforePush, syncEntriesToCloudIfConfigured, syncUploadLogsToCloudIfConfigured } from './sheets'
 import { snapshotSalesman, snapshotSupervisor, publishMonth, publishMonthFromDate, getRosterMapAsOf } from '../db/history'
 
 export interface UploadRowResult {
@@ -178,22 +178,24 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
       { id: number; branch_id: number; filename: string } | undefined
     if (!batch) return { success: false, error: 'Upload batch not found.' }
 
-    // Fetch entries to delete before erasing them from SQLite
+    // Fetch entries to delete before erasing them from SQLite — also the set of keys that
+    // need a tombstone written so other devices' pulls learn about this delete too (a plain
+    // local DELETE never reaches the Sheet or any other device on its own).
     const entriesToDelete = prepare(db, `
-      SELECT de.entry_date, b.code AS branch_code, s.rep_code
+      SELECT de.salesman_id, de.entry_date
       FROM daily_entries de
-      JOIN branches b ON b.id = de.branch_id
-      JOIN salesmen s ON s.id = de.salesman_id
       WHERE de.upload_log_id = ?
-    `).all(uploadLogId) as Array<{ entry_date: string; branch_code: string; rep_code: string }>
+    `).all(uploadLogId) as Array<{ salesman_id: number; entry_date: string }>
 
     const deleted = prepare(db, `DELETE FROM daily_entries WHERE upload_log_id = ?`).run(uploadLogId)
+    const deletedAt = new Date().toISOString()
+    entriesToDelete.forEach(e => prepare(db, `
+      INSERT INTO entry_deletions (salesman_id, entry_date, deleted_at, synced) VALUES (?,?,?,0)
+      ON CONFLICT(salesman_id, entry_date) DO UPDATE SET deleted_at=excluded.deleted_at, synced=0
+    `).run(e.salesman_id, e.entry_date, deletedAt))
     logAudit(db, user.id, user.username, user.role, 'sales_upload_deleted',
       `Cleared "${batch.filename}" (${deleted.changes ?? 0} entries) — open for resubmission`, 'upload_log', String(uploadLogId), batch.branch_id)
 
-    if (entriesToDelete.length) {
-      await deleteEntriesFromCloud(db, entriesToDelete).catch(() => {})
-    }
     syncEntriesToCloudIfConfigured(db).catch(() => {})
     return { success: true, deletedEntries: deleted.changes ?? 0 }
   })
@@ -217,25 +219,26 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     const branch = prepare(db, `SELECT name FROM branches WHERE id = ?`).get(branchId) as { name: string } | undefined
     if (!branch) return { success: false, error: 'Branch not found.' }
 
-    // Fetch entries to delete before erasing them from SQLite
+    // Fetch entries to delete before erasing them from SQLite — also the set of keys that
+    // need a tombstone written so other devices' pulls learn about this delete too.
     const entriesToDelete = prepare(db, `
-      SELECT de.entry_date, b.code AS branch_code, s.rep_code
+      SELECT de.salesman_id, de.entry_date
       FROM daily_entries de
-      JOIN branches b ON b.id = de.branch_id
-      JOIN salesmen s ON s.id = de.salesman_id
       WHERE de.branch_id = ? AND de.entry_date >= ? AND de.entry_date <= ?
-    `).all(branchId, dateFrom, dateTo) as Array<{ entry_date: string; branch_code: string; rep_code: string }>
+    `).all(branchId, dateFrom, dateTo) as Array<{ salesman_id: number; entry_date: string }>
 
     const deleted = prepare(db, `DELETE FROM daily_entries WHERE branch_id = ? AND entry_date >= ? AND entry_date <= ?`)
       .run(branchId, dateFrom, dateTo)
+    const deletedAt = new Date().toISOString()
+    entriesToDelete.forEach(e => prepare(db, `
+      INSERT INTO entry_deletions (salesman_id, entry_date, deleted_at, synced) VALUES (?,?,?,0)
+      ON CONFLICT(salesman_id, entry_date) DO UPDATE SET deleted_at=excluded.deleted_at, synced=0
+    `).run(e.salesman_id, e.entry_date, deletedAt))
     const period = dateFrom === dateTo ? dateFrom : `${dateFrom} → ${dateTo}`
     logAudit(db, user.id, user.username, user.role, 'sales_upload_deleted',
       `Cleared ${branch.name} entries for ${period} (${deleted.changes ?? 0} entries) — open for resubmission`,
       'daily_entries', `${branchId}:${dateFrom}..${dateTo}`, branchId)
 
-    if (entriesToDelete.length) {
-      await deleteEntriesFromCloud(db, entriesToDelete).catch(() => {})
-    }
     syncEntriesToCloudIfConfigured(db).catch(() => {})
     return { success: true, deletedEntries: deleted.changes ?? 0 }
   })

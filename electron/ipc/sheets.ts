@@ -25,7 +25,10 @@ const TABS = {
   UPLOAD_LOG: 'UploadLog',
 } as const
 
-const SHEET_HEADERS = ['Date', 'Branch', 'Rep Code', 'Salesman Name', 'Jewelry (Baht)', 'Bar (Baht)', 'Qty']
+// Deleted is a tombstone marker, not a real data column — a row with Deleted='1' means
+// "this salesman_id+entry_date was removed on the pushing device," everything else on that
+// row is blank/informational. See entry_deletions in schema.ts for why this exists.
+const SHEET_HEADERS = ['Date', 'Branch', 'Rep Code', 'Salesman Name', 'Jewelry (Baht)', 'Bar (Baht)', 'Qty', 'Deleted']
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 export function getServiceAuth(serviceAccountPath: string) {
@@ -377,37 +380,61 @@ async function pushKpiSubmissions(db: Database, sheets: ReturnType<typeof google
   await writeTab(sheets, spreadsheetId, TABS.KPI_SUBMISSIONS, ['Month', 'submitted_by', 'submitted_at'], rows)
 }
 
-// ── Push all unsynced daily entries — exported for use in entries.ts, upload.ts ─
-export async function syncEntriesToCloudIfConfigured(db: Database): Promise<void> {
+// ── Shared push: unsynced daily entries + unsynced delete tombstones ──────────
+// Single choke point both syncEntriesToCloudIfConfigured (fire-and-forget) and the manual
+// "Push to Sheets" button delegate to — previously each had its own copy of this exact
+// append logic, which is how the Entries push code drifted in the first place. Append-only:
+// new entries and tombstone rows are appended, the tab itself is never cleared/rewritten.
+async function pushEntriesAndDeletions(db: Database): Promise<number> {
   const sheetsId = getSetting('sheets_id')
   const saPath   = getSetting('service_account_path')
-  if (!sheetsId || !saPath) return
-  try {
-    const auth   = getServiceAuth(saPath)
-    const sheets = google.sheets({ version: 'v4', auth })
+  if (!sheetsId || !saPath) return 0
 
-    const unsynced = prepare(db, `
-      SELECT de.*, s.rep_code, s.full_name, b.code AS branch_code
-      FROM daily_entries de JOIN salesmen s ON s.id=de.salesman_id JOIN branches b ON b.id=de.branch_id
-      WHERE de.synced=0 ORDER BY de.entry_date, de.branch_id
-    `).all() as Array<{ id: number; rep_code: string | null; full_name: string; branch_code: string; entry_date: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number }>
+  const auth   = getServiceAuth(saPath)
+  const sheets = google.sheets({ version: 'v4', auth })
 
-    if (!unsynced.length) return
+  const unsyncedEntries = prepare(db, `
+    SELECT de.id, de.entry_date, b.code AS branch_code, s.rep_code, s.full_name, de.jewelry_weight_g, de.bar_weight_g, de.quantity
+    FROM daily_entries de JOIN salesmen s ON s.id=de.salesman_id JOIN branches b ON b.id=de.branch_id
+    WHERE de.synced=0 ORDER BY de.entry_date, de.branch_id
+  `).all() as Array<{ id: number; entry_date: string; branch_code: string; rep_code: string | null; full_name: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number }>
 
-    const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A1' }).catch(() => null)
-    if (!headerCheck?.data?.values?.[0]?.[0]) {
-      await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetsId, requestBody: { requests: [{ addSheet: { properties: { title: TABS.ENTRIES } } }] } }).catch(() => {})
-      await sheets.spreadsheets.values.update({ spreadsheetId: sheetsId, range: 'Entries!A1', valueInputOption: 'USER_ENTERED', requestBody: { values: [SHEET_HEADERS] } })
-    }
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: sheetsId, range: 'Entries!A:G', valueInputOption: 'USER_ENTERED',
-      requestBody: { values: unsynced.map(e => [e.entry_date, e.branch_code, e.rep_code ?? '', e.full_name, e.jewelry_weight_g, e.bar_weight_g, e.quantity]) },
-    })
-    const now = new Date().toISOString()
-    unsynced.forEach(e => prepare(db, `UPDATE daily_entries SET synced=1 WHERE id=?`).run(e.id))
-    prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now)
-    prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('push', ?, 'success')`).run(unsynced.length)
-  } catch { /* Sheets unavailable — silently skip */ }
+  const unsyncedDeletions = prepare(db, `
+    SELECT ed.salesman_id, ed.entry_date, b.code AS branch_code, s.rep_code, s.full_name
+    FROM entry_deletions ed JOIN salesmen s ON s.id=ed.salesman_id JOIN branches b ON b.id=s.branch_id
+    WHERE ed.synced=0 ORDER BY ed.entry_date
+  `).all() as Array<{ salesman_id: number; entry_date: string; branch_code: string; rep_code: string | null; full_name: string }>
+
+  if (!unsyncedEntries.length && !unsyncedDeletions.length) return 0
+
+  const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: `${TABS.ENTRIES}!A1` }).catch(() => null)
+  if (!headerCheck?.data?.values?.[0]?.[0]) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetsId, requestBody: { requests: [{ addSheet: { properties: { title: TABS.ENTRIES } } }] } }).catch(() => {})
+    await sheets.spreadsheets.values.update({ spreadsheetId: sheetsId, range: `${TABS.ENTRIES}!A1`, valueInputOption: 'USER_ENTERED', requestBody: { values: [SHEET_HEADERS] } })
+  }
+
+  const rows = [
+    ...unsyncedEntries.map(e => [e.entry_date, e.branch_code, e.rep_code ?? '', e.full_name, e.jewelry_weight_g, e.bar_weight_g, e.quantity, '']),
+    ...unsyncedDeletions.map(d => [d.entry_date, d.branch_code, d.rep_code ?? '', d.full_name, '', '', '', '1']),
+  ]
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: sheetsId, range: `${TABS.ENTRIES}!A:H`, valueInputOption: 'USER_ENTERED',
+    requestBody: { values: rows },
+  })
+
+  const now = new Date().toISOString()
+  unsyncedEntries.forEach(e => prepare(db, `UPDATE daily_entries SET synced=1 WHERE id=?`).run(e.id))
+  unsyncedDeletions.forEach(d => prepare(db, `UPDATE entry_deletions SET synced=1 WHERE salesman_id=? AND entry_date=?`).run(d.salesman_id, d.entry_date))
+  prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now)
+  prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('push', ?, 'success')`).run(rows.length)
+
+  return rows.length
+}
+
+// ── Push all unsynced daily entries — exported for use in entries.ts, upload.ts ─
+export async function syncEntriesToCloudIfConfigured(db: Database): Promise<void> {
+  try { await pushEntriesAndDeletions(db) }
+  catch { /* Sheets unavailable — silently skip */ }
 }
 
 // ── Push unsynced audit log events (append-only, same pattern as entries) ──
@@ -489,60 +516,6 @@ export async function syncUploadLogsToCloudIfConfigured(db: Database): Promise<v
     })
     unsynced.forEach(r => prepare(db, `UPDATE upload_logs SET synced=1 WHERE id=?`).run(r.id))
   } catch { /* Sheets unavailable — silently skip */ }
-}
-
-// ── Delete matching daily entries from Google Sheets ───────────────────────
-export async function deleteEntriesFromCloud(
-  db: Database,
-  entriesToDelete: Array<{ entry_date: string; branch_code: string; rep_code: string }>
-): Promise<void> {
-  const sheetsId = getSetting('sheets_id')
-  const saPath   = getSetting('service_account_path')
-  if (!sheetsId || !saPath || !entriesToDelete.length) return
-
-  try {
-    const auth   = getServiceAuth(saPath)
-    const sheets = google.sheets({ version: 'v4', auth })
-
-    // Fetch all current rows from the Entries sheet
-    const res = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A:G' })
-    const allRows = res.data.values ?? []
-    if (allRows.length <= 1) return // only header or empty
-
-    const header = allRows[0]
-    const dataRows = allRows.slice(1)
-
-    // Create a lookup set for fast O(1) checking
-    const deleteKeys = new Set(
-      entriesToDelete.map(e => `${e.entry_date}|${e.branch_code}|${e.rep_code ?? ''}`)
-    )
-
-    // Filter out rows to delete
-    const remainingRows = dataRows.filter(row => {
-      const [date, branch, repCode] = row
-      const key = `${date}|${branch}|${repCode ?? ''}`
-      return !deleteKeys.has(key)
-    })
-
-    // If any rows were actually filtered out, rewrite the Entries sheet
-    if (remainingRows.length < dataRows.length) {
-      // Clear the Entries range first
-      await sheets.spreadsheets.values.clear({ spreadsheetId: sheetsId, range: 'Entries!A:G' })
-      // Update with the header and remaining rows
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: sheetsId,
-        range: 'Entries!A1',
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [header, ...remainingRows] },
-      })
-
-      const deletedCount = dataRows.length - remainingRows.length
-      prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('delete', ?, 'success')`).run(deletedCount)
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    prepare(db, `INSERT INTO sync_logs (direction, records_count, status, error_message) VALUES ('delete', 0, 'error', ?)`).run(msg)
-  }
 }
 
 // ── Push only the Roster tab — exported for roster.ts ────────────────────────
@@ -923,15 +896,25 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     catch (e) { sectionErrors.push(`SupervisorRoster: ${e instanceof Error ? e.message : String(e)}`) }
 
     // ── Daily Entries ─────────────────────────────────────────────────
-    const entryRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A:G' }).catch(() => ({ data: { values: [] } }))
+    // Rows are processed in sheet order, so for any salesman_id+entry_date key that appears
+    // more than once (a re-edit, or a delete tombstone appended after the original row),
+    // the LAST occurrence wins — same "last write wins" rule the rest of this loop already
+    // relied on, now also covering deletes. A Deleted='1' row only ever removes the one
+    // exact key it names — never a bulk wipe — so a malformed/truncated pull can't take out
+    // more than the single row each tombstone explicitly identifies.
+    const entryRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: `${TABS.ENTRIES}!A:H` }).catch(() => ({ data: { values: [] } }))
     const allEntries = entryRes.data.values ?? []
     const firstIsHeader = allEntries[0] && !String(allEntries[0][0]).match(/^\d{4}-\d{2}-\d{2}$/)
     const entryRows = firstIsHeader ? allEntries.slice(1) : allEntries
     for (const row of entryRows) {
-      const [entryDate, , repCode, , jewelryStr, barStr, qtyStr] = row as string[]
+      const [entryDate, , repCode, , jewelryStr, barStr, qtyStr, deletedFlag] = row as string[]
       if (!entryDate || !repCode) continue
       const sm = prepare(db, `SELECT id, branch_id, staff_type FROM salesmen WHERE rep_code = ? AND active = 1`).get(repCode) as { id: number; branch_id: number; staff_type: string } | undefined
       if (!sm) continue
+      if (deletedFlag === '1') {
+        prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(sm.id, entryDate)
+        continue
+      }
       prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(sm.id, entryDate)
       prepare(db, `INSERT INTO daily_entries (salesman_id, branch_id, staff_type, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at) VALUES (?,?,?,?,?,?,?,1,?)`).run(sm.id, sm.branch_id, sm.staff_type, entryDate, parseFloat(jewelryStr) || 0, parseFloat(barStr) || 0, parseInt(qtyStr) || 0, now)
       counts.entries++
@@ -1144,6 +1127,7 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       try {
         transaction(db, () => {
           prepare(db, `DELETE FROM daily_entries`).run()
+          prepare(db, `DELETE FROM entry_deletions`).run()
           prepare(db, `DELETE FROM targets`).run()
           prepare(db, `DELETE FROM staff_monthly_targets`).run()
           prepare(db, `DELETE FROM commission_configs`).run()
@@ -1247,42 +1231,10 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
     if (!sheetsId || !saPath) return { success: false, error: 'Google Sheets not configured. Go to Settings.' }
 
     try {
-      const auth = getServiceAuth(saPath)
-      const sheets = google.sheets({ version: 'v4', auth })
       const db = getDb()
-
-      const unsynced = prepare(db, `
-        SELECT de.*, s.rep_code, s.full_name, b.code AS branch_code
-        FROM daily_entries de JOIN salesmen s ON s.id=de.salesman_id JOIN branches b ON b.id=de.branch_id
-        WHERE de.synced=0 ORDER BY de.entry_date, de.branch_id
-      `).all() as Array<{ id: number; rep_code: string | null; full_name: string; branch_code: string; entry_date: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number }>
-
-      if (unsynced.length === 0) return { success: true, count: 0, message: 'Nothing to sync.' }
-
-      const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A1' }).catch(() => null)
-      const hasHeader = headerCheck?.data?.values?.[0]?.[0]
-      if (!hasHeader) {
-        await sheets.spreadsheets.batchUpdate({
-          spreadsheetId: sheetsId,
-          requestBody: { requests: [{ addSheet: { properties: { title: TABS.ENTRIES } } }] },
-        }).catch(() => {})
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: sheetsId, range: 'Entries!A1', valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [SHEET_HEADERS] },
-        })
-      }
-
-      await sheets.spreadsheets.values.append({
-        spreadsheetId: sheetsId, range: 'Entries!A:G', valueInputOption: 'USER_ENTERED',
-        requestBody: { values: unsynced.map(e => [e.entry_date, e.branch_code, e.rep_code ?? '', e.full_name, e.jewelry_weight_g, e.bar_weight_g, e.quantity]) },
-      })
-
-      unsynced.forEach(e => prepare(db, `UPDATE daily_entries SET synced=1 WHERE id=?`).run(e.id))
-      const now = new Date().toISOString()
-      prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now)
-      prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('push', ?, 'success')`).run(unsynced.length)
-
-      return { success: true, count: unsynced.length }
+      const count = await pushEntriesAndDeletions(db)
+      if (count === 0) return { success: true, count: 0, message: 'Nothing to sync.' }
+      return { success: true, count }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       prepare(getDb(), `INSERT INTO sync_logs (direction, records_count, status, error_message) VALUES ('push', 0, 'error', ?)`).run(msg)
@@ -1348,8 +1300,12 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
         }
       }
 
-      // Mark ALL entries as unsynced so syncEntriesToCloudIfConfigured re-pushes all
+      // Mark ALL entries AND all delete tombstones as unsynced so syncEntriesToCloudIfConfigured
+      // re-pushes everything — the clear below wipes any tombstone history already on the
+      // Sheet too, so without resetting entry_deletions a device that hasn't seen an old
+      // delete yet would lose its only remaining record of that deletion ever happening.
       prepare(db, `UPDATE daily_entries SET synced=0`).run()
+      prepare(db, `UPDATE entry_deletions SET synced=0`).run()
 
       // Clear the Entries tab so we get a clean rewrite (not duplicates)
       await sheets.spreadsheets.batchUpdate({

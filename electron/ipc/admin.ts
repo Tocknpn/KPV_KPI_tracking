@@ -14,6 +14,7 @@ export function registerAdminHandlers(ipcMain: IpcMain): void {
       // roster_monthly/staff_monthly_targets must go before salesmen — both have an FK
       // to it and PRAGMA foreign_keys=ON means deleting salesmen first throws.
       prepare(db, `DELETE FROM daily_entries`).run()
+      prepare(db, `DELETE FROM entry_deletions`).run()
       prepare(db, `DELETE FROM targets`).run()
       prepare(db, `DELETE FROM roster_monthly`).run()
       prepare(db, `DELETE FROM staff_monthly_targets`).run()
