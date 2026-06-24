@@ -1064,6 +1064,11 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       // has just as much to wipe as a database switch on an already-running device.
       const db = getDb()
       transaction(db, () => {
+        // admin is the one user row this wipe keeps (WHERE username != 'admin' below) — if it
+        // was ever assigned a branch_id/supervisor_id, those FKs must be cleared before
+        // branches/supervisors get reset/deleted, or the delete below throws FOREIGN KEY
+        // constraint failed (a surviving row still pointing at a row about to vanish).
+        prepare(db, `UPDATE users SET branch_id = NULL, supervisor_id = NULL WHERE username = 'admin'`).run()
         prepare(db, `DELETE FROM daily_entries`).run()
         prepare(db, `DELETE FROM targets`).run()
         prepare(db, `DELETE FROM staff_monthly_targets`).run()
@@ -1249,6 +1254,21 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       const db     = getDb()
       const auth   = getServiceAuth(saPath)
       const sheets = google.sheets({ version: 'v4', auth })
+
+      // Guard against wiping the cloud Entries tab with an incomplete local copy — e.g. a
+      // freshly-installed device whose initial pull missed rows (skipped salesman match,
+      // network blip, etc). Without this, the clear-then-rewrite below would permanently
+      // erase every row the local device doesn't have, even though the Sheet had them.
+      // Mirrors the same protection writeTab already applies to the config tabs.
+      const { n: localCount } = prepare(db, `SELECT COUNT(*) AS n FROM daily_entries`).get() as { n: number }
+      const remoteCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A:A' }).catch(() => null)
+      const remoteCount = Math.max((remoteCheck?.data.values?.length ?? 1) - 1, 0) // minus header row
+      if (remoteCount > 0 && localCount < remoteCount) {
+        return {
+          success: false,
+          error: `Refused to force-sync: this device only has ${localCount} local entries but the Sheet has ${remoteCount}. Pull from cloud first so this device has the full history before forcing a full sync, or this would erase rows the Sheet has that this device doesn't.`,
+        }
+      }
 
       // Mark ALL entries as unsynced so syncEntriesToCloudIfConfigured re-pushes all
       prepare(db, `UPDATE daily_entries SET synced=0`).run()
