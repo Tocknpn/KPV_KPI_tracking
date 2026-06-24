@@ -26,6 +26,13 @@
     overflow-x: hidden;
   }
 
+  /* Lao text needs Noto Sans Lao's glyphs — Inter has none, falls back to tofu boxes
+     without this. Toggled on <body> by LanguageContext so it covers every screen at once,
+     not just whichever ones get translated first. */
+  body.lang-lo {
+    font-family: 'Noto Sans Lao', 'Inter', system-ui, sans-serif;
+  }
+
   /* Tabular figures for data cells */
   .tabular-nums,
   [class*="font-tabular"] {

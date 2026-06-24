@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
+import { useLanguage } from '../../i18n/LanguageContext'
 import { fmtDateTime } from '../../utils/dates'
 
 const ZOOM_LEVELS = [
@@ -33,6 +34,7 @@ export function TopBar({ title }: Props) {
   const navigate = useNavigate()
   const { token, user, clearSession, branches } = useAuthStore()
   const { unsyncedCount, sidebarCollapsed, lastSyncedAt, setLastSyncedAt, syncBanner } = useAppStore()
+  const { lang, setLang, t } = useLanguage()
   const [, setNowTick] = useState(0) // forces relativeTime() to re-render as time passes
   const [zoom, setZoomState] = useState<number>(() => {
     const saved = localStorage.getItem(ZOOM_KEY)
@@ -85,6 +87,12 @@ export function TopBar({ title }: Props) {
     navigate('/login')
   }
 
+  function handleLanguageToggle() {
+    const next = lang === 'en' ? 'lo' : 'en'
+    const confirmMsg = next === 'lo' ? t('lang_confirm_to_lo') : t('lang_confirm_to_en')
+    if (window.confirm(confirmMsg)) setLang(next)
+  }
+
   return (
     <header
       className="fixed top-0 right-0 h-16 bg-surface/80 backdrop-blur-2xl border-b border-white/20 z-40 flex justify-between items-center px-gutter"
@@ -120,11 +128,22 @@ export function TopBar({ title }: Props) {
           </span>
         )}
 
+        {/* Language toggle — flag + code, confirm before switching since it affects the
+            whole app at once. Placed right before Refresh per request. */}
+        <button
+          onClick={handleLanguageToggle}
+          title={lang === 'en' ? t('lang_confirm_to_lo') : t('lang_confirm_to_en')}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/20 bg-surface-container text-[11px] font-bold text-on-surface-variant hover:bg-surface-container-high transition-colors"
+        >
+          <span>{lang === 'en' ? '🇬🇧' : '🇱🇦'}</span>
+          <span>{t('lang_button_label')}</span>
+        </button>
+
         {/* Manual refresh — pull-only, see handleRefresh for why push isn't part of this */}
         <button
           onClick={handleRefresh}
           disabled={refreshing}
-          title={refreshError ? `Pull failed: ${refreshError}` : 'Refresh data from Google Sheets'}
+          title={refreshError ? `Pull failed: ${refreshError}` : t('topbar_refresh_tooltip')}
           className="p-1.5 text-on-surface-variant hover:bg-surface-variant/30 hover:text-primary rounded-full transition-colors disabled:opacity-60"
         >
           <span className={`material-symbols-outlined text-[18px] ${refreshing ? 'animate-spin' : ''}`}>
@@ -139,14 +158,14 @@ export function TopBar({ title }: Props) {
             title={`Last synced: ${fmtDateTime(lastSyncedAt)}`}
           >
             <span className="material-symbols-outlined text-[14px]">cloud_done</span>
-            Updated {relativeTime(lastSyncedAt)}
+            {t('topbar_updated')} {relativeTime(lastSyncedAt)}
           </span>
         )}
 
         {/* Unsynced badge */}
         {unsyncedCount > 0 && (
           <span className="text-[10px] font-bold text-secondary bg-secondary-container/30 px-2 py-0.5 rounded-full">
-            {unsyncedCount} unsynced
+            {unsyncedCount} {t('sync_unsynced')}
           </span>
         )}
 
@@ -156,7 +175,7 @@ export function TopBar({ title }: Props) {
             <button
               key={z.value}
               onClick={() => handleZoom(z.value)}
-              title={`UI zoom ${z.label}`}
+              title={`${t('topbar_zoom_tooltip')} ${z.label}`}
               className={`px-2.5 py-1.5 transition-colors whitespace-nowrap ${
                 zoom === z.value
                   ? 'bg-primary text-white'
@@ -172,7 +191,7 @@ export function TopBar({ title }: Props) {
         <button
           onClick={handleLogout}
           className="p-2 text-on-surface-variant hover:bg-surface-variant/30 rounded-full transition-colors"
-          title="Logout"
+          title={t('topbar_logout')}
         >
           <span className="material-symbols-outlined">logout</span>
         </button>

@@ -4,7 +4,17 @@ import { useAppStore } from '../../store/app.store'
 import { ROLE_DEFAULTS } from '../../types'
 import type { UserRole } from '../../types'
 import { NAV_ITEMS } from '../../config/navigation'
+import { useLanguage } from '../../i18n/LanguageContext'
+import type { TranslationKey } from '../../i18n/translations'
 import kpvIcon from '../../assets/kpv-icon.png'
+
+// NAV_ITEMS.key ('dashboard', 'daily_entry', ...) maps 1:1 to a nav_* translation key —
+// keeps navigation.tsx (route/permission source of truth) free of i18n concerns.
+const NAV_LABEL_KEY: Record<string, TranslationKey> = {
+  dashboard: 'nav_dashboard', daily_entry: 'nav_daily_entry', kpi_report: 'nav_kpi_report',
+  sale_report: 'nav_sale_report', upload_history: 'nav_upload_history', roster: 'nav_roster',
+  audit_log: 'nav_audit_log', settings: 'nav_settings', kpi_settings: 'nav_kpi_settings',
+}
 
 const ROLE_COLOR: Record<UserRole, string> = {
   admin:              'bg-error',
@@ -20,6 +30,7 @@ const ROLE_COLOR: Record<UserRole, string> = {
 export function Sidebar() {
   const { user, permissions } = useAuthStore()
   const { unsyncedCount, sidebarCollapsed, setSidebarCollapsed } = useAppStore()
+  const { t } = useLanguage()
   const role = (user?.role ?? 'sales_sup') as UserRole
   const c = sidebarCollapsed
 
@@ -31,13 +42,13 @@ export function Sidebar() {
   const visibleItems = NAV_ITEMS.filter(item => effectivePermissions.includes(item.key))
 
   const portalLabel =
-    role === 'admin'          ? 'Admin Portal'
-    : role === 'top_manager'  ? 'Executive Portal'
-    : role === 'branch_manager' ? 'Manager Portal'
-    : role === 'accountant_officer' ? 'Accountant Officer Portal'
-    : role === 'accountant_manager' ? 'Accountant Manager Portal'
-    : role === 'hr'           ? 'HR Portal'
-    : 'Supervisor Portal'
+    role === 'admin'          ? t('portal_admin')
+    : role === 'top_manager'  ? t('portal_executive')
+    : role === 'branch_manager' ? t('portal_manager')
+    : role === 'accountant_officer' ? t('portal_accountant_officer')
+    : role === 'accountant_manager' ? t('portal_accountant_manager')
+    : role === 'hr'           ? t('portal_hr')
+    : t('portal_supervisor')
 
   return (
     <aside
@@ -72,11 +83,13 @@ export function Sidebar() {
 
       {/* ── Navigation ── */}
       <nav className="flex-1 space-y-0.5 px-2 overflow-hidden">
-        {visibleItems.map(item => (
+        {visibleItems.map(item => {
+          const label = t(NAV_LABEL_KEY[item.key] ?? 'nav_dashboard')
+          return (
           <NavLink
             key={item.to}
             to={item.to}
-            title={c ? item.label : undefined}
+            title={c ? label : undefined}
             className={({ isActive }) =>
               `flex items-center py-3 rounded-lg transition-colors ${
                 c ? 'justify-center px-0' : 'gap-3 px-3'
@@ -88,37 +101,38 @@ export function Sidebar() {
             }
           >
             <span className="material-symbols-outlined flex-shrink-0">{item.icon}</span>
-            {!c && <span className="font-label-md text-label-md truncate">{item.label}</span>}
+            {!c && <span className="font-label-md text-label-md truncate">{label}</span>}
             {!c && item.key === 'kpi_settings' && (
               <span className="ml-auto">
                 <span className="material-symbols-outlined text-sm text-on-surface-variant/50">lock</span>
               </span>
             )}
           </NavLink>
-        ))}
+          )
+        })}
       </nav>
 
       {/* ── Footer ── */}
       <div className="mt-auto pt-4 border-t border-white/10 space-y-2 px-2">
         <div
-          title={c ? (unsyncedCount > 0 ? `${unsyncedCount} unsynced` : 'Synced') : undefined}
+          title={c ? (unsyncedCount > 0 ? `${unsyncedCount} ${t('sync_unsynced')}` : t('sync_live')) : undefined}
           className={`flex items-center rounded-lg bg-surface-container-highest/20 py-2 ${c ? 'justify-center px-0' : 'justify-between px-3'}`}
         >
           <div className={`flex items-center ${c ? '' : 'gap-2'}`}>
             <span className="material-symbols-outlined text-tertiary text-sm">cloud_done</span>
-            {!c && <span className="font-label-md text-label-md text-on-surface-variant">Sync Status</span>}
+            {!c && <span className="font-label-md text-label-md text-on-surface-variant">{t('sync_status')}</span>}
           </div>
           {!c && (
             <div className="flex items-center gap-1.5">
               {unsyncedCount > 0 ? (
                 <>
                   <span className="w-2 h-2 rounded-full bg-secondary animate-pulse-soft" />
-                  <span className="text-[10px] font-bold text-secondary">{unsyncedCount} pending</span>
+                  <span className="text-[10px] font-bold text-secondary">{unsyncedCount} {t('sync_pending')}</span>
                 </>
               ) : (
                 <>
                   <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse-soft" />
-                  <span className="text-[10px] font-bold text-tertiary uppercase">Live</span>
+                  <span className="text-[10px] font-bold text-tertiary uppercase">{t('sync_live')}</span>
                 </>
               )}
             </div>

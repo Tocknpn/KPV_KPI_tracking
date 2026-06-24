@@ -8,8 +8,10 @@ import { GlassCard } from '../../components/ui/GlassCard'
 import { KpiSubmissionBanner } from '../../components/ui/KpiSubmissionBanner'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
+import { useLanguage } from '../../i18n/LanguageContext'
 import { getDefaultDateRange } from '../../utils/dates'
 import type { DashboardStats } from '../../types'
+import type { TranslationKey } from '../../i18n/translations'
 
 function fmt(n: number, decimals = 1) {
   return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
@@ -28,6 +30,7 @@ interface BranchDropdownProps {
 }
 
 function BranchDropdown({ branches, selectedIds, onChange }: BranchDropdownProps) {
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -41,10 +44,10 @@ function BranchDropdown({ branches, selectedIds, onChange }: BranchDropdownProps
 
   const isAll = selectedIds.length === 0
   const label = isAll
-    ? 'All Branches'
+    ? t('dash_all_branches')
     : selectedIds.length === 1
-    ? branches.find(b => b.id === selectedIds[0])?.name ?? '1 Branch'
-    : `${selectedIds.length} Branches`
+    ? branches.find(b => b.id === selectedIds[0])?.name ?? `1 ${t('dash_branch_singular')}`
+    : `${selectedIds.length} ${t('dash_branches_suffix')}`
 
   function toggleBranch(id: number) {
     if (isAll) { onChange([id]); return }
@@ -68,7 +71,7 @@ function BranchDropdown({ branches, selectedIds, onChange }: BranchDropdownProps
         <div className="absolute right-0 top-full mt-2 bg-white/95 backdrop-blur-xl shadow-xl rounded-xl border border-white/40 z-50 min-w-52 py-1">
           <label className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer">
             <input type="checkbox" checked={isAll} onChange={() => onChange([])} className="accent-primary rounded" />
-            <span className="font-label-md text-label-md">All Branches</span>
+            <span className="font-label-md text-label-md">{t('dash_all_branches')}</span>
           </label>
           <div className="border-t border-black/5 my-1" />
           {branches.map(b => (
@@ -152,20 +155,21 @@ function MonthDropdown({ year, month, onChange }: MonthDropdownProps) {
 }
 
 // ── Column config for sortable Top 10 table ──────────────────────────────
-const PERF_COLS: Array<{ label: string; key: string }> = [
-  { label: 'Sales Member',   key: 'full_name'        },
-  { label: 'Position',       key: 'position'         },
-  { label: 'Jewelry (Baht)', key: 'total_jewelry'    },
-  { label: 'Bar (Baht)',     key: 'total_bar'        },
-  { label: 'Qty',            key: 'total_qty'        },
-  { label: 'Actual Pts',     key: 'kpi_total_score'  },
-  { label: '%KPI',           key: 'kpi_pct'          },
+const PERF_COLS: Array<{ labelKey: TranslationKey; key: string }> = [
+  { labelKey: 'dash_col_sales_member', key: 'full_name'        },
+  { labelKey: 'dash_col_position',     key: 'position'         },
+  { labelKey: 'dash_col_jewelry_baht', key: 'total_jewelry'    },
+  { labelKey: 'dash_col_bar_baht',     key: 'total_bar'        },
+  { labelKey: 'dash_col_qty',          key: 'total_qty'        },
+  { labelKey: 'dash_col_actual_pts',   key: 'kpi_total_score'  },
+  { labelKey: 'dash_col_pct_kpi',      key: 'kpi_pct'          },
 ]
 
 // ── Dashboard ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { token, user, branches } = useAuthStore()
   const { selectedBranchIds, setSelectedBranchIds, lastSyncedAt } = useAppStore()
+  const { t } = useLanguage()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [sortCol, setSortCol] = useState<string>('kpi_total_score')
@@ -225,10 +229,10 @@ export default function Dashboard() {
   const kpiPct      = s?.kpiPct ?? 0
 
   const scopeLabel = (() => {
-    if (user?.role === 'sales_sup') return branches.find(b => b.id === user.branchId)?.name ?? 'My Branch'
-    if (effectiveBranchIds.length === 0) return 'All Branches'
-    if (effectiveBranchIds.length === 1) return branches.find(b => b.id === effectiveBranchIds[0])?.name ?? '1 Branch'
-    return `${effectiveBranchIds.length} Branches`
+    if (user?.role === 'sales_sup') return branches.find(b => b.id === user.branchId)?.name ?? t('dash_my_branch')
+    if (effectiveBranchIds.length === 0) return t('dash_all_branches')
+    if (effectiveBranchIds.length === 1) return branches.find(b => b.id === effectiveBranchIds[0])?.name ?? `1 ${t('dash_branch_singular')}`
+    return `${effectiveBranchIds.length} ${t('dash_branches_suffix')}`
   })()
 
   // Date range label for subtitle
@@ -237,12 +241,12 @@ export default function Dashboard() {
     : `${dateFrom} → ${dateTo}`
 
   return (
-    <AppShell title="SalesTrack Pro">
+    <AppShell title="KPV Sale Tracking">
       <KpiSubmissionBanner year={year} month={month} />
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
         <div>
-          <h2 className="font-headline-lg text-headline-lg text-on-surface">Dashboard Overview</h2>
+          <h2 className="font-headline-lg text-headline-lg text-on-surface">{t('dash_overview')}</h2>
           <p className="text-on-surface-variant text-body-md">
             {MONTH_NAMES[month - 1]} {year} — {scopeLabel}
             {rangeLabel && <span className="ml-2 text-[11px] font-mono bg-surface-container px-1.5 py-0.5 rounded">{rangeLabel}</span>}
@@ -296,9 +300,9 @@ export default function Dashboard() {
           {/* ── KPI Hero Cards — raw actuals ── */}
           <section className="grid grid-cols-1 md:grid-cols-3 gap-card-gap mb-8">
             <KpiCard
-              label="Jewelry Weight (MTD)"
+              label={t('dash_jewelry_mtd')}
               value={fmt(s?.mtd.total_jewelry ?? 0)}
-              unit="Baht"
+              unit={t('dash_unit_baht')}
               delta={null}
               icon={<span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>diamond</span>}
               iconBg="bg-primary-container"
@@ -306,9 +310,9 @@ export default function Dashboard() {
               barWidth={`${Math.min(pctJewelry, 100)}%`}
             />
             <KpiCard
-              label="Bar Weight (MTD)"
+              label={t('dash_bar_mtd')}
               value={fmt(s?.mtd.total_bar ?? 0)}
-              unit="Baht"
+              unit={t('dash_unit_baht')}
               delta={null}
               icon={<span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>payments</span>}
               iconBg="bg-secondary-container"
@@ -316,9 +320,9 @@ export default function Dashboard() {
               barWidth={`${Math.min(pctBar, 100)}%`}
             />
             <KpiCard
-              label="Quantity (MTD)"
+              label={t('dash_qty_mtd')}
               value={String(s?.mtd.total_qty ?? 0)}
-              unit="pcs"
+              unit={t('dash_unit_pcs')}
               delta={null}
               icon={<span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>inventory_2</span>}
               iconBg="bg-tertiary-container"
@@ -332,7 +336,7 @@ export default function Dashboard() {
             {/* KPI Point Score */}
             <GlassCard className="lg:col-span-5 p-8">
               <div className="flex items-center justify-between mb-6">
-                <h4 className="font-headline-md text-headline-md font-bold text-on-surface">KPI Score</h4>
+                <h4 className="font-headline-md text-headline-md font-bold text-on-surface">{t('dash_kpi_score')}</h4>
                 <span className="px-3 py-1 bg-surface-container-high rounded-full font-label-md text-label-md text-primary">
                   {MONTH_NAMES[month - 1]} {year}
                 </span>
@@ -342,14 +346,14 @@ export default function Dashboard() {
               <div className="flex flex-col items-center mb-2">
                 <ArcGauge pct={Math.min(kpiPct, 100)} size={160} />
                 <p className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mt-1">
-                  Total KPI
+                  {t('dash_total_kpi')}
                 </p>
                 <div className="text-center mt-2">
                   <p className="font-display-xl text-2xl font-bold text-primary tabular-nums">
-                    {fmtPts(s?.kpiTotalScore ?? 0)} pts
+                    {fmtPts(s?.kpiTotalScore ?? 0)} {t('dash_pts')}
                   </p>
                   <p className="text-body-sm text-on-surface-variant">
-                    of {fmtPts(target)} target
+                    {t('dash_of_target')} {fmtPts(target)} {t('dash_target')}
                     {target > 0 && (
                       <span className="ml-1 font-bold text-primary">{fmt(kpiPct, 1)}%</span>
                     )}
@@ -361,21 +365,21 @@ export default function Dashboard() {
               <div className="flex justify-around gap-4 mt-6 pt-5 border-t border-outline-variant/20">
                 <RadialGauge
                   pct={Math.min(pctJewelry, 100)}
-                  label="Jewelry"
+                  label={t('dash_jewelry')}
                   color="#990000"
-                  subLabel={`${fmtPts(s?.kpiScoreJewelry ?? 0)} pts`}
+                  subLabel={`${fmtPts(s?.kpiScoreJewelry ?? 0)} ${t('dash_pts')}`}
                 />
                 <RadialGauge
                   pct={Math.min(pctBar, 100)}
-                  label="Bar"
+                  label={t('dash_bar')}
                   gold
-                  subLabel={`${fmtPts(s?.kpiScoreBar ?? 0)} pts`}
+                  subLabel={`${fmtPts(s?.kpiScoreBar ?? 0)} ${t('dash_pts')}`}
                 />
                 <RadialGauge
                   pct={Math.min(pctQty, 100)}
-                  label="Qty"
+                  label={t('dash_qty')}
                   color="#17575c"
-                  subLabel={`${fmtPts(s?.kpiScoreQty ?? 0)} pts`}
+                  subLabel={`${fmtPts(s?.kpiScoreQty ?? 0)} ${t('dash_pts')}`}
                 />
               </div>
             </GlassCard>
@@ -383,9 +387,9 @@ export default function Dashboard() {
             {/* Top 10 Performers Table */}
             <GlassCard className="lg:col-span-7 overflow-hidden flex flex-col">
               <div className="p-6 border-b border-white/20 flex items-center justify-between">
-                <h4 className="font-headline-md text-headline-md font-bold text-on-surface">Top 10 Performers</h4>
+                <h4 className="font-headline-md text-headline-md font-bold text-on-surface">{t('dash_top10_performers')}</h4>
                 <Link to="/reports" className="text-primary font-label-md text-label-md hover:underline">
-                  View All →
+                  {t('dash_view_all')}
                 </Link>
               </div>
               <div className="flex-1 overflow-x-auto">
@@ -399,7 +403,7 @@ export default function Dashboard() {
                           className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase cursor-pointer select-none hover:text-primary transition-colors"
                         >
                           <span className="inline-flex items-center gap-1">
-                            {col.label}
+                            {t(col.labelKey)}
                             {sortCol === col.key
                               ? <span className="material-symbols-outlined text-[14px] text-primary">{sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward'}</span>
                               : <span className="material-symbols-outlined text-[14px] opacity-25">unfold_more</span>
@@ -423,7 +427,7 @@ export default function Dashboard() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-5 py-3 text-body-sm text-on-surface-variant">Sales Rep</td>
+                        <td className="px-5 py-3 text-body-sm text-on-surface-variant">{t('dash_sales_rep')}</td>
                         <td className="px-5 py-3 font-tabular-nums text-tabular-nums">{fmt(p.total_jewelry)}</td>
                         <td className="px-5 py-3 font-tabular-nums text-tabular-nums">{fmt(p.total_bar)}</td>
                         <td className="px-5 py-3 font-tabular-nums text-tabular-nums">{p.total_qty}</td>
@@ -438,7 +442,7 @@ export default function Dashboard() {
                     {!s?.topPerformers?.length && (
                       <tr>
                         <td colSpan={7} className="px-5 py-8 text-center text-on-surface-variant text-body-sm">
-                          No entries for this period yet.
+                          {t('dash_no_entries')}
                         </td>
                       </tr>
                     )}
