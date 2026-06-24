@@ -1080,8 +1080,12 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
         prepare(db, `DELETE FROM sessions`).run()
         prepare(db, `DELETE FROM user_permissions`).run()
         prepare(db, `DELETE FROM salesmen`).run()
-        prepare(db, `DELETE FROM supervisors`).run()
+        // Non-admin users (branch_manager/supervisor/etc accounts) can hold a supervisor_id —
+        // must be gone before supervisors itself is deleted, or any such row still alive at
+        // that moment throws FOREIGN KEY constraint failed (same shape as the admin-row fix
+        // above, just for every OTHER user this device actually has).
         prepare(db, `DELETE FROM users WHERE username != 'admin'`).run()
+        prepare(db, `DELETE FROM supervisors`).run()
         prepare(db, `DELETE FROM kpi_monthly_submissions`).run()
         prepare(db, `DELETE FROM branch_kpi_monthly_targets`).run()
         prepare(db, `DELETE FROM kpi_metric_type_rates`).run()
