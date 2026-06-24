@@ -186,7 +186,17 @@ export async function pullRosterFromSheet(
     if (skipKeys.has(`${yearMonth}|${repCode}`)) continue
     const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
     if (!branch) continue
-    // sup_code first (stable), fall back to name+branch match for rows without one
+    const staffType = staffTypeRaw === 'b2b' ? 'b2b' : 'b2c'
+    const active = activeStr === '0' ? 0 : 1
+
+    // sup_code first (stable), fall back to name+branch match — and if still no match,
+    // create the supervisor right here instead of leaving the rep unlinked. Pull used to
+    // assume the dedicated Supervisors tab always owned creation, but if that tab is ever
+    // empty/stale relative to this Roster tab (a real device hit this — Roster clearly had
+    // every rep's supervisor_name, yet local supervisors stayed empty after a reconnect),
+    // every rep importing here would get supervisor_id=null forever with no way to recover
+    // except re-typing every supervisor by hand. This row already carries everything needed
+    // to construct the supervisor (name, branch, staff_type, sup_code).
     let supId: number | null = null
     if (supervisorCode?.trim()) {
       const sup = prepare(db, `SELECT id FROM supervisors WHERE sup_code = ?`).get(supervisorCode.trim()) as { id: number } | undefined
@@ -196,8 +206,11 @@ export async function pullRosterFromSheet(
       const sup = prepare(db, `SELECT id FROM supervisors WHERE branch_id = ? AND (full_name = ? OR nickname = ?)`).get(branch.id, supervisorName, supervisorName) as { id: number } | undefined
       supId = sup?.id ?? null
     }
-    const staffType = staffTypeRaw === 'b2b' ? 'b2b' : 'b2c'
-    const active = activeStr === '0' ? 0 : 1
+    if (!supId && supervisorName) {
+      const ins = prepare(db, `INSERT INTO supervisors (full_name, nickname, branch_id, staff_type, active, sup_code) VALUES (?,'',?,?,1,?)`)
+        .run(supervisorName, branch.id, staffType, supervisorCode?.trim() || null)
+      supId = Number(ins.lastInsertRowid)
+    }
 
     const existing = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(repCode) as { id: number } | undefined
     let salesmanId: number
@@ -235,9 +248,10 @@ export async function pullRosterFromSheet(
 }
 
 // Pull-back for SupervisorRoster — column order must stay in lockstep with
-// pushSupervisorRoster. Does not create supervisors (Roster pull/upload already owns that);
-// a sup_code/name with no match is skipped, since this tab is pure history of supervisors
-// the rep roster already created.
+// pushSupervisorRoster. Used to skip a sup_code/name with no local match (relying on the
+// dedicated Supervisors tab to have created it) — but if that tab is ever empty/stale, this
+// tab's own rows already carry full_name+branch_code+staff_type+sup_code, enough to create
+// the supervisor directly rather than silently dropping it forever.
 export async function pullSupervisorRosterFromSheet(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<number> {
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'SupervisorRoster!A:G' }).catch(() => null)
   if (!res) return 0
@@ -248,9 +262,10 @@ export async function pullSupervisorRosterFromSheet(db: Database, sheets: Return
   for (const row of dataRows as string[][]) {
     const [monthLabel, supCode, fullName, , branchCode, staffTypeRaw, activeStr] = row
     const yearMonth = parseReadableYearMonth(monthLabel)
-    if (!yearMonth || !branchCode) continue
+    if (!yearMonth || !branchCode || !fullName) continue
     const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
     if (!branch) continue
+    const staffType = staffTypeRaw === 'b2b' ? 'b2b' : 'b2c'
 
     let supId: number | null = null
     if (supCode?.trim()) {
@@ -261,9 +276,12 @@ export async function pullSupervisorRosterFromSheet(db: Database, sheets: Return
       const sup = prepare(db, `SELECT id FROM supervisors WHERE branch_id = ? AND full_name = ?`).get(branch.id, fullName) as { id: number } | undefined
       supId = sup?.id ?? null
     }
-    if (!supId) continue
+    if (!supId) {
+      const ins = prepare(db, `INSERT INTO supervisors (full_name, nickname, branch_id, staff_type, active, sup_code) VALUES (?,'',?,?,1,?)`)
+        .run(fullName, branch.id, staffType, supCode?.trim() || null)
+      supId = Number(ins.lastInsertRowid)
+    }
 
-    const staffType = staffTypeRaw === 'b2b' ? 'b2b' : 'b2c'
     const active = activeStr === '0' ? 0 : 1
     prepare(db, `
       INSERT INTO supervisor_roster_monthly (supervisor_id, year_month, branch_id, staff_type, active) VALUES (?,?,?,?,?)
