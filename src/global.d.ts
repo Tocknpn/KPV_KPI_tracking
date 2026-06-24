@@ -93,9 +93,9 @@ interface Window {
       date_from: string | null; date_to: string | null; status: string; notes: string | null
       uploaded_at: string; active_entries: number
     }>>
-    deleteDailyUploadBatch(token: string, uploadLogId: number): Promise<{ success: boolean; deletedEntries?: number; error?: string }>
+    deleteDailyUploadBatch(token: string, uploadLogId: number): Promise<{ success: boolean; deletedEntries?: number; error?: string; cloudSynced?: boolean; cloudSyncError?: string }>
     countDailyEntriesByDate(token: string, branchId: number, dateFrom: string, dateTo: string): Promise<number>
-    deleteDailyEntriesByDate(token: string, branchId: number, dateFrom: string, dateTo: string): Promise<{ success: boolean; deletedEntries?: number; error?: string }>
+    deleteDailyEntriesByDate(token: string, branchId: number, dateFrom: string, dateTo: string): Promise<{ success: boolean; deletedEntries?: number; error?: string; cloudSynced?: boolean; cloudSyncError?: string }>
     getSalesmenForTemplate(token: string, branchId: number | null): Promise<unknown[]>
     getRepUploadStatus(token: string, branchIds?: number[], days?: number): Promise<{ dates: string[]; branches: Array<{ branch_id: number; branch_name: string; branch_code: string; reps: Array<{ id: number; rep_code: string; full_name: string; nickname: string; staff_type: string; supervisor_name: string | null; days: boolean[] }> }> }>
 

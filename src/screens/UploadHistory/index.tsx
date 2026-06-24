@@ -85,7 +85,13 @@ export default function UploadHistory() {
     setDateDelBusy(true)
     try {
       const res = await window.api.deleteDailyEntriesByDate(token, dateDelBranch, dateDelFrom, dateDelTo)
-      if (res.success) { setDateDelCount(null); loadHistory() }
+      if (res.success) {
+        setDateDelCount(null); loadHistory()
+        // Deleted locally fine, but if the tombstone didn't reach the Sheet, a re-upload on
+        // another device will still see the old record as "existing" and get rejected —
+        // surface that now instead of leaving it to be discovered later.
+        if (res.cloudSynced === false) window.alert(res.cloudSyncError ?? 'Delete saved locally but failed to sync to Google Sheets.')
+      }
       else window.alert(res.error ?? 'Failed to delete entries.')
     } finally { setDateDelBusy(false) }
   }

@@ -155,8 +155,14 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('entry:getUnsyncedCount', async (_e, token: string) => {
     requireAuth(token)
-    const row = prepare(getDb(), `SELECT COUNT(*) as count FROM daily_entries WHERE synced = 0`).get() as { count: number }
-    return row?.count ?? 0
+    const db = getDb()
+    // Delete tombstones (entry_deletions) must count too — a delete that hasn't reached the
+    // Sheet yet is just as "unsynced" as a new entry that hasn't, but this previously only
+    // looked at daily_entries, so the badge could read 0 while a delete sat stuck locally
+    // with zero indication anything was wrong.
+    const entries   = prepare(db, `SELECT COUNT(*) as count FROM daily_entries WHERE synced = 0`).get() as { count: number }
+    const deletions = prepare(db, `SELECT COUNT(*) as count FROM entry_deletions WHERE synced = 0`).get() as { count: number }
+    return (entries?.count ?? 0) + (deletions?.count ?? 0)
   })
 
   // ── Supervisor CRUD ───────────────────────────────────────────────────────

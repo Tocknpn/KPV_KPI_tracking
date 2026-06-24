@@ -23,6 +23,7 @@ const TABS = {
   KPI_SUBMISSIONS: 'KpiSubmissions',
   AUDIT_LOG: 'AuditLog',
   UPLOAD_LOG: 'UploadLog',
+  ROSTER_DELETIONS: 'RosterDeletions',
 } as const
 
 // Deleted is a tombstone marker, not a real data column — a row with Deleted='1' means
@@ -437,6 +438,23 @@ export async function syncEntriesToCloudIfConfigured(db: Database): Promise<void
   catch { /* Sheets unavailable — silently skip */ }
 }
 
+// ── Same push, but reports whether it actually landed — for callers where silently
+// swallowing failure is unacceptable (e.g. a delete: the accountant officer waiting to
+// re-upload needs to know the delete tombstone really reached the Sheet, not just that the
+// local delete happened, or they'll re-upload before the manager's delete propagates and
+// the conflicting-record check on their device will reject it for the wrong reason).
+export async function pushEntriesAndDeletionsIfConfigured(db: Database): Promise<{ success: boolean; error?: string }> {
+  const sheetsId = getSetting('sheets_id')
+  const saPath   = getSetting('service_account_path')
+  if (!sheetsId || !saPath) return { success: false, error: 'Google Sheets not configured on this device.' }
+  try {
+    await pushEntriesAndDeletions(db)
+    return { success: true }
+  } catch (e: unknown) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 // ── Push unsynced audit log events (append-only, same pattern as entries) ──
 // audit_logs was local-only before this — one device's actions were invisible on every
 // other device's Audit Log screen. Append-only, never clear+rewrite: a continuously
@@ -519,6 +537,30 @@ export async function syncUploadLogsToCloudIfConfigured(db: Database): Promise<v
 }
 
 // ── Push only the Roster tab — exported for roster.ts ────────────────────────
+// Append-only tombstone push for roster:permanentlyDelete — see roster_deletions comment
+// in schema.ts. pushRoster below rewrites the whole Roster tab from local every time, so a
+// permanently-deleted rep's rows just vanish from that rewrite; this is the separate
+// append-only record that tells every other device's pull "this rep_code was permanently
+// removed, delete it locally too" — never a clear/rewrite, just one more row appended.
+async function pushRosterDeletions(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
+  const unsynced = prepare(db, `SELECT rep_code, deleted_at FROM roster_deletions WHERE synced=0`).all() as Array<{ rep_code: string; deleted_at: string }>
+  if (!unsynced.length) return
+
+  const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${TABS.ROSTER_DELETIONS}!A1` }).catch(() => null)
+  if (!headerCheck?.data?.values?.[0]?.[0]) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: [{ addSheet: { properties: { title: TABS.ROSTER_DELETIONS } } }] } }).catch(() => {})
+    await sheets.spreadsheets.values.update({
+      spreadsheetId, range: `${TABS.ROSTER_DELETIONS}!A1`, valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [['rep_code', 'deleted_at']] },
+    })
+  }
+  await sheets.spreadsheets.values.append({
+    spreadsheetId, range: `${TABS.ROSTER_DELETIONS}!A:B`, valueInputOption: 'USER_ENTERED',
+    requestBody: { values: unsynced.map(r => [r.rep_code, r.deleted_at]) },
+  })
+  unsynced.forEach(r => prepare(db, `UPDATE roster_deletions SET synced=1 WHERE rep_code=?`).run(r.rep_code))
+}
+
 export async function pushRosterIfConfigured(db: Database): Promise<void> {
   const sheetsId = getSetting('sheets_id')
   const saPath   = getSetting('service_account_path')
@@ -527,10 +569,12 @@ export async function pushRosterIfConfigured(db: Database): Promise<void> {
     const auth   = getServiceAuth(saPath)
     const sheets = google.sheets({ version: 'v4', auth })
     // Roster upload writes both reps and the supervisors it auto-creates/links from them —
-    // push both tabs together so SupervisorRoster never lags a step behind Roster.
+    // push both tabs together so SupervisorRoster never lags a step behind Roster. Deletion
+    // tombstones go out at the same choke point so a permanent delete is never missed.
     await Promise.all([
       pushRoster(db, sheets, sheetsId),
       pushSupervisorRoster(db, sheets, sheetsId),
+      pushRosterDeletions(db, sheets, sheetsId),
     ])
   } catch { /* Sheets unavailable — silently skip */ }
 }
@@ -895,6 +939,30 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     try { counts.supervisorRoster += await pullSupervisorRosterFromSheet(db, sheets, sheetsId) }
     catch (e) { sectionErrors.push(`SupervisorRoster: ${e instanceof Error ? e.message : String(e)}`) }
 
+    // ── Roster permanent-delete tombstones — run AFTER the Roster pull above so a scoped
+    // delete here always has final say for that one rep_code. Each tombstone only ever
+    // removes the exact rep it names (roster_monthly rows + the salesmen row); a rep_code
+    // with no local match (already gone, or never existed here) is skipped, not an error.
+    const rosterDelRes = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: `${TABS.ROSTER_DELETIONS}!A:B` }).catch(() => null)
+    if (rosterDelRes) {
+      const all = rosterDelRes.data.values ?? []
+      const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'rep_code' ? all.slice(1) : all
+      for (const row of data) {
+        const [repCode] = row as string[]
+        if (!repCode) continue
+        const sm = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(repCode) as { id: number } | undefined
+        if (!sm) continue
+        // Same guard roster:permanentlyDelete itself uses — if this device somehow still has
+        // entries for this rep (pulled in before this tombstone arrived), skip rather than
+        // throw a FOREIGN KEY error that would fail the whole pull over one stale rep.
+        const { n: entryCount } = prepare(db, `SELECT COUNT(*) AS n FROM daily_entries WHERE salesman_id = ?`).get(sm.id) as { n: number }
+        if (entryCount > 0) continue
+        prepare(db, `DELETE FROM roster_monthly WHERE salesman_id = ?`).run(sm.id)
+        prepare(db, `DELETE FROM entry_deletions WHERE salesman_id = ?`).run(sm.id)
+        prepare(db, `DELETE FROM salesmen WHERE id = ?`).run(sm.id)
+      }
+    }
+
     // ── Daily Entries ─────────────────────────────────────────────────
     // Rows are processed in sheet order, so for any salesman_id+entry_date key that appears
     // more than once (a re-edit, or a delete tombstone appended after the original row),
@@ -1128,6 +1196,7 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
         transaction(db, () => {
           prepare(db, `DELETE FROM daily_entries`).run()
           prepare(db, `DELETE FROM entry_deletions`).run()
+          prepare(db, `DELETE FROM roster_deletions`).run()
           prepare(db, `DELETE FROM targets`).run()
           prepare(db, `DELETE FROM staff_monthly_targets`).run()
           prepare(db, `DELETE FROM commission_configs`).run()

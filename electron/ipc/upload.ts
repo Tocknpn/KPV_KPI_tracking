@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin, logAudit } from './auth'
-import { pushRosterIfConfigured, healLocalRosterBeforePush, syncEntriesToCloudIfConfigured, syncUploadLogsToCloudIfConfigured } from './sheets'
+import { pushRosterIfConfigured, healLocalRosterBeforePush, syncEntriesToCloudIfConfigured, pushEntriesAndDeletionsIfConfigured, syncUploadLogsToCloudIfConfigured } from './sheets'
 import { snapshotSalesman, snapshotSupervisor, publishMonth, publishMonthFromDate, getRosterMapAsOf } from '../db/history'
 
 export interface UploadRowResult {
@@ -196,8 +196,16 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     logAudit(db, user.id, user.username, user.role, 'sales_upload_deleted',
       `Cleared "${batch.filename}" (${deleted.changes ?? 0} entries) — open for resubmission`, 'upload_log', String(uploadLogId), batch.branch_id)
 
-    syncEntriesToCloudIfConfigured(db).catch(() => {})
-    return { success: true, deletedEntries: deleted.changes ?? 0 }
+    // Awaited (not fire-and-forget) — an Accountant Officer re-uploading depends on this
+    // delete actually reaching the Sheet first, or their device's own conflicting-record
+    // check (and every other device's pull) won't know it ever happened.
+    const cloudSync = await pushEntriesAndDeletionsIfConfigured(db)
+    return {
+      success: true, deletedEntries: deleted.changes ?? 0,
+      cloudSynced: cloudSync.success,
+      cloudSyncError: cloudSync.success ? undefined
+        : (cloudSync.error ?? 'Delete saved locally but failed to reach Google Sheets — retry "Push to Sheets" in Settings before asking for a re-upload.'),
+    }
   })
 
   // ── Accountant Manager: preview/delete daily entries for one branch + a specific date
@@ -239,8 +247,15 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
       `Cleared ${branch.name} entries for ${period} (${deleted.changes ?? 0} entries) — open for resubmission`,
       'daily_entries', `${branchId}:${dateFrom}..${dateTo}`, branchId)
 
-    syncEntriesToCloudIfConfigured(db).catch(() => {})
-    return { success: true, deletedEntries: deleted.changes ?? 0 }
+    // Awaited, same reasoning as upload:deleteDailyBatch above — a re-upload depends on this
+    // tombstone actually reaching the Sheet first.
+    const cloudSync = await pushEntriesAndDeletionsIfConfigured(db)
+    return {
+      success: true, deletedEntries: deleted.changes ?? 0,
+      cloudSynced: cloudSync.success,
+      cloudSyncError: cloudSync.success ? undefined
+        : (cloudSync.error ?? 'Delete saved locally but failed to reach Google Sheets — retry "Push to Sheets" in Settings before asking for a re-upload.'),
+    }
   })
 
   // ── Process target upload (rep_code based) ───────────────────────────

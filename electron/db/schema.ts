@@ -6,7 +6,7 @@ export interface SchemaDb {
   prepare(sql: string): { run(params?: unknown[]): unknown }
 }
 
-const SCHEMA_VERSION = 29
+const SCHEMA_VERSION = 30
 
 const BASE_TABLES = `
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -90,6 +90,16 @@ const BASE_TABLES = `
     deleted_at  TEXT    NOT NULL DEFAULT (datetime('now')),
     synced      INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (salesman_id, entry_date)
+  );
+  -- Same gap as entry_deletions, for roster:permanentlyDelete — pushRoster rewrites the
+  -- WHOLE Roster tab from local every time, so a permanently-deleted rep's rows are simply
+  -- absent from the next rewrite. But pull only ever upserts rows it finds; it never
+  -- deletes a local rep whose rows vanished from the Sheet. No FK here (the salesman row
+  -- is already gone by the time this is written) — rep_code is the stable identifier.
+  CREATE TABLE IF NOT EXISTS roster_deletions (
+    rep_code   TEXT PRIMARY KEY,
+    deleted_at TEXT NOT NULL DEFAULT (datetime('now')),
+    synced     INTEGER NOT NULL DEFAULT 0
   );
   CREATE TABLE IF NOT EXISTS kpi_metrics (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -748,6 +758,19 @@ export function applySchema(db: SchemaDb): boolean {
       )
     `)
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '29')`).run()
+  }
+
+  if (currentVersion < 30) {
+    // See roster_deletions comment in BASE_TABLES — roster:permanentlyDelete's removal never
+    // propagated to other devices, same root cause entry_deletions fixed for daily_entries.
+    db.run(`
+      CREATE TABLE IF NOT EXISTS roster_deletions (
+        rep_code   TEXT PRIMARY KEY,
+        deleted_at TEXT NOT NULL DEFAULT (datetime('now')),
+        synced     INTEGER NOT NULL DEFAULT 0
+      )
+    `)
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', '30')`).run()
   }
 
   // Self-heal columns that BASE_TABLES was historically missing (salesmen.supervisor_id,

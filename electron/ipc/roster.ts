@@ -217,6 +217,17 @@ export function registerRosterHandlers(ipcMain: IpcMain): void {
       // the salesmen delete below throws FOREIGN KEY constraint failed.
       prepare(db, `DELETE FROM entry_deletions WHERE salesman_id = ?`).run(id)
       prepare(db, `DELETE FROM salesmen WHERE id = ?`).run(id)
+      // Record the deletion so every other device's pull learns this rep is gone too —
+      // pushRoster only ever rewrites the Roster tab with whatever rows THIS device still
+      // has, so a rep simply being absent from that rewrite never told anyone they were
+      // removed versus never existing in the first place. rep_code (not id) since other
+      // devices key off it, and the salesman row itself won't exist to look up by then.
+      if (rep.rep_code) {
+        prepare(db, `
+          INSERT INTO roster_deletions (rep_code, deleted_at, synced) VALUES (?,?,0)
+          ON CONFLICT(rep_code) DO UPDATE SET deleted_at=excluded.deleted_at, synced=0
+        `).run(rep.rep_code, new Date().toISOString())
+      }
     })
     // deletedRepCodes (not touchedKeys) — merge must skip resurrecting this rep from the
     // Sheet entirely, not just for one month, since every month's row for them is now gone.
