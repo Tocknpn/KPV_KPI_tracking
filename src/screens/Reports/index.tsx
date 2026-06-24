@@ -5,6 +5,8 @@ import { RadialGauge } from '../../components/ui/RadialGauge'
 import { MonthDropdown, DateRangeBar } from '../../components/ui/PeriodFilter'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
+import { useLanguage } from '../../i18n/LanguageContext'
+import type { TranslationKey } from '../../i18n/translations'
 import { getDefaultDateRange } from '../../utils/dates'
 import { generateRowsXLSX, downloadXLSX } from '../../utils/xlsx'
 import { exportElementToPdf } from '../../utils/pdf'
@@ -102,6 +104,7 @@ function BranchDropdown({ branches, selectedIds, onChange }: {
   branches: Array<{ id: number; name: string; code: string }>
   selectedIds: number[]; onChange: (ids: number[]) => void
 }) {
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -110,9 +113,9 @@ function BranchDropdown({ branches, selectedIds, onChange }: {
     return () => document.removeEventListener('mousedown', onOut)
   }, [])
   const isAll = selectedIds.length === 0
-  const label = isAll ? 'All Branches'
-    : selectedIds.length === 1 ? (branches.find(b => b.id === selectedIds[0])?.name ?? '1 Branch')
-    : `${selectedIds.length} Branches`
+  const label = isAll ? t('sr_all_branches')
+    : selectedIds.length === 1 ? (branches.find(b => b.id === selectedIds[0])?.name ?? `1 ${t('sr_branch_singular')}`)
+    : `${selectedIds.length} ${t('sr_branches_suffix')}`
   function toggle(id: number) {
     if (isAll) { onChange([id]); return }
     const next = selectedIds.includes(id) ? selectedIds.filter(x => x !== id) : [...selectedIds, id]
@@ -130,7 +133,7 @@ function BranchDropdown({ branches, selectedIds, onChange }: {
         <div className="absolute left-0 top-full mt-2 bg-white/95 backdrop-blur-xl shadow-xl rounded-xl border border-white/40 z-50 min-w-52 py-1">
           <label className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer">
             <input type="checkbox" checked={isAll} onChange={() => onChange([])} className="accent-primary" />
-            <span className="text-body-sm">All Branches</span>
+            <span className="text-body-sm">{t('sr_all_branches')}</span>
           </label>
           <div className="border-t border-black/5 my-1" />
           {branches.map(b => (
@@ -151,6 +154,7 @@ function SupervisorMultiDropdown({ supervisors, selectedIds, onChange }: {
   supervisors: Array<{ id: number; full_name: string; branch_name: string }>
   selectedIds: number[]; onChange: (ids: number[]) => void
 }) {
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -159,9 +163,9 @@ function SupervisorMultiDropdown({ supervisors, selectedIds, onChange }: {
     return () => document.removeEventListener('mousedown', onOut)
   }, [])
   const isAll = selectedIds.length === 0
-  const label = isAll ? 'All Supervisors'
-    : selectedIds.length === 1 ? (supervisors.find(s => s.id === selectedIds[0])?.full_name ?? '1 Supervisor')
-    : `${selectedIds.length} Supervisors`
+  const label = isAll ? t('kr_all_supervisors')
+    : selectedIds.length === 1 ? (supervisors.find(s => s.id === selectedIds[0])?.full_name ?? `1 ${t('kr_supervisor_singular')}`)
+    : `${selectedIds.length} ${t('kr_supervisors_suffix')}`
   function toggle(id: number) {
     const next = selectedIds.includes(id) ? selectedIds.filter(x => x !== id) : [...selectedIds, id]
     onChange(next)
@@ -178,7 +182,7 @@ function SupervisorMultiDropdown({ supervisors, selectedIds, onChange }: {
         <div className="absolute left-0 top-full mt-2 bg-white/95 backdrop-blur-xl shadow-xl rounded-xl border border-white/40 z-50 min-w-56 py-1 max-h-72 overflow-y-auto">
           <label className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-primary/5 cursor-pointer">
             <input type="checkbox" checked={isAll} onChange={() => onChange([])} className="accent-primary" />
-            <span className="text-body-sm">All Supervisors</span>
+            <span className="text-body-sm">{t('kr_all_supervisors')}</span>
           </label>
           {supervisors.length > 0 && <div className="border-t border-black/5 my-1" />}
           {supervisors.map(s => (
@@ -198,6 +202,7 @@ function SupervisorMultiDropdown({ supervisors, selectedIds, onChange }: {
 
 // ── B2C/B2B multi chips ───────────────────────────────────────────────────
 function TypeMultiChips({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const { t: tr } = useLanguage()
   const isAll = value.length === 0
   function toggle(t: 'b2c' | 'b2b') {
     const next = value.includes(t) ? value.filter(x => x !== t) : [...value, t]
@@ -208,7 +213,7 @@ function TypeMultiChips({ value, onChange }: { value: string[]; onChange: (v: st
       <button onClick={() => onChange([])}
         className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider transition-colors
           ${isAll ? 'bg-on-surface text-surface' : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'}`}>
-        All
+        {tr('sr_filter_all')}
       </button>
       {(['b2c', 'b2b'] as const).map(t => (
         <button key={t} onClick={() => toggle(t)}
@@ -227,6 +232,7 @@ function TypeMultiChips({ value, onChange }: { value: string[]; onChange: (v: st
 export default function Reports() {
   const { token, user, branches } = useAuthStore()
   const { selectedBranchIds, setSelectedBranchIds, lastSyncedAt } = useAppStore()
+  const { t } = useLanguage()
 
   // ── Shared date state ──────────────────────────────────────────────────
   const now = new Date()
@@ -276,10 +282,10 @@ export default function Reports() {
   const showSupFilter = user?.role !== 'sales_sup'
 
   const scopeLabel = isBranchScoped
-    ? branches.find(b => b.id === user?.branchId)?.name ?? 'My Branch'
-    : effectiveBranchIds.length === 0 ? 'All Branches'
-    : effectiveBranchIds.length === 1 ? (branches.find(b => b.id === effectiveBranchIds[0])?.name ?? '1 Branch')
-    : `${effectiveBranchIds.length} Branches`
+    ? branches.find(b => b.id === user?.branchId)?.name ?? t('sr_my_branch')
+    : effectiveBranchIds.length === 0 ? t('sr_all_branches')
+    : effectiveBranchIds.length === 1 ? (branches.find(b => b.id === effectiveBranchIds[0])?.name ?? `1 ${t('sr_branch_singular')}`)
+    : `${effectiveBranchIds.length} ${t('sr_branches_suffix')}`
 
   // EOM helpers (company overview)
   const daysInMonth = new Date(year, month, 0).getDate()
@@ -667,16 +673,16 @@ export default function Reports() {
 
   // ── Tabs ───────────────────────────────────────────────────────────────
   const TABS = [
-    ...(canSeeOverview ? [{ key: 'company_overview' as const, label: 'Company Overview',      icon: 'leaderboard'        }] : []),
-    { key: 'supervisor'    as const, label: 'Supervisor Performance', icon: 'supervisor_account' },
-    { key: 'performance'   as const, label: 'Reps Performance',       icon: 'insert_chart'      },
-    { key: 'commission'    as const, label: 'Commission',             icon: 'payments'           },
-    { key: 'customer_type' as const, label: 'Customer Type Report',   icon: 'group'             },
-    { key: 'daily_tracking' as const, label: 'Daily Tracking',        icon: 'calendar_month'    },
+    ...(canSeeOverview ? [{ key: 'company_overview' as const, label: t('kr_tab_company_overview'), icon: 'leaderboard'        }] : []),
+    { key: 'supervisor'    as const, label: t('kr_tab_supervisor'), icon: 'supervisor_account' },
+    { key: 'performance'   as const, label: t('kr_tab_performance'), icon: 'insert_chart'      },
+    { key: 'commission'    as const, label: t('kr_tab_commission'), icon: 'payments'           },
+    { key: 'customer_type' as const, label: t('kr_tab_customer_type'), icon: 'group'             },
+    { key: 'daily_tracking' as const, label: t('kr_tab_daily_tracking'), icon: 'calendar_month'    },
   ]
 
   return (
-    <AppShell title="SalesTrack Pro">
+    <AppShell title="KPV Sale Tracking">
       <KpiSubmissionBanner year={year} month={month} />
       {toast && (
         <div className="fixed top-20 right-6 z-50 bg-inverse-surface text-inverse-on-surface px-5 py-3 rounded-xl shadow-lg animate-slide-in text-body-sm">
@@ -692,7 +698,7 @@ export default function Reports() {
 
       {/* ── Page Header ────────────────────────────────────────────────── */}
       <div className="mb-5">
-        <h2 className="font-headline-lg text-headline-lg text-on-surface">KPI Report</h2>
+        <h2 className="font-headline-lg text-headline-lg text-on-surface">{t('kr_title')}</h2>
         <p className="text-on-surface-variant text-body-md mt-0.5">{scopeLabel} — {MONTHS[month - 1]} {year}</p>
       </div>
 
@@ -715,19 +721,19 @@ export default function Reports() {
               <span className={`material-symbols-outlined text-sm text-primary ${exportingPdf ? 'animate-spin-slow' : ''}`}>
                 {exportingPdf ? 'sync' : 'download'}
               </span>
-              {exportingPdf ? 'Generating PDF...' : 'Export'}
+              {exportingPdf ? t('kr_generating_pdf') : t('kr_export')}
             </button>
             {showExportMenu && (
               <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-glass-elevated border border-white/80 overflow-hidden z-[110]">
                 <button onClick={() => { setShowExportMenu(false); exportExcel() }}
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-body-sm text-on-surface hover:bg-surface-container transition-colors">
                   <span className="material-symbols-outlined text-sm text-tertiary">grid_on</span>
-                  Excel (.xlsx)
+                  {t('kr_excel')}
                 </button>
                 <button onClick={() => { setShowExportMenu(false); exportPdf() }}
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-body-sm text-on-surface hover:bg-surface-container transition-colors border-t border-outline-variant/15">
                   <span className="material-symbols-outlined text-sm text-error">picture_as_pdf</span>
-                  PDF (snapshot)
+                  {t('kr_pdf')}
                 </button>
               </div>
             )}
@@ -772,7 +778,7 @@ export default function Reports() {
                   <div className="col-span-12 lg:col-span-6 flex items-center gap-8">
                     <div className="flex-1 min-w-0">
                       <span className="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-[12px] uppercase tracking-widest mb-3 inline-block">
-                        KPI Score — {MONTHS[month - 1]} {year}
+                        {t('kr_kpi_score')} — {MONTHS[month - 1]} {year}
                       </span>
                       {/* Current % → Est. month end */}
                       <div className="flex items-center gap-3 mt-1">
@@ -782,16 +788,16 @@ export default function Reports() {
                           <p className={`font-bold text-[32px] tabular-nums leading-none ${calcEomPct(execOverallPct) >= 100 ? 'text-green-600' : 'text-tertiary'}`}>
                             {fmtPct(calcEomPct(execOverallPct))}
                           </p>
-                          <p className="text-[12px] text-on-surface-variant/60 mt-0.5 uppercase tracking-wide">est. month end</p>
+                          <p className="text-[12px] text-on-surface-variant/60 mt-0.5 uppercase tracking-wide">{t('kr_est_month_end')}</p>
                         </div>
                       </div>
                       <p className="text-on-surface-variant text-body-md mt-2">
-                        {fmtPts(execTotalScore)} of {fmtPts(execTotalTarget)} pts across {execTotalPeople} staff
+                        {fmtPts(execTotalScore)} {t('kr_of_pts')} {fmtPts(execTotalTarget)} {t('kr_pts_across_staff')} {execTotalPeople} {t('kr_staff')}
                       </p>
                       <p className="text-[13px] text-on-surface-variant/50 mt-0.5 font-mono">{dateFrom} → {dateTo} · day {dayOfMonth} of {daysInMonth}</p>
                     </div>
                     <div className="shrink-0 flex items-center justify-center">
-                      <RadialGauge pct={Math.min(execOverallPct, 100)} label="Overall KPI" size={140} color="#990000" />
+                      <RadialGauge pct={Math.min(execOverallPct, 100)} label={t('kr_overall_kpi')} size={140} color="#990000" />
                     </div>
                   </div>
 
@@ -822,7 +828,7 @@ export default function Reports() {
                               <div className="h-full rounded-full transition-all duration-700 opacity-40" style={{ width: `${eomCap}%`, background: color }} />
                             </div>
                             <p className="text-[12px] text-on-surface-variant">
-                              {fmtPts(r.kpi_total_score)} pts · {r.person_count} staff · Target: {fmtPts(r.per_person_target)} pts/person
+                              {fmtPts(r.kpi_total_score)} {t('kr_pts')} · {r.person_count} {t('kr_staff')} · {t('kr_target_per_person')} {fmtPts(r.per_person_target)} {t('kr_pts_per_person')}
                             </p>
                           </div>
                         </div>
@@ -842,32 +848,32 @@ export default function Reports() {
       {activeTab === 'supervisor' && (<>
         <div className="flex items-center justify-end mb-5">
           <p className="text-[11px] text-on-surface-variant/70 italic">
-            Team KPI % = team total score ÷ branch target × 100
+            {t('kr_team_kpi_formula')}
           </p>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-card-gap mb-6">
           <GlassCard className="p-5 border-l-4 border-primary">
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Total Supervisors</p>
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{t('kr_total_supervisors')}</p>
             <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{filteredSupRows.length}</h3>
           </GlassCard>
           <GlassCard className="p-5 border-l-4 border-secondary">
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Total Reps</p>
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{t('kr_total_reps')}</p>
             <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{supTotalReps}</h3>
-            <p className="text-[10px] text-on-surface-variant mt-0.5">reps</p>
+            <p className="text-[10px] text-on-surface-variant mt-0.5">{t('kr_reps_suffix')}</p>
           </GlassCard>
           <GlassCard className="p-5 border-l-4 border-tertiary">
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Avg Team KPI %</p>
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{t('kr_avg_team_kpi')}</p>
             <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{fmtPct(supAvgKpi)}</h3>
           </GlassCard>
           <GlassCard className="p-5 border-l-4 border-outline-variant">
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Total Team Score</p>
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{t('kr_total_team_score')}</p>
             <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{fmtPts(supTotalScore)}</h3>
             <p className="text-[10px] text-on-surface-variant mt-0.5">
-              of {fmtPts(supTotalTarget)} pts &nbsp;·&nbsp;
-              <span className="font-semibold" style={{ color: kpiHex(supTotalKpiPct) }}>{fmtPct(supTotalKpiPct)}</span> achieved
+              {t('kr_of_pts')} {fmtPts(supTotalTarget)} {t('kr_pts')} &nbsp;·&nbsp;
+              <span className="font-semibold" style={{ color: kpiHex(supTotalKpiPct) }}>{fmtPct(supTotalKpiPct)}</span> {t('kr_achieved')}
             </p>
             <p className="text-[11px] mt-1.5">
-              Est. month end:{' '}
+              {t('kr_est_month_end_colon')}{' '}
               <span className={`font-bold tabular-nums ${calcEomPct(supTotalKpiPct) >= 100 ? 'text-green-600' : 'text-tertiary'}`}>
                 {fmtPct(calcEomPct(supTotalKpiPct))}
               </span>
@@ -879,24 +885,24 @@ export default function Reports() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-surface-variant/20 border-b border-white/40">
-                  <SortTh label="Supervisor"     col="full_name"        sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
-                  <SortTh label="Branch"         col="branch_name"      sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
-                  <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Type</th>
-                  <SortTh label="Reps"           col="rep_count"        sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
-                  <SortTh label="Team Score"     col="team_total_score" sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
-                  <SortTh label="Team KPI %"     col="team_kpi_pct"     sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
-                  <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Est. Month End</th>
+                  <SortTh label={t('kr_col_supervisor')}     col="full_name"        sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
+                  <SortTh label={t('kr_col_branch')}         col="branch_name"      sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
+                  <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">{t('kr_col_type')}</th>
+                  <SortTh label={t('kr_col_reps')}           col="rep_count"        sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
+                  <SortTh label={t('kr_col_team_score')}     col="team_total_score" sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
+                  <SortTh label={t('kr_col_team_kpi_pct')}   col="team_kpi_pct"     sortCol={supSortCol} sortDir={supSortDir} onSort={handleSupSort} />
+                  <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{t('kr_col_est_month_end')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/20">
                 {supLoading ? (
                   <tr><td colSpan={7} className="py-12 text-center text-on-surface-variant">
                     <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>
-                    Loading...
+                    {t('kr_loading')}
                   </td></tr>
                 ) : sortedSupRows.length === 0 ? (
                   <tr><td colSpan={7} className="py-10 text-center text-on-surface-variant text-body-sm">
-                    No supervisors found.
+                    {t('kr_no_supervisors_found')}
                   </td></tr>
                 ) : sortedSupRows.map(r => {
                   const eom = calcEomPct(r.team_kpi_pct)
@@ -935,7 +941,7 @@ export default function Reports() {
           </div>
           {sortedSupRows.length > 0 && (
             <div className="px-5 py-3 bg-surface-variant/10 border-t border-white/40 text-body-sm text-on-surface-variant italic">
-              Avg Team KPI: <strong>{fmtPct(supAvgKpi)}</strong> · {filteredSupRows.length} supervisor(s) · {supTotalReps} reps
+              {t('kr_avg_team_kpi_footer')} <strong>{fmtPct(supAvgKpi)}</strong> · {filteredSupRows.length} {t('kr_supervisor_s')} · {supTotalReps} {t('kr_reps_suffix')}
             </div>
           )}
         </GlassCard>
@@ -948,17 +954,17 @@ export default function Reports() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-card-gap mb-8">
           {/* Total Reps */}
           <GlassCard className="p-5 border-l-4 border-primary">
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Total Reps</p>
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{t('kr_total_reps')}</p>
             <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{searched.length}</h3>
             <p className="text-[10px] text-on-surface-variant mt-0.5">
-              {searched.filter(r => r.staff_type === 'b2c').length} B2C &nbsp;·&nbsp; {searched.filter(r => r.staff_type === 'b2b').length} B2B
+              {searched.filter(r => r.staff_type === 'b2c').length} {t('sr_b2c')} &nbsp;·&nbsp; {searched.filter(r => r.staff_type === 'b2b').length} {t('sr_b2b')}
             </p>
             <p className="text-[10px] text-on-surface-variant/50 font-mono mt-0.5">{dateFrom} → {dateTo}</p>
           </GlassCard>
 
           {/* Avg Team KPI with → est. month end */}
           <GlassCard className="p-5 border-l-4 border-tertiary">
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-2">Avg Team KPI %</p>
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-2">{t('kr_avg_team_kpi')}</p>
             <div className="flex items-center gap-2">
               <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums leading-none">{fmtPct(avgKpiPct)}</h3>
               <span className="material-symbols-outlined text-on-surface-variant/40 text-xl select-none">arrow_forward</span>
@@ -966,22 +972,22 @@ export default function Reports() {
                 <p className={`text-[20px] font-bold tabular-nums leading-none ${calcEomPct(avgKpiPct) >= 100 ? 'text-green-600' : 'text-tertiary'}`}>
                   {fmtPct(calcEomPct(avgKpiPct))}
                 </p>
-                <p className="text-[9px] text-on-surface-variant/60 mt-0.5 uppercase tracking-wide">est. month end</p>
+                <p className="text-[9px] text-on-surface-variant/60 mt-0.5 uppercase tracking-wide">{t('kr_est_month_end')}</p>
               </div>
             </div>
-            <p className="text-[10px] text-on-surface-variant mt-1.5">day {meta.dayOfMonth} of {meta.daysInMonth}</p>
+            <p className="text-[10px] text-on-surface-variant mt-1.5">{t('kr_day_of')} {meta.dayOfMonth} {t('kr_of_pts')} {meta.daysInMonth}</p>
           </GlassCard>
 
           {/* Total Reps Score with insight */}
           <GlassCard className="p-5 border-l-4 border-outline-variant">
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Total Reps Score</p>
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{t('kr_total_reps_score')}</p>
             <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">{fmtPts(totalRepScore)}</h3>
             <p className="text-[10px] text-on-surface-variant mt-0.5">
-              of {fmtPts(totalRepTarget)} pts &nbsp;·&nbsp;
-              <span style={{ color: kpiHex(totalRepKpiPct) }} className="font-bold">{fmtPct(totalRepKpiPct)}</span> achieved
+              {t('kr_of_pts')} {fmtPts(totalRepTarget)} {t('kr_pts')} &nbsp;·&nbsp;
+              <span style={{ color: kpiHex(totalRepKpiPct) }} className="font-bold">{fmtPct(totalRepKpiPct)}</span> {t('kr_achieved')}
             </p>
             <p className="text-[11px] mt-1">
-              Est. month end:{' '}
+              {t('kr_est_month_end_colon')}{' '}
               <span className={`font-bold tabular-nums ${calcEomPct(totalRepKpiPct) >= 100 ? 'text-green-600' : 'text-tertiary'}`}>
                 {fmtPct(calcEomPct(totalRepKpiPct))}
               </span>
@@ -990,7 +996,7 @@ export default function Reports() {
 
           {/* Month Progress */}
           <GlassCard className="p-5 border-l-4 border-secondary">
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">Month Progress</p>
+            <p className="font-label-md text-label-md text-on-surface-variant uppercase mb-1">{t('kr_month_progress')}</p>
             <h3 className="font-display-xl text-display-xl text-on-surface tabular-nums">
               {fmtPct((meta.dayOfMonth / meta.daysInMonth) * 100)}
             </h3>
@@ -998,20 +1004,20 @@ export default function Reports() {
               <div className="h-full rounded-full bg-secondary transition-all duration-700"
                 style={{ width: `${(meta.dayOfMonth / meta.daysInMonth) * 100}%` }} />
             </div>
-            <p className="text-[10px] text-on-surface-variant">day {meta.dayOfMonth} of {meta.daysInMonth} · {meta.daysRemaining} days left</p>
+            <p className="text-[10px] text-on-surface-variant">{t('kr_day_of')} {meta.dayOfMonth} {t('kr_of_pts')} {meta.daysInMonth} · {meta.daysRemaining} {t('kr_days_left')}</p>
           </GlassCard>
         </div>
 
         <div className="relative mb-4 max-w-sm">
           <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
-          <input type="text" placeholder="Search by name or position..."
+          <input type="text" placeholder={t('kr_search_name_position')}
             value={search} onChange={e => setSearch(e.target.value)}
             className="w-full bg-white/60 backdrop-blur-sm border border-white/50 rounded-lg pl-9 pr-4 py-2 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
         </div>
 
         <p className="text-[11px] text-on-surface-variant/60 mb-3 italic">
-          KPI % = (Jewelry + Bar + Qty Score) ÷ individual point target &nbsp;·&nbsp;
-          Est. Month End = KPI % ÷ Day {meta.dayOfMonth} × {meta.daysInMonth} days
+          {t('kr_perf_formula')} &nbsp;·&nbsp;
+          {t('kr_eom_formula')} {meta.dayOfMonth} × {meta.daysInMonth} {t('kr_days')}
         </p>
 
         <GlassCard className="overflow-hidden shadow-sm border border-white/40" elevated>
@@ -1019,21 +1025,21 @@ export default function Reports() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-surface-variant/20 border-b border-white/40">
-                  <SortTh label="Representative"  col="full_name"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                  {isMultiBranch  && <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Branch</th>}
-                  {showSupColumn  && <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Team Sup</th>}
-                  <SortTh label="Jewelry (Baht)"  col="actual_jewelry" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                  <SortTh label="Bar (Baht)"      col="actual_bar"     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                  <SortTh label="Qty (pcs)"       col="actual_qty"     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                  <SortTh label="KPI Score %"     col="kpiPct"         sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                  <SortTh label="Est. Month End"  col="eomKpiPct"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <SortTh label={t('kr_col_representative')}  col="full_name"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  {isMultiBranch  && <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{t('kr_col_branch')}</th>}
+                  {showSupColumn  && <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{t('kr_col_team_sup')}</th>}
+                  <SortTh label={t('kr_col_jewelry_baht')}  col="actual_jewelry" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <SortTh label={t('kr_col_bar_baht')}      col="actual_bar"     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <SortTh label={t('kr_col_qty_pcs')}       col="actual_qty"     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <SortTh label={t('kr_col_kpi_score_pct')}     col="kpiPct"         sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  <SortTh label={t('kr_col_est_month_end')}  col="eomKpiPct"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/20">
                 {loading ? (
                   <tr><td colSpan={6 + (isMultiBranch ? 1 : 0) + (showSupColumn ? 1 : 0)} className="py-12 text-center text-on-surface-variant">
                     <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>
-                    Loading report...
+                    {t('kr_loading_report')}
                   </td></tr>
                 ) : sorted.map(r => {
                   const pct    = r.kpiScore.pct
@@ -1053,8 +1059,8 @@ export default function Reports() {
                       </td>
                       {isMultiBranch && <td className="px-5 py-3 text-body-sm text-on-surface-variant whitespace-nowrap">{r.branch_name}</td>}
                       {showSupColumn  && <td className="px-5 py-3 text-body-sm text-on-surface-variant whitespace-nowrap">{r.supervisor_name ?? '—'}</td>}
-                      <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{fmt(r.actual_jewelry)} Baht</td>
-                      <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{fmt(r.actual_bar)} Baht</td>
+                      <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{fmt(r.actual_jewelry)} {t('sr_unit_baht')}</td>
+                      <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{fmt(r.actual_bar)} {t('sr_unit_baht')}</td>
                       <td className="px-5 py-3 font-tabular-nums text-body-sm font-bold">{r.actual_qty}</td>
                       <td className="px-5 py-3">
                         <div className={`inline-flex flex-col items-center px-3 py-1 rounded-lg ${kpiBg(pct)}`}>
@@ -1074,14 +1080,14 @@ export default function Reports() {
                   )
                 })}
                 {!loading && !sorted.length && (
-                  <tr><td colSpan={6 + (isMultiBranch ? 1 : 0) + (showSupColumn ? 1 : 0)} className="py-8 text-center text-on-surface-variant text-body-sm">No results found.</td></tr>
+                  <tr><td colSpan={6 + (isMultiBranch ? 1 : 0) + (showSupColumn ? 1 : 0)} className="py-8 text-center text-on-surface-variant text-body-sm">{t('kr_no_results_found')}</td></tr>
                 )}
               </tbody>
             </table>
           </div>
           <div className="px-5 py-4 bg-surface-variant/10 border-t border-white/40 flex justify-between items-center">
             <p className="text-body-sm text-on-surface-variant italic">
-              Showing {sorted.length} of {rows.length} representatives · Day {meta.dayOfMonth} of {meta.daysInMonth} · {meta.daysRemaining} days remaining
+              {t('kr_showing_of_reps')} {sorted.length} {t('kr_of_representatives')} {rows.length} {t('kr_representatives')} · {t('kr_day_of')} {meta.dayOfMonth} {t('kr_of_pts')} {meta.daysInMonth} · {meta.daysRemaining} {t('kr_days_remaining')}
             </p>
           </div>
         </GlassCard>
@@ -1100,16 +1106,16 @@ export default function Reports() {
               <GlassCard key={type} className={`p-6 border-l-4 ${color}`} elevated>
                 <div className="flex items-center gap-3 mb-5">
                   <div className={`px-3 py-1 rounded-full ${bg} ${textColor} font-bold text-sm`}>{type}</div>
-                  <span className="text-on-surface-variant text-body-sm">{stats.count} representatives</span>
+                  <span className="text-on-surface-variant text-body-sm">{stats.count} {t('kr_representatives_count')}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   {[
-                    { label: 'Jewelry MTD',   value: `${fmt(stats.totalJewelry, 1)} Baht` },
-                    { label: 'Bar MTD',       value: `${fmt(stats.totalBar, 1)} Baht` },
-                    { label: 'Qty MTD',       value: stats.totalQty.toLocaleString() + ' pcs' },
-                    { label: 'Total KPI Pts', value: stats.totalPts.toLocaleString('en-US', { maximumFractionDigits: 0 }) },
-                    { label: 'Avg KPI %',     value: fmtPct(stats.avgKpiPct) },
-                    { label: 'Avg Est. EOM',  value: fmtPct(stats.avgEomPct) },
+                    { label: t('kr_jewelry_mtd'),   value: `${fmt(stats.totalJewelry, 1)} ${t('sr_unit_baht')}` },
+                    { label: t('kr_bar_mtd'),       value: `${fmt(stats.totalBar, 1)} ${t('sr_unit_baht')}` },
+                    { label: t('kr_qty_mtd'),       value: stats.totalQty.toLocaleString() + ' ' + t('sr_unit_pcs') },
+                    { label: t('kr_total_kpi_pts'), value: stats.totalPts.toLocaleString('en-US', { maximumFractionDigits: 0 }) },
+                    { label: t('kr_avg_kpi_pct'),     value: fmtPct(stats.avgKpiPct) },
+                    { label: t('kr_avg_est_eom'),  value: fmtPct(stats.avgEomPct) },
                   ].map(item => (
                     <div key={item.label} className="rounded-lg bg-white/40 p-3">
                       <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-1">{item.label}</p>
@@ -1122,29 +1128,29 @@ export default function Reports() {
           </div>
 
           {[
-            { type: 'b2c', label: 'B2C Staff', labelColor: 'text-primary',   rows: shownB2c },
-            { type: 'b2b', label: 'B2B Staff', labelColor: 'text-secondary', rows: shownB2b },
+            { type: 'b2c', label: t('kr_b2c_staff'), labelColor: 'text-primary',   rows: shownB2c },
+            { type: 'b2b', label: t('kr_b2b_staff'), labelColor: 'text-secondary', rows: shownB2b },
           ].map(({ type, label, labelColor, rows: typeRows }) => typeRows.length === 0 ? null : (
             <GlassCard key={type} className="overflow-hidden shadow-sm border border-white/40" elevated>
               <div className="px-5 py-4 border-b border-white/30 flex items-center gap-3">
                 <span className={`font-headline-md text-headline-md ${labelColor}`}>{label}</span>
-                <span className="text-on-surface-variant text-body-sm">{typeRows.length} reps</span>
+                <span className="text-on-surface-variant text-body-sm">{typeRows.length} {t('kr_reps_suffix')}</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-surface-variant/20 border-b border-white/40">
-                      <SortTh label="Representative"  col="full_name"      sortCol={custSortCol} sortDir={custSortDir} onSort={handleCustSort} />
-                      {isMultiBranch && <th className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Branch</th>}
-                      <SortTh label="Jewelry (Baht)"  col="actual_jewelry" sortCol={custSortCol} sortDir={custSortDir} onSort={handleCustSort} />
-                      <SortTh label="Bar (Baht)"      col="actual_bar"     sortCol={custSortCol} sortDir={custSortDir} onSort={handleCustSort} />
-                      <SortTh label="Qty"             col="actual_qty"     sortCol={custSortCol} sortDir={custSortDir} onSort={handleCustSort} right />
-                      <SortTh label="KPI %"           col="kpiPct"         sortCol={custSortCol} sortDir={custSortDir} onSort={handleCustSort} right />
+                      <SortTh label={t('kr_col_representative')}  col="full_name"      sortCol={custSortCol} sortDir={custSortDir} onSort={handleCustSort} />
+                      {isMultiBranch && <th className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">{t('kr_col_branch')}</th>}
+                      <SortTh label={t('kr_col_jewelry_baht')}  col="actual_jewelry" sortCol={custSortCol} sortDir={custSortDir} onSort={handleCustSort} />
+                      <SortTh label={t('kr_col_bar_baht')}      col="actual_bar"     sortCol={custSortCol} sortDir={custSortDir} onSort={handleCustSort} />
+                      <SortTh label={t('kr_col_qty')}             col="actual_qty"     sortCol={custSortCol} sortDir={custSortDir} onSort={handleCustSort} right />
+                      <SortTh label={t('kr_col_kpi_pct')}           col="kpiPct"         sortCol={custSortCol} sortDir={custSortDir} onSort={handleCustSort} right />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/20">
                     {loading ? (
-                      <tr><td colSpan={6} className="py-8 text-center text-on-surface-variant text-body-sm">Loading...</td></tr>
+                      <tr><td colSpan={6} className="py-8 text-center text-on-surface-variant text-body-sm">{t('kr_loading')}</td></tr>
                     ) : sortTypeRows(typeRows).map(r => (
                       <tr key={r.id} onClick={() => setProfileRepId(r.id)} className="hover:bg-primary/[0.06] transition-colors cursor-pointer">
                         <td className="px-5 py-3 whitespace-nowrap">
@@ -1152,8 +1158,8 @@ export default function Reports() {
                           <p className="text-[10px] text-on-surface-variant font-mono">{r.rep_code ?? r.supervisor_name ?? '—'}</p>
                         </td>
                         {isMultiBranch && <td className="px-5 py-3 text-body-sm text-on-surface-variant">{r.branch_name}</td>}
-                        <td className="px-5 py-3 text-right font-tabular-nums text-body-sm font-bold">{fmt(r.actual_jewelry)} Baht</td>
-                        <td className="px-5 py-3 text-right font-tabular-nums text-body-sm font-bold">{fmt(r.actual_bar)} Baht</td>
+                        <td className="px-5 py-3 text-right font-tabular-nums text-body-sm font-bold">{fmt(r.actual_jewelry)} {t('sr_unit_baht')}</td>
+                        <td className="px-5 py-3 text-right font-tabular-nums text-body-sm font-bold">{fmt(r.actual_bar)} {t('sr_unit_baht')}</td>
                         <td className="px-5 py-3 text-right font-tabular-nums text-body-sm">{r.actual_qty}</td>
                         <td className="px-5 py-3 text-right">
                           <span className={`font-tabular-nums font-bold text-body-sm ${kpiColor(r.kpiScore.pct)}`}>{fmtPct(r.kpiScore.pct)}</span>
@@ -1176,16 +1182,16 @@ export default function Reports() {
       {activeTab === 'daily_tracking' && (
         <GlassCard elevated className="overflow-hidden">
           <div className="p-5 pb-0">
-            <h3 className="font-headline-md text-headline-md text-on-surface">Daily Tracking — {MONTHS[month - 1]} {year}</h3>
+            <h3 className="font-headline-md text-headline-md text-on-surface">{t('kr_daily_tracking_title')} — {MONTHS[month - 1]} {year}</h3>
             <p className="text-body-sm text-on-surface-variant mt-1">
-              Reconciliation view — each cell is <strong>Jewelry+Bar (Baht) / Qty</strong> for that day. A blank cell means nothing was uploaded for that rep/date yet.
+              {t('kr_tracking_desc')} <strong>{t('kr_jewelry_bar_qty_day')}</strong> {t('kr_tracking_blank_note')}
             </p>
           </div>
           <div className="overflow-x-auto p-5">
             <table className="border-collapse">
               <thead>
                 <tr>
-                  <th className="sticky left-0 bg-surface-container-low z-10 px-4 py-2.5 text-left font-label-md text-label-md text-on-surface-variant uppercase whitespace-nowrap">Representative</th>
+                  <th className="sticky left-0 bg-surface-container-low z-10 px-4 py-2.5 text-left font-label-md text-label-md text-on-surface-variant uppercase whitespace-nowrap">{t('kr_col_representative')}</th>
                   {Array.from({ length: trackingDaysInMonth }, (_, i) => {
                     const day = i + 1
                     const dow = new Date(year, month - 1, day).getDay() // 0=Sun, 6=Sat
@@ -1197,18 +1203,18 @@ export default function Reports() {
                       </th>
                     )
                   })}
-                  <th className="px-4 py-2.5 text-right font-label-md text-label-md text-on-surface-variant uppercase whitespace-nowrap bg-primary/5">Total</th>
+                  <th className="px-4 py-2.5 text-right font-label-md text-label-md text-on-surface-variant uppercase whitespace-nowrap bg-primary/5">{t('kr_total')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/10">
                 {trackingLoading ? (
-                  <tr><td colSpan={trackingDaysInMonth + 2} className="py-8 text-center text-on-surface-variant text-body-sm">Loading...</td></tr>
+                  <tr><td colSpan={trackingDaysInMonth + 2} className="py-8 text-center text-on-surface-variant text-body-sm">{t('kr_loading')}</td></tr>
                 ) : !trackingPublished ? (
                   <tr><td colSpan={trackingDaysInMonth + 2} className="py-8 text-center text-on-surface-variant text-body-sm">
-                    {MONTHS[month - 1]} {year} roster not uploaded yet — nothing to reconcile until HR uploads it.
+                    {MONTHS[month - 1]} {year} {t('kr_roster_not_uploaded')}
                   </td></tr>
                 ) : trackingFiltered.length === 0 ? (
-                  <tr><td colSpan={trackingDaysInMonth + 2} className="py-8 text-center text-on-surface-variant text-body-sm">No reps found for this filter.</td></tr>
+                  <tr><td colSpan={trackingDaysInMonth + 2} className="py-8 text-center text-on-surface-variant text-body-sm">{t('kr_no_reps_filter')}</td></tr>
                 ) : trackingFiltered.map(r => (
                   <tr key={r.id} className="hover:bg-primary/[0.03] transition-colors">
                     <td className="sticky left-0 bg-white z-10 px-4 py-2 whitespace-nowrap">
@@ -1234,7 +1240,7 @@ export default function Reports() {
               {trackingFiltered.length > 0 && (
                 <tfoot>
                   <tr className="border-t-2 border-outline-variant/30">
-                    <td className="sticky left-0 bg-surface-container-low z-10 px-4 py-2.5 font-bold text-body-sm">Total</td>
+                    <td className="sticky left-0 bg-surface-container-low z-10 px-4 py-2.5 font-bold text-body-sm">{t('kr_total')}</td>
                     {Array.from({ length: trackingDaysInMonth }, (_, i) => {
                       const dayTotal = trackingFiltered.reduce((sum, r) => sum + (r.days[i]?.value ?? 0), 0)
                       const dayQty   = trackingFiltered.reduce((sum, r) => sum + (r.days[i]?.qty ?? 0), 0)
@@ -1263,10 +1269,10 @@ export default function Reports() {
       {activeTab === 'commission' && (<>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-card-gap mb-8">
           {[
-            { label: 'Total Rep Commission',  value: fmtLak(commTotalRep), color: 'border-primary',   icon: 'payments',           sub: `${commReps.length} reps` },
-            { label: 'Total Sup Commission',  value: fmtLak(commTotalSup), color: 'border-secondary', icon: 'supervisor_account', sub: `${commSups.length} supervisors` },
-            { label: 'B2C Commission',         value: fmtLak(commTotalB2c), color: 'border-tertiary',  icon: 'person',             sub: `${commReps.filter(r => r.staff_type === 'b2c').length} reps` },
-            { label: 'B2B Commission',         value: fmtLak(commTotalB2b), color: 'border-error',     icon: 'business',           sub: `${commReps.filter(r => r.staff_type === 'b2b').length} reps` },
+            { label: t('kr_total_rep_commission'),  value: fmtLak(commTotalRep), color: 'border-primary',   icon: 'payments',           sub: `${commReps.length} ${t('kr_reps_suffix')}` },
+            { label: t('kr_total_sup_commission'),  value: fmtLak(commTotalSup), color: 'border-secondary', icon: 'supervisor_account', sub: `${commSups.length} ${t('kr_supervisors_suffix')}` },
+            { label: t('kr_b2c_commission'),         value: fmtLak(commTotalB2c), color: 'border-tertiary',  icon: 'person',             sub: `${commReps.filter(r => r.staff_type === 'b2c').length} ${t('kr_reps_suffix')}` },
+            { label: t('kr_b2b_commission'),         value: fmtLak(commTotalB2b), color: 'border-error',     icon: 'business',           sub: `${commReps.filter(r => r.staff_type === 'b2b').length} ${t('kr_reps_suffix')}` },
           ].map(k => (
             <GlassCard key={k.label} className={`p-5 border-l-4 ${k.color}`}>
               <div className="flex items-center gap-1.5 mb-1">
@@ -1285,13 +1291,13 @@ export default function Reports() {
               <button key={tab} onClick={() => setCommSubTab(tab)}
                 className={`px-5 py-2.5 font-label-md text-label-md transition-colors capitalize
                   ${commSubTab === tab ? 'bg-primary text-white' : 'text-on-surface-variant hover:bg-surface-container-high'}`}>
-                {tab === 'reps' ? 'Staff Commission' : 'Supervisor Commission'}
+                {tab === 'reps' ? t('kr_staff_commission_tab') : t('kr_sup_commission_tab')}
               </button>
             ))}
           </div>
           <div className="relative ml-auto">
             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
-            <input type="text" placeholder="Search name..."
+            <input type="text" placeholder={t('kr_search_name')}
               value={commSearch} onChange={e => setCommSearch(e.target.value)}
               className="bg-white/60 backdrop-blur-sm border border-white/50 rounded-lg pl-9 pr-4 py-2 text-body-sm outline-none focus:ring-2 focus:ring-primary/20 w-48" />
           </div>
@@ -1303,24 +1309,24 @@ export default function Reports() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-variant/20 border-b border-white/40">
-                    <SortTh label="Representative"  col="full_name"      sortCol={commRepSortCol} sortDir={commRepSortDir} onSort={handleCommRepSort} />
-                    {isMultiBranch && <SortTh label="Branch"  col="branch_name"    sortCol={commRepSortCol} sortDir={commRepSortDir} onSort={handleCommRepSort} />}
-                    <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Type</th>
-                    <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Team Sup</th>
-                    <SortTh label="Jewelry (Baht)"  col="actual_jewelry" sortCol={commRepSortCol} sortDir={commRepSortDir} onSort={handleCommRepSort} right />
-                    <SortTh label="Bar (Baht)"      col="actual_bar"     sortCol={commRepSortCol} sortDir={commRepSortDir} onSort={handleCommRepSort} right />
-                    <SortTh label="Qty"             col="actual_qty"     sortCol={commRepSortCol} sortDir={commRepSortDir} onSort={handleCommRepSort} right />
-                    <SortTh label="Commission (₭)"  col="commission_lak" sortCol={commRepSortCol} sortDir={commRepSortDir} onSort={handleCommRepSort} right />
+                    <SortTh label={t('kr_col_representative')}  col="full_name"      sortCol={commRepSortCol} sortDir={commRepSortDir} onSort={handleCommRepSort} />
+                    {isMultiBranch && <SortTh label={t('kr_col_branch')}  col="branch_name"    sortCol={commRepSortCol} sortDir={commRepSortDir} onSort={handleCommRepSort} />}
+                    <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">{t('kr_col_type')}</th>
+                    <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{t('kr_col_team_sup')}</th>
+                    <SortTh label={t('kr_col_jewelry_baht')}  col="actual_jewelry" sortCol={commRepSortCol} sortDir={commRepSortDir} onSort={handleCommRepSort} right />
+                    <SortTh label={t('kr_col_bar_baht')}      col="actual_bar"     sortCol={commRepSortCol} sortDir={commRepSortDir} onSort={handleCommRepSort} right />
+                    <SortTh label={t('kr_col_qty')}             col="actual_qty"     sortCol={commRepSortCol} sortDir={commRepSortDir} onSort={handleCommRepSort} right />
+                    <SortTh label={t('kr_col_commission_lak')}  col="commission_lak" sortCol={commRepSortCol} sortDir={commRepSortDir} onSort={handleCommRepSort} right />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/20">
                   {commLoading ? (
                     <tr><td colSpan={8} className="py-12 text-center text-on-surface-variant">
                       <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>
-                      Loading commission data...
+                      {t('kr_loading_commission')}
                     </td></tr>
                   ) : sortedCommReps.length === 0 ? (
-                    <tr><td colSpan={8} className="py-8 text-center text-on-surface-variant text-body-sm">No results found.</td></tr>
+                    <tr><td colSpan={8} className="py-8 text-center text-on-surface-variant text-body-sm">{t('kr_no_results_found')}</td></tr>
                   ) : sortedCommReps.map(r => (
                     <tr key={r.id} className="hover:bg-primary/[0.02] transition-colors">
                       <td className="px-5 py-3 whitespace-nowrap">
@@ -1355,7 +1361,7 @@ export default function Reports() {
                   <tfoot>
                     <tr className="bg-surface-variant/20 border-t border-white/40">
                       <td colSpan={isMultiBranch ? 4 : 3} className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase">
-                        Total ({sortedCommReps.length} reps)
+                        {t('kr_total_n_reps')} ({sortedCommReps.length} {t('kr_reps_suffix')})
                       </td>
                       <td className="px-5 py-3 text-right font-tabular-nums font-bold text-body-sm">{fmt(sortedCommReps.reduce((s, r) => s + r.actual_jewelry, 0), 1)}</td>
                       <td className="px-5 py-3 text-right font-tabular-nums font-bold text-body-sm">{fmt(sortedCommReps.reduce((s, r) => s + r.actual_bar, 0), 1)}</td>
@@ -1374,29 +1380,29 @@ export default function Reports() {
             <div className="p-4 border-b border-white/30 flex items-center gap-2">
               <span className="material-symbols-outlined text-secondary text-sm">info</span>
               <p className="text-body-sm text-on-surface-variant">
-                Supervisor commission = <strong className="text-secondary">{commSups[0]?.sup_pct ?? 30}%</strong> of their team's total rep commission
+                {t('kr_sup_commission_formula')} <strong className="text-secondary">{commSups[0]?.sup_pct ?? 30}%</strong> {t('kr_of_team_commission')}
               </p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-variant/20 border-b border-white/40">
-                    <SortTh label="Supervisor"           col="full_name"               sortCol={commSupSortCol} sortDir={commSupSortDir} onSort={handleCommSupSort} />
-                    {isMultiBranch && <SortTh label="Branch" col="branch_name"         sortCol={commSupSortCol} sortDir={commSupSortDir} onSort={handleCommSupSort} />}
-                    <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Type</th>
-                    <SortTh label="Team Commission"      col="team_commission_lak"     sortCol={commSupSortCol} sortDir={commSupSortDir} onSort={handleCommSupSort} right />
-                    <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right whitespace-nowrap">Rate</th>
-                    <SortTh label="Sup Commission (₭)"  col="supervisor_commission_lak" sortCol={commSupSortCol} sortDir={commSupSortDir} onSort={handleCommSupSort} right />
+                    <SortTh label={t('kr_col_supervisor')}           col="full_name"               sortCol={commSupSortCol} sortDir={commSupSortDir} onSort={handleCommSupSort} />
+                    {isMultiBranch && <SortTh label={t('kr_col_branch')} col="branch_name"         sortCol={commSupSortCol} sortDir={commSupSortDir} onSort={handleCommSupSort} />}
+                    <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">{t('kr_col_type')}</th>
+                    <SortTh label={t('kr_col_team_commission')}      col="team_commission_lak"     sortCol={commSupSortCol} sortDir={commSupSortDir} onSort={handleCommSupSort} right />
+                    <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right whitespace-nowrap">{t('kr_col_rate')}</th>
+                    <SortTh label={t('kr_col_sup_commission_lak')}  col="supervisor_commission_lak" sortCol={commSupSortCol} sortDir={commSupSortDir} onSort={handleCommSupSort} right />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/20">
                   {commLoading ? (
                     <tr><td colSpan={6} className="py-12 text-center text-on-surface-variant">
                       <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>
-                      Loading...
+                      {t('kr_loading')}
                     </td></tr>
                   ) : sortedCommSups.length === 0 ? (
-                    <tr><td colSpan={6} className="py-8 text-center text-on-surface-variant text-body-sm">No supervisors found.</td></tr>
+                    <tr><td colSpan={6} className="py-8 text-center text-on-surface-variant text-body-sm">{t('kr_no_supervisors_found')}</td></tr>
                   ) : sortedCommSups.map(s => (
                     <tr key={s.id} className="hover:bg-secondary/[0.02] transition-colors">
                       <td className="px-5 py-3 whitespace-nowrap">
@@ -1425,7 +1431,7 @@ export default function Reports() {
                   <tfoot>
                     <tr className="bg-surface-variant/20 border-t border-white/40">
                       <td colSpan={isMultiBranch ? 3 : 2} className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase">
-                        Total ({sortedCommSups.length} supervisors)
+                        {t('kr_total_n_reps')} ({sortedCommSups.length} {t('kr_supervisors_suffix')})
                       </td>
                       <td className="px-5 py-3 text-right font-tabular-nums font-bold text-body-sm">
                         {fmtLak(sortedCommSups.reduce((s, r) => s + r.team_commission_lak, 0))}
@@ -1449,9 +1455,9 @@ export default function Reports() {
                 <GlassCard key={type} className="p-4 flex items-center gap-4">
                   <TypeBadge type={type} />
                   <div className="text-[11px] text-on-surface-variant space-x-3">
-                    <span>Jewelry: <strong className="text-on-surface">{fmtLak(rep.rate_applied.jewelry_rate_lak)}/Baht</strong></span>
-                    <span>Bar: <strong className="text-on-surface">{fmtLak(rep.rate_applied.bar_rate_lak)}/Baht</strong></span>
-                    <span>Qty: <strong className="text-on-surface">{fmtLak(rep.rate_applied.qty_rate_lak)}/pc</strong></span>
+                    <span>{t('kr_jewelry_rate')} <strong className="text-on-surface">{fmtLak(rep.rate_applied.jewelry_rate_lak)}/{t('sr_unit_baht')}</strong></span>
+                    <span>{t('kr_bar_rate')} <strong className="text-on-surface">{fmtLak(rep.rate_applied.bar_rate_lak)}/{t('sr_unit_baht')}</strong></span>
+                    <span>{t('kr_qty_rate')} <strong className="text-on-surface">{fmtLak(rep.rate_applied.qty_rate_lak)}/pc</strong></span>
                   </div>
                 </GlassCard>
               )

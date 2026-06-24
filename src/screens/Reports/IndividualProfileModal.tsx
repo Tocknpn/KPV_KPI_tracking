@@ -4,6 +4,8 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import type { RepDailyEntry, RepHistoryProfile, SupHistoryProfile } from '../../types'
+import { useLanguage } from '../../i18n/LanguageContext'
+import type { TranslationKey } from '../../i18n/translations'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -24,7 +26,7 @@ function trendIcon(current: number, prev: number) {
   return <span className="material-symbols-outlined text-on-surface-variant text-base">trending_flat</span>
 }
 
-function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) {
+function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string; dataKey?: string }>; label?: string }) {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-xl border border-white/60 p-3 text-xs">
@@ -33,7 +35,7 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
         <div key={p.name} className="flex justify-between gap-4 mb-1">
           <span style={{ color: p.color }} className="font-medium">{p.name}</span>
           <span className="font-tabular-nums font-bold">
-            {p.name === 'KPI %' ? `${fmt(p.value, 1)}%` : p.name === 'Qty' ? p.value : fmt(p.value, 1)}
+            {p.dataKey === 'kpi_pct' ? `${fmt(p.value, 1)}%` : p.dataKey === 'qty' ? p.value : fmt(p.value, 1)}
           </span>
         </div>
       ))}
@@ -47,6 +49,7 @@ type Granularity = 'month' | 'week' | 'day'
 interface RepModalProps { id: number; token: string; onClose: () => void }
 
 export function RepProfileModal({ id, token, onClose }: RepModalProps) {
+  const { t } = useLanguage()
   const [data, setData]             = useState<RepHistoryProfile | null>(null)
   const [loading, setLoading]       = useState(true)
   const [granularity, setGranularity] = useState<Granularity>('month')
@@ -117,14 +120,14 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
             </div>
             <div>
               <h3 className="font-headline-md text-on-surface font-bold">
-                {loading ? 'Loading...' : data?.full_name ?? 'Unknown'}
+                {loading ? t('prof_loading') : data?.full_name ?? t('prof_unknown')}
               </h3>
               {data && (
                 <div className="flex items-center gap-2 flex-wrap mt-0.5">
                   <span className="font-mono text-[10px] text-on-surface-variant">{data.rep_code}</span>
                   <span className="text-on-surface-variant text-[10px]">·</span>
                   <span className="text-[10px] text-on-surface-variant">{data.branch_name}</span>
-                  {data.supervisor_name && <><span className="text-on-surface-variant text-[10px]">·</span><span className="text-[10px] text-on-surface-variant">Team: {data.supervisor_name}</span></>}
+                  {data.supervisor_name && <><span className="text-on-surface-variant text-[10px]">·</span><span className="text-[10px] text-on-surface-variant">{t('prof_team')} {data.supervisor_name}</span></>}
                   <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${data.staff_type === 'b2c' ? 'bg-primary/10 text-primary' : 'bg-secondary/10 text-secondary'}`}>
                     {data.staff_type?.toUpperCase()}
                   </span>
@@ -142,16 +145,16 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
             <span className="material-symbols-outlined animate-spin-slow text-3xl text-primary">sync</span>
           </div>
         ) : !data ? (
-          <div className="p-10 text-center text-on-surface-variant">No data found for this rep.</div>
+          <div className="p-10 text-center text-on-surface-variant">{t('prof_no_data_rep')}</div>
         ) : (
           <div className="p-6 space-y-6">
             {/* Summary cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { label: 'This Month KPI%', value: current ? fmtPct(current.kpi_pct) : '—', sub: current ? `${current.kpi_total_score.toLocaleString('en-US',{maximumFractionDigits:0})} pts` : '', color: current ? kpiColor(current.kpi_pct) : '', icon: 'target' },
-                { label: 'vs Last Month', value: current && prev ? `${current.kpi_pct - prev.kpi_pct > 0 ? '+' : ''}${fmt(current.kpi_pct - prev.kpi_pct, 1)}%` : '—', sub: prev ? `Last: ${fmtPct(prev.kpi_pct)}` : 'First month', color: current && prev ? (current.kpi_pct >= prev.kpi_pct ? 'text-green-600' : 'text-red-500') : 'text-on-surface-variant', icon: current && prev && current.kpi_pct >= prev.kpi_pct ? 'trending_up' : 'trending_down' },
-                { label: 'Active Days', value: current ? String(current.days_with_entries) : '—', sub: 'this month', color: 'text-on-surface', icon: 'calendar_today' },
-                { label: 'Point Target', value: current?.point_target ? current.point_target.toLocaleString('en-US',{maximumFractionDigits:0}) : '—', sub: current?.year_month ? `${current.year_month.slice(0,4)}-${current.year_month.slice(4)}` : '', color: 'text-on-surface', icon: 'adjust' },
+                { label: t('prof_this_month_kpi'), value: current ? fmtPct(current.kpi_pct) : '—', sub: current ? `${current.kpi_total_score.toLocaleString('en-US',{maximumFractionDigits:0})} pts` : '', color: current ? kpiColor(current.kpi_pct) : '', icon: 'target' },
+                { label: t('prof_vs_last_month'), value: current && prev ? `${current.kpi_pct - prev.kpi_pct > 0 ? '+' : ''}${fmt(current.kpi_pct - prev.kpi_pct, 1)}%` : '—', sub: prev ? `${t('prof_last')} ${fmtPct(prev.kpi_pct)}` : t('prof_first_month'), color: current && prev ? (current.kpi_pct >= prev.kpi_pct ? 'text-green-600' : 'text-red-500') : 'text-on-surface-variant', icon: current && prev && current.kpi_pct >= prev.kpi_pct ? 'trending_up' : 'trending_down' },
+                { label: t('prof_active_days'), value: current ? String(current.days_with_entries) : '—', sub: t('prof_this_month'), color: 'text-on-surface', icon: 'calendar_today' },
+                { label: t('prof_point_target'), value: current?.point_target ? current.point_target.toLocaleString('en-US',{maximumFractionDigits:0}) : '—', sub: current?.year_month ? `${current.year_month.slice(0,4)}-${current.year_month.slice(4)}` : '', color: 'text-on-surface', icon: 'adjust' },
               ].map(c => (
                 <div key={c.label} className="bg-surface-container/40 rounded-xl p-3">
                   <div className="flex items-center gap-1.5 mb-1">
@@ -168,7 +171,7 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
             <div className="bg-surface-container/30 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                 <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
-                  {granularity === 'month' ? 'Weight & Qty Trend — Last 6 Months' : `${granularity === 'week' ? 'Weekly' : 'Daily'} Breakdown — ${drillMonthLabel}`}
+                  {granularity === 'month' ? t('prof_weight_qty_trend_6mo') : `${granularity === 'week' ? t('prof_weekly_breakdown') : t('prof_daily_breakdown')} ${drillMonthLabel}`}
                 </p>
                 <div className="flex items-center gap-2">
                   {/* Granularity toggle */}
@@ -176,7 +179,7 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
                     {(['month','week','day'] as Granularity[]).map(g => (
                       <button key={g} onClick={() => setGranularity(g)}
                         className={`px-3 py-1 rounded-md font-label-md text-[11px] capitalize transition-all ${granularity === g ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:text-primary'}`}>
-                        {g}
+                        {g === 'month' ? t('prof_month') : g === 'week' ? t('prof_week') : t('prof_day')}
                       </button>
                     ))}
                   </div>
@@ -199,7 +202,7 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
                 </div>
               ) : chartData.length === 0 ? (
                 <div className="flex items-center justify-center h-[220px] text-on-surface-variant text-body-sm">
-                  No entries for {drillMonthLabel}.
+                  {t('prof_no_entries_for')} {drillMonthLabel}.
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={220}>
@@ -210,8 +213,8 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
                     <YAxis yAxisId="qty" orientation="right" tick={{ fontSize: 10, fill: '#666' }} width={40} />
                     <Tooltip content={<ChartTooltip />} />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar yAxisId="vol" dataKey="weight" name="Total Weight (g)" fill="#990000" fillOpacity={0.75} radius={[3,3,0,0]} />
-                    <Line yAxisId="qty" type="monotone" dataKey="qty" name="Qty" stroke="#9c6e1b" strokeWidth={2.5} dot={{ r: 3.5, fill: '#9c6e1b' }} strokeDasharray="4 2" />
+                    <Bar yAxisId="vol" dataKey="weight" name={t('prof_total_weight_g')} fill="#990000" fillOpacity={0.75} radius={[3,3,0,0]} />
+                    <Line yAxisId="qty" type="monotone" dataKey="qty" name={t('prof_qty')} stroke="#9c6e1b" strokeWidth={2.5} dot={{ r: 3.5, fill: '#9c6e1b' }} strokeDasharray="4 2" />
                   </ComposedChart>
                 </ResponsiveContainer>
               )}
@@ -222,8 +225,8 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
               <table className="w-full text-left border-collapse text-sm">
                 <thead className="bg-surface-container/60">
                   <tr>
-                    {['Month','Jewelry (g)','Bar (g)','Qty','KPI Score','KPI %','Target','Days','Commission (₭)'].map(h => (
-                      <th key={h} className="px-4 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
+                    {(['prof_col_month','prof_col_jewelry_g','prof_col_bar_g','prof_col_qty','prof_col_kpi_score','prof_col_kpi_pct','prof_col_target','prof_col_days','prof_col_commission_lak'] as TranslationKey[]).map(h => (
+                      <th key={h} className="px-4 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{t(h)}</th>
                     ))}
                   </tr>
                 </thead>
@@ -237,7 +240,7 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
                           <div className="flex items-center gap-1.5">
                             {MONTHS[h.month - 1]} {h.year}
                             {prevH && trendIcon(h.kpi_pct, prevH.kpi_pct)}
-                            {isLatest && <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded-full uppercase font-bold">Current</span>}
+                            {isLatest && <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded-full uppercase font-bold">{t('prof_current')}</span>}
                           </div>
                         </td>
                         <td className="px-4 py-2.5 tabular-nums">{fmt(h.actual_jewelry, 1)}</td>
@@ -269,6 +272,7 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
 interface SupModalProps { id: number; token: string; onClose: () => void }
 
 export function SupProfileModal({ id, token, onClose }: SupModalProps) {
+  const { t } = useLanguage()
   const [data, setData]       = useState<SupHistoryProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [granularity, setGranularity] = useState<Granularity>('month')
@@ -297,17 +301,17 @@ export function SupProfileModal({ id, token, onClose }: SupModalProps) {
             </div>
             <div>
               <h3 className="font-headline-md text-on-surface font-bold">
-                {loading ? 'Loading...' : data?.full_name ?? 'Unknown'}
+                {loading ? t('prof_loading') : data?.full_name ?? t('prof_unknown')}
               </h3>
               {data && (
                 <div className="flex items-center gap-2 flex-wrap mt-0.5">
                   <span className="text-[10px] text-on-surface-variant">{data.branch_name}</span>
                   <span className="text-on-surface-variant text-[10px]">·</span>
-                  <span className="text-[10px] text-on-surface-variant">{data.rep_count} reps</span>
+                  <span className="text-[10px] text-on-surface-variant">{data.rep_count} {t('prof_reps_count')}</span>
                   <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${data.staff_type === 'b2c' ? 'bg-primary/10 text-primary' : 'bg-secondary/10 text-secondary'}`}>
                     {data.staff_type?.toUpperCase()}
                   </span>
-                  <span className="text-[9px] bg-secondary/10 text-secondary px-1.5 py-0.5 rounded-full font-bold uppercase">Supervisor</span>
+                  <span className="text-[9px] bg-secondary/10 text-secondary px-1.5 py-0.5 rounded-full font-bold uppercase">{t('prof_supervisor_badge')}</span>
                 </div>
               )}
             </div>
@@ -322,15 +326,15 @@ export function SupProfileModal({ id, token, onClose }: SupModalProps) {
             <span className="material-symbols-outlined animate-spin-slow text-3xl text-secondary">sync</span>
           </div>
         ) : !data ? (
-          <div className="p-10 text-center text-on-surface-variant">No data found for this supervisor.</div>
+          <div className="p-10 text-center text-on-surface-variant">{t('prof_no_data_sup')}</div>
         ) : (
           <div className="p-6 space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { label: 'Team KPI % (This Month)', value: current ? fmtPct(current.team_kpi_pct) : '—', sub: current ? `${current.team_total_score.toLocaleString('en-US',{maximumFractionDigits:0})} pts` : '', color: current ? kpiColor(current.team_kpi_pct) : '', icon: 'groups' },
-                { label: 'vs Last Month', value: current && prev ? `${current.team_kpi_pct - prev.team_kpi_pct > 0 ? '+' : ''}${fmt(current.team_kpi_pct - prev.team_kpi_pct, 1)}%` : '—', sub: prev ? `Last: ${fmtPct(prev.team_kpi_pct)}` : 'First month', color: current && prev ? (current.team_kpi_pct >= prev.team_kpi_pct ? 'text-green-600' : 'text-red-500') : 'text-on-surface-variant', icon: current && prev && current.team_kpi_pct >= prev.team_kpi_pct ? 'trending_up' : 'trending_down' },
-                { label: 'Team Size', value: String(data.rep_count), sub: 'active reps', color: 'text-on-surface', icon: 'badge' },
-                { label: 'Team Target', value: current?.team_point_target ? current.team_point_target.toLocaleString('en-US',{maximumFractionDigits:0}) : '—', sub: 'combined pts', color: 'text-on-surface', icon: 'adjust' },
+                { label: t('prof_team_kpi_this_month'), value: current ? fmtPct(current.team_kpi_pct) : '—', sub: current ? `${current.team_total_score.toLocaleString('en-US',{maximumFractionDigits:0})} pts` : '', color: current ? kpiColor(current.team_kpi_pct) : '', icon: 'groups' },
+                { label: t('prof_vs_last_month'), value: current && prev ? `${current.team_kpi_pct - prev.team_kpi_pct > 0 ? '+' : ''}${fmt(current.team_kpi_pct - prev.team_kpi_pct, 1)}%` : '—', sub: prev ? `${t('prof_last')} ${fmtPct(prev.team_kpi_pct)}` : t('prof_first_month'), color: current && prev ? (current.team_kpi_pct >= prev.team_kpi_pct ? 'text-green-600' : 'text-red-500') : 'text-on-surface-variant', icon: current && prev && current.team_kpi_pct >= prev.team_kpi_pct ? 'trending_up' : 'trending_down' },
+                { label: t('prof_team_size'), value: String(data.rep_count), sub: t('prof_active_reps'), color: 'text-on-surface', icon: 'badge' },
+                { label: t('prof_team_target'), value: current?.team_point_target ? current.team_point_target.toLocaleString('en-US',{maximumFractionDigits:0}) : '—', sub: t('prof_combined_pts'), color: 'text-on-surface', icon: 'adjust' },
               ].map(c => (
                 <div key={c.label} className="bg-surface-container/40 rounded-xl p-3">
                   <div className="flex items-center gap-1.5 mb-1">
@@ -345,12 +349,12 @@ export function SupProfileModal({ id, token, onClose }: SupModalProps) {
 
             <div className="bg-surface-container/30 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Team Weight & Qty Trend — Last 6 Months</p>
+                <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">{t('prof_team_weight_qty_trend_6mo')}</p>
                 <div className="flex bg-white/60 rounded-lg p-0.5 border border-outline-variant/20">
                   {(['month'] as Granularity[]).map(g => (
                     <button key={g} onClick={() => setGranularity(g)}
                       className={`px-3 py-1 rounded-md font-label-md text-[11px] capitalize transition-all ${granularity === g ? 'bg-secondary text-white shadow-sm' : 'text-on-surface-variant hover:text-secondary'}`}>
-                      Month
+                      {t('prof_month')}
                     </button>
                   ))}
                 </div>
@@ -363,8 +367,8 @@ export function SupProfileModal({ id, token, onClose }: SupModalProps) {
                   <YAxis yAxisId="qty" orientation="right" tick={{ fontSize: 10, fill: '#666' }} width={50} />
                   <Tooltip content={<ChartTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar yAxisId="vol" dataKey="weight" name="Total Weight (g)" fill="#990000" fillOpacity={0.75} radius={[3,3,0,0]} />
-                  <Line yAxisId="qty" type="monotone" dataKey="qty" name="Qty" stroke="#9c6e1b" strokeWidth={2.5} dot={{ r: 3.5, fill: '#9c6e1b' }} strokeDasharray="4 2" />
+                  <Bar yAxisId="vol" dataKey="weight" name={t('prof_total_weight_g')} fill="#990000" fillOpacity={0.75} radius={[3,3,0,0]} />
+                  <Line yAxisId="qty" type="monotone" dataKey="qty" name={t('prof_qty')} stroke="#9c6e1b" strokeWidth={2.5} dot={{ r: 3.5, fill: '#9c6e1b' }} strokeDasharray="4 2" />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -373,8 +377,8 @@ export function SupProfileModal({ id, token, onClose }: SupModalProps) {
               <table className="w-full text-left border-collapse text-sm">
                 <thead className="bg-surface-container/60">
                   <tr>
-                    {['Month','Team Jewelry (g)','Team Bar (g)','Team Qty','Team Score','Team KPI %','Team Target'].map(h => (
-                      <th key={h} className="px-4 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
+                    {(['prof_col_month','prof_col_team_jewelry_g','prof_col_team_bar_g','prof_col_team_qty','prof_col_team_score','prof_col_team_kpi_pct','prof_col_team_target'] as TranslationKey[]).map(h => (
+                      <th key={h} className="px-4 py-3 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{t(h)}</th>
                     ))}
                   </tr>
                 </thead>
@@ -388,7 +392,7 @@ export function SupProfileModal({ id, token, onClose }: SupModalProps) {
                           <div className="flex items-center gap-1.5">
                             {MONTHS[h.month - 1]} {h.year}
                             {prevH && trendIcon(h.team_kpi_pct, prevH.team_kpi_pct)}
-                            {isLatest && <span className="text-[9px] bg-secondary text-white px-1.5 py-0.5 rounded-full uppercase font-bold">Current</span>}
+                            {isLatest && <span className="text-[9px] bg-secondary text-white px-1.5 py-0.5 rounded-full uppercase font-bold">{t('prof_current')}</span>}
                           </div>
                         </td>
                         <td className="px-4 py-2.5 tabular-nums">{fmt(h.actual_jewelry, 1)}</td>
