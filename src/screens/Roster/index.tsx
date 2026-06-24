@@ -6,6 +6,8 @@ import { useAuthStore } from '../../store/auth.store'
 import type { RosterRow, Supervisor, SupervisorRosterRow } from '../../types'
 import { validateRosterRows } from '../../utils/csv'
 import { parseXLSX, readFileAsArrayBuffer, generateRosterTemplateXLSX, generateRowsXLSX, downloadXLSX } from '../../utils/xlsx'
+import { useLanguage } from '../../i18n/LanguageContext'
+import type { TranslationKey } from '../../i18n/translations'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -25,6 +27,7 @@ interface RepModalProps {
 }
 
 function RepModal({ mode, initial, branches, supervisors, onSave, onClose }: RepModalProps) {
+  const { t } = useLanguage()
   const [repCode,     setRepCode]     = useState(initial.rep_code ?? '')
   const [fullName,    setFullName]    = useState(initial.full_name ?? '')
   const [nickname,    setNickname]    = useState(initial.nickname ?? '')
@@ -52,7 +55,7 @@ function RepModal({ mode, initial, branches, supervisors, onSave, onClose }: Rep
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-7 animate-slide-in">
         <div className="flex justify-between items-center mb-5">
-          <h3 className="font-headline-md text-on-surface">{mode === 'create' ? 'Add Sales Rep' : 'Edit Sales Rep'}</h3>
+          <h3 className="font-headline-md text-on-surface">{mode === 'create' ? t('ro_add_sales_rep') : t('ro_edit_sales_rep')}</h3>
           <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors">
             <span className="material-symbols-outlined">close</span>
           </button>
@@ -60,12 +63,12 @@ function RepModal({ mode, initial, branches, supervisors, onSave, onClose }: Rep
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="font-label-md text-label-md block mb-1 text-primary">Rep Code *</label>
+              <label className="font-label-md text-label-md block mb-1 text-primary">{t('ro_rep_code_req')}</label>
               <input autoFocus value={repCode} onChange={e => setRepCode(e.target.value)}
                 className="w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none" placeholder="e.g. B1-01" />
             </div>
             <div>
-              <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Staff Type</label>
+              <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">{t('ro_staff_type')}</label>
               <div className="flex bg-surface-container rounded-lg p-0.5 mt-1">
                 {(['b2c','b2b'] as const).map(t => (
                   <button key={t} onClick={() => setStaffType(t)}
@@ -77,46 +80,46 @@ function RepModal({ mode, initial, branches, supervisors, onSave, onClose }: Rep
             </div>
           </div>
           <div>
-            <label className="font-label-md text-label-md block mb-1 text-primary">Full Name *</label>
+            <label className="font-label-md text-label-md block mb-1 text-primary">{t('ro_full_name_req')}</label>
             <input value={fullName} onChange={e => setFullName(e.target.value)}
               className="w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none" placeholder="e.g. Somchai Phommachan" />
           </div>
           <div>
-            <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Nickname</label>
+            <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">{t('ro_nickname')}</label>
             <input value={nickname} onChange={e => setNickname(e.target.value)}
-              className="w-full bg-surface-container-low border-b-2 border-outline-variant px-3 py-2 text-body-sm outline-none" placeholder="Optional short name" />
+              className="w-full bg-surface-container-low border-b-2 border-outline-variant px-3 py-2 text-body-sm outline-none" placeholder={t('ro_nickname_ph')} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="font-label-md text-label-md block mb-1 text-primary">Branch *</label>
+              <label className="font-label-md text-label-md block mb-1 text-primary">{t('ro_branch_req')}</label>
               <select value={branchId} onChange={e => handleBranchChange(Number(e.target.value))}
                 className="w-full bg-surface-container-low border-b-2 border-primary px-3 py-2 text-body-sm outline-none">
-                <option value={0}>— Select —</option>
+                <option value={0}>{t('ro_select_dash')}</option>
                 {branches.map(b => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
               </select>
             </div>
             <div>
-              <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">Supervisor</label>
+              <label className="font-label-md text-label-md block mb-1 text-on-surface-variant">{t('ro_supervisor')}</label>
               <select value={supId ?? 0} onChange={e => setSupId(Number(e.target.value) || null)}
                 disabled={branchId === 0}
                 className="w-full bg-surface-container-low border-b-2 border-outline-variant px-3 py-2 text-body-sm outline-none disabled:opacity-50">
-                <option value={0}>— None —</option>
+                <option value={0}>{t('ro_none_dash')}</option>
                 {branchSups.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
               </select>
             </div>
           </div>
           <p className="text-[11px] text-on-surface-variant/60 italic">
-            KPI point target is configured in KPI Settings (per branch / staff type) — not per rep.
+            {t('ro_kpi_target_note')}
           </p>
         </div>
         <div className="flex gap-3 mt-6">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border border-outline-variant text-on-surface-variant font-label-md hover:bg-surface-container transition-colors">
-            Cancel
+            {t('ro_cancel')}
           </button>
           <button onClick={submit} disabled={!repCode.trim() || !fullName.trim() || branchId === 0}
             className="flex-1 py-2.5 rounded-lg bg-primary text-white font-label-md flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 shadow-primary">
             <span className="material-symbols-outlined text-sm">save</span>
-            {mode === 'create' ? 'Add Rep' : 'Save Changes'}
+            {mode === 'create' ? t('ro_add_rep_btn') : t('ro_save_changes')}
           </button>
         </div>
       </div>
@@ -130,6 +133,7 @@ function RosterUploadModal({ token, onDone, onClose }: {
   onDone: (msg: string) => void
   onClose: () => void
 }) {
+  const { t } = useLanguage()
   const [file, setFile]       = useState<File | null>(null)
   const [errors, setErrors]   = useState<string[]>([])
   const [result, setResult]   = useState<string | null>(null)
@@ -168,17 +172,17 @@ function RosterUploadModal({ token, onDone, onClose }: {
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-7 animate-slide-in">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="font-headline-md text-on-surface">Upload Roster</h3>
+          <h3 className="font-headline-md text-on-surface">{t('ro_upload_roster_title')}</h3>
           <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors">
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
         <ul className="text-body-sm text-on-surface-variant mb-3 list-disc pl-5 space-y-1">
-          <li>Matching is by <strong>Rep_Code</strong> — same code updates that rep, a new code creates one.</li>
-          <li>Columns: Rep_Code, Full_Name, Nickname, Branch_Code, Team_Sup_Name, Staff_Type, Effective_Date, Sup_Code.</li>
-          <li><strong>Effective_Date</strong> (YYYY-MM-DD) is required — decides which month the row counts for.</li>
-          <li><strong>Sup_Code AND Team_Sup_Name are both required</strong> — missing either one skips the row.</li>
-          <li>KPI point targets aren't set here — that's done in KPI Settings.</li>
+          <li>{t('ro_rule_match_code')}</li>
+          <li>{t('ro_rule_columns')}</li>
+          <li>{t('ro_rule_eff_date')}</li>
+          <li>{t('ro_rule_sup_required')}</li>
+          <li>{t('ro_rule_kpi_settings')}</li>
         </ul>
 
         {!file ? (
@@ -192,7 +196,7 @@ function RosterUploadModal({ token, onDone, onClose }: {
             <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f) }} />
             <span className="material-symbols-outlined text-3xl text-on-surface-variant/40 mb-2">upload_file</span>
-            <p className="text-body-sm text-on-surface-variant">Drop XLSX file here or click to browse</p>
+            <p className="text-body-sm text-on-surface-variant">{t('ro_drop_file')}</p>
           </div>
         ) : (
           <div className="bg-surface-container/40 rounded-xl p-4 flex items-center justify-between mb-3">
@@ -214,18 +218,18 @@ function RosterUploadModal({ token, onDone, onClose }: {
         {result && (
           <div className="mt-3 p-3 bg-tertiary-fixed/30 rounded-lg flex items-center gap-2">
             <span className="material-symbols-outlined text-tertiary text-sm">cloud_done</span>
-            <p className="text-body-sm">{result} Synced to Google Sheets.</p>
+            <p className="text-body-sm">{result} {t('ro_synced_to_sheets')}</p>
           </div>
         )}
 
         <div className="flex gap-3 mt-5">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border border-outline-variant text-on-surface-variant font-label-md hover:bg-surface-container transition-colors">
-            Close
+            {t('ro_close')}
           </button>
           <button onClick={submit} disabled={!file || uploading}
             className="flex-1 py-2.5 rounded-lg bg-secondary text-white font-label-md flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50">
             <span className={`material-symbols-outlined text-sm ${uploading ? 'animate-spin-slow' : ''}`}>{uploading ? 'sync' : 'cloud_upload'}</span>
-            {uploading ? 'Uploading...' : 'Upload Roster'}
+            {uploading ? t('ro_uploading') : t('ro_upload_roster_btn')}
           </button>
         </div>
       </div>
@@ -235,6 +239,7 @@ function RosterUploadModal({ token, onDone, onClose }: {
 
 // ── Main screen ───────────────────────────────────────────────────────────
 export default function Roster() {
+  const { t } = useLanguage()
   const { token, user, branches } = useAuthStore()
   const now = new Date()
 
@@ -388,7 +393,7 @@ export default function Roster() {
   }
 
   return (
-    <AppShell title="Roster" allowedRoles={['admin', 'hr', 'top_manager', 'hr_support']}>
+    <AppShell title="KPV Sale Tracking" allowedRoles={['admin', 'hr', 'top_manager', 'hr_support']}>
       {toast && (
         <div className="fixed top-20 right-6 z-50 bg-inverse-surface text-inverse-on-surface px-5 py-3 rounded-xl shadow-lg animate-slide-in font-body-sm">
           {toast}
@@ -417,15 +422,15 @@ export default function Roster() {
       {/* Header */}
       <div className="flex justify-between items-end mb-6">
         <div>
-          <h2 className="font-headline-lg text-headline-lg text-on-surface">Roster</h2>
+          <h2 className="font-headline-lg text-headline-lg text-on-surface">{t('ro_title')}</h2>
           <p className="text-on-surface-variant text-body-md mt-1">
             {view === 'reps'
               ? (published
-                  ? `Roster for ${MONTHS[month - 1]} ${year} — edit, add, deactivate, or upload reps`
-                  : `No roster yet for ${MONTHS[month - 1]} ${year}`)
+                  ? `${t('ro_subtitle_published')} ${MONTHS[month - 1]} ${year} ${t('ro_subtitle_edit_note')}`
+                  : `${t('ro_subtitle_none_yet')} ${MONTHS[month - 1]} ${year}`)
               : (supPublished
-                  ? `Supervisors for ${MONTHS[month - 1]} ${year} — check team coverage and monthly targets`
-                  : `No supervisor roster yet for ${MONTHS[month - 1]} ${year}`)}
+                  ? `${t('ro_subtitle_sup_published')} ${MONTHS[month - 1]} ${year} ${t('ro_subtitle_sup_note')}`
+                  : `${t('ro_subtitle_sup_none_yet')} ${MONTHS[month - 1]} ${year}`)}
             <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold ml-2">{isHr ? 'HR' : 'Admin'}</span>
           </p>
         </div>
@@ -445,13 +450,13 @@ export default function Roster() {
       {/* Reps / Sup tabs */}
       <div className="flex bg-surface-container rounded-lg p-0.5 mb-5 w-fit">
         {([
-          { key: 'reps' as const, label: 'Reps', icon: 'badge' },
-          { key: 'sup' as const, label: 'Sup', icon: 'supervisor_account' },
-        ]).map(t => (
-          <button key={t.key} onClick={() => setView(t.key)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-md font-label-md text-label-md transition-all ${view === t.key ? 'bg-white shadow-sm text-primary font-bold' : 'text-on-surface-variant hover:text-primary'}`}>
-            <span className="material-symbols-outlined text-sm">{t.icon}</span>
-            {t.label}
+          { key: 'reps' as const, label: t('ro_tab_reps'), icon: 'badge' },
+          { key: 'sup' as const, label: t('ro_tab_sup'), icon: 'supervisor_account' },
+        ]).map(tab => (
+          <button key={tab.key} onClick={() => setView(tab.key)}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-md font-label-md text-label-md transition-all ${view === tab.key ? 'bg-white shadow-sm text-primary font-bold' : 'text-on-surface-variant hover:text-primary'}`}>
+            <span className="material-symbols-outlined text-sm">{tab.icon}</span>
+            {tab.label}
           </button>
         ))}
       </div>
@@ -460,24 +465,23 @@ export default function Roster() {
         <div className="mb-5 flex items-start gap-3 bg-error-container/20 border border-error/30 rounded-xl px-5 py-4">
           <span className="material-symbols-outlined text-error mt-0.5">info</span>
           <div className="flex-1">
-            <p className="font-label-md text-label-md text-error font-bold uppercase mb-1">No Roster Yet</p>
+            <p className="font-label-md text-label-md text-error font-bold uppercase mb-1">{t('ro_no_roster_yet')}</p>
             <p className="text-body-sm text-on-surface-variant mb-3">
-              No roster exists for {MONTHS[month - 1]} {year} or any earlier month. Add your first rep or upload a roster file to get started —
-              every following month automatically carries forward from the last one edited, no monthly confirmation needed.
+              {t('ro_no_roster_desc')}
             </p>
             <div className="flex gap-2 flex-wrap">
               {canUpload && (
                 <button onClick={() => setShowUpload(true)}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white font-label-md text-label-md hover:opacity-90 transition-all">
                   <span className="material-symbols-outlined text-sm">upload_file</span>
-                  Upload Roster
+                  {t('ro_upload_roster_btn')}
                 </button>
               )}
               {canEdit && (
                 <button onClick={() => { setEditRep(null); setRepModal('create') }}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary transition-all">
                   <span className="material-symbols-outlined text-sm">person_add</span>
-                  Add Rep
+                  {t('ro_add_rep_btn')}
                 </button>
               )}
             </div>
@@ -489,9 +493,9 @@ export default function Roster() {
         <div className="mb-5 flex items-start gap-3 bg-error-container/20 border border-error/30 rounded-xl px-5 py-4">
           <span className="material-symbols-outlined text-error mt-0.5">info</span>
           <div className="flex-1">
-            <p className="font-label-md text-label-md text-error font-bold uppercase mb-1">No Supervisor Roster Yet</p>
+            <p className="font-label-md text-label-md text-error font-bold uppercase mb-1">{t('ro_no_sup_roster_yet')}</p>
             <p className="text-body-sm text-on-surface-variant">
-              No supervisor roster exists for {MONTHS[month - 1]} {year} or any earlier month. Supervisors get added when a rep on the Reps tab is assigned to a new supervisor name, or via Team Performance.
+              {t('ro_no_sup_roster_desc')}
             </p>
           </div>
         </div>
@@ -501,14 +505,14 @@ export default function Roster() {
       <div className="flex flex-wrap gap-3 mb-5 items-center">
         <select value={filterBranch} onChange={e => { setFilterBranch(e.target.value === 'all' ? 'all' : Number(e.target.value)); setFilterSup('all') }}
           className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none">
-          <option value="all">All Branches</option>
+          <option value="all">{t('ro_all_branches')}</option>
           {branches.map(b => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
         </select>
 
         {view === 'reps' && (
           <select value={filterSup} onChange={e => setFilterSup(e.target.value === 'all' ? 'all' : Number(e.target.value))}
             className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none">
-            <option value="all">All Supervisors</option>
+            <option value="all">{t('ro_all_supervisors')}</option>
             {(filterBranch !== 'all' ? supervisors.filter(s => s.branch_id === filterBranch) : supervisors).map(s => (
               <option key={s.id} value={s.id}>{s.full_name}</option>
             ))}
@@ -516,10 +520,10 @@ export default function Roster() {
         )}
 
         <div className="flex bg-surface-container rounded-lg p-0.5">
-          {(['all','b2c','b2b'] as const).map(t => (
-            <button key={t} onClick={() => setFilterType(t)}
-              className={`px-3 py-1.5 rounded-md font-label-md text-label-md uppercase transition-all ${filterType === t ? 'bg-white shadow-sm text-primary font-bold' : 'text-on-surface-variant hover:text-primary'}`}>
-              {t === 'all' ? 'All' : t.toUpperCase()}
+          {(['all','b2c','b2b'] as const).map(ft => (
+            <button key={ft} onClick={() => setFilterType(ft)}
+              className={`px-3 py-1.5 rounded-md font-label-md text-label-md uppercase transition-all ${filterType === ft ? 'bg-white shadow-sm text-primary font-bold' : 'text-on-surface-variant hover:text-primary'}`}>
+              {ft === 'all' ? t('ro_filter_all') : ft.toUpperCase()}
             </button>
           ))}
         </div>
@@ -527,14 +531,14 @@ export default function Roster() {
         {view === 'reps' && (
           <label className="flex items-center gap-1.5 text-body-sm text-on-surface-variant cursor-pointer select-none">
             <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="accent-primary" />
-            Show Inactive
+            {t('ro_show_inactive')}
           </label>
         )}
 
         <div className="flex-1 min-w-[200px] max-w-xs relative">
           <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder={view === 'reps' ? 'Search name or rep code...' : 'Search name or sup code...'}
+            placeholder={view === 'reps' ? t('ro_search_rep') : t('ro_search_sup')}
             className="w-full bg-surface-container rounded-lg pl-8 pr-3 py-2 text-body-sm outline-none border-none" />
         </div>
 
@@ -543,25 +547,25 @@ export default function Roster() {
             <button onClick={downloadTemplate} disabled={dlTemplate}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high disabled:opacity-60 transition-all" title="Download CSV template">
               <span className={`material-symbols-outlined text-sm ${dlTemplate ? 'animate-spin-slow' : ''}`}>{dlTemplate ? 'sync' : 'download'}</span>
-              Template
+              {t('ro_template')}
             </button>
             <button onClick={exportRoster}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high transition-all" title="Export current view to Excel">
               <span className="material-symbols-outlined text-sm">file_download</span>
-              Export
+              {t('ro_export')}
             </button>
             {canUpload && (
               <button onClick={() => setShowUpload(true)}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white font-label-md text-label-md hover:opacity-90 transition-all">
                 <span className="material-symbols-outlined text-sm">upload_file</span>
-                Upload Roster
+                {t('ro_upload_roster_btn')}
               </button>
             )}
             {canEdit && (
               <button onClick={() => { setEditRep(null); setRepModal('create') }}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-label-md text-label-md hover:opacity-90 shadow-primary transition-all">
                 <span className="material-symbols-outlined text-sm">person_add</span>
-                Add Rep
+                {t('ro_add_rep_btn')}
               </button>
             )}
           </div>
@@ -572,10 +576,10 @@ export default function Roster() {
       {view === 'reps' ? (
       <div className="grid grid-cols-4 gap-3 mb-5">
         {[
-          { label: 'Total Active', value: roster.filter(r => r.active === 1).length, color: 'text-primary', bg: 'bg-primary/10', icon: 'badge' },
-          { label: 'Inactive', value: roster.filter(r => r.active === 0).length, color: 'text-on-surface-variant', bg: 'bg-surface-container-highest', icon: 'person_off' },
-          { label: 'B2C Reps', value: roster.filter(r => r.active === 1 && r.staff_type === 'b2c').length, color: 'text-secondary', bg: 'bg-secondary/10', icon: 'storefront' },
-          { label: 'B2B Reps', value: roster.filter(r => r.active === 1 && r.staff_type === 'b2b').length, color: 'text-tertiary', bg: 'bg-tertiary/10', icon: 'business' },
+          { label: t('ro_stat_total_active'), value: roster.filter(r => r.active === 1).length, color: 'text-primary', bg: 'bg-primary/10', icon: 'badge' },
+          { label: t('ro_stat_inactive'), value: roster.filter(r => r.active === 0).length, color: 'text-on-surface-variant', bg: 'bg-surface-container-highest', icon: 'person_off' },
+          { label: t('ro_stat_b2c_reps'), value: roster.filter(r => r.active === 1 && r.staff_type === 'b2c').length, color: 'text-secondary', bg: 'bg-secondary/10', icon: 'storefront' },
+          { label: t('ro_stat_b2b_reps'), value: roster.filter(r => r.active === 1 && r.staff_type === 'b2b').length, color: 'text-tertiary', bg: 'bg-tertiary/10', icon: 'business' },
         ].map(s => (
           <GlassCard key={s.label} className="px-4 py-3 flex items-center gap-3">
             <div className={`w-10 h-10 rounded-xl ${s.bg} flex items-center justify-center`}>
@@ -591,10 +595,10 @@ export default function Roster() {
       ) : (
       <div className="grid grid-cols-4 gap-3 mb-5">
         {[
-          { label: 'Total Active', value: supRoster.filter(s => s.active === 1).length, color: 'text-primary', bg: 'bg-primary/10', icon: 'supervisor_account' },
-          { label: 'Inactive', value: supRoster.filter(s => s.active === 0).length, color: 'text-on-surface-variant', bg: 'bg-surface-container-highest', icon: 'person_off' },
-          { label: 'B2C Sups', value: supRoster.filter(s => s.active === 1 && s.staff_type === 'b2c').length, color: 'text-secondary', bg: 'bg-secondary/10', icon: 'storefront' },
-          { label: 'B2B Sups', value: supRoster.filter(s => s.active === 1 && s.staff_type === 'b2b').length, color: 'text-tertiary', bg: 'bg-tertiary/10', icon: 'business' },
+          { label: t('ro_stat_total_active'), value: supRoster.filter(s => s.active === 1).length, color: 'text-primary', bg: 'bg-primary/10', icon: 'supervisor_account' },
+          { label: t('ro_stat_inactive'), value: supRoster.filter(s => s.active === 0).length, color: 'text-on-surface-variant', bg: 'bg-surface-container-highest', icon: 'person_off' },
+          { label: t('ro_stat_b2c_sups'), value: supRoster.filter(s => s.active === 1 && s.staff_type === 'b2c').length, color: 'text-secondary', bg: 'bg-secondary/10', icon: 'storefront' },
+          { label: t('ro_stat_b2b_sups'), value: supRoster.filter(s => s.active === 1 && s.staff_type === 'b2b').length, color: 'text-tertiary', bg: 'bg-tertiary/10', icon: 'business' },
         ].map(s => (
           <GlassCard key={s.label} className="px-4 py-3 flex items-center gap-3">
             <div className={`w-10 h-10 rounded-xl ${s.bg} flex items-center justify-center`}>
@@ -613,18 +617,18 @@ export default function Roster() {
       {view === 'reps' ? (
       <GlassCard elevated className="overflow-hidden">
         <div className="px-5 py-3 border-b border-outline-variant/10 flex items-center justify-between">
-          <h3 className="font-headline-md text-headline-md text-on-surface">Roster — {MONTHS[month - 1]} {year}</h3>
+          <h3 className="font-headline-md text-headline-md text-on-surface">{t('ro_roster_for')} {MONTHS[month - 1]} {year}</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-surface-container-low/50">
                 {([
-                  { label: 'Rep Code', col: 'rep_code' as const },
-                  { label: 'Name',     col: 'full_name' as const },
-                  { label: 'Branch',   col: 'branch_name' as const },
-                  { label: 'Supervisor', col: 'supervisor_name' as const },
-                  { label: 'Type',     col: 'staff_type' as const },
+                  { label: t('ro_col_rep_code'), col: 'rep_code' as const },
+                  { label: t('ro_col_name'),     col: 'full_name' as const },
+                  { label: t('ro_col_branch'),   col: 'branch_name' as const },
+                  { label: t('ro_col_supervisor'), col: 'supervisor_name' as const },
+                  { label: t('ro_col_type'),     col: 'staff_type' as const },
                 ]).map(({ label, col }) => (
                   <th key={col} onClick={() => toggleSort(col)}
                     className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-primary select-none group">
@@ -636,19 +640,19 @@ export default function Roster() {
                     </span>
                   </th>
                 ))}
-                {['Target','Status','Actions'].map(h => (
-                  <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
+                {(['ro_col_target','ro_col_status','ro_col_actions'] as const).map(h => (
+                  <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{t(h)}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/10">
               {loading ? (
                 <tr><td colSpan={8} className="py-10 text-center text-on-surface-variant">
-                  <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>Loading roster...
+                  <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>{t('ro_loading_roster')}
                 </td></tr>
               ) : filteredRoster.length === 0 ? (
                 <tr><td colSpan={8} className="py-10 text-center text-on-surface-variant text-body-sm">
-                  {published ? 'No reps match the current filters.' : `No roster uploaded for ${MONTHS[month - 1]} ${year}.`}
+                  {published ? t('ro_no_reps_match') : `${t('ro_no_roster_uploaded')} ${MONTHS[month - 1]} ${year}.`}
                 </td></tr>
               ) : filteredRoster.map(rep => (
                 <tr key={rep.id} className={`transition-colors group ${rep.active === 0 ? 'opacity-50' : 'hover:bg-surface-container/20'}`}>
@@ -680,28 +684,28 @@ export default function Roster() {
                   </td>
                   <td className="px-5 py-3 text-body-sm font-bold tabular-nums">{fmtPts(rep.point_target ?? 0)} pts</td>
                   <td className="px-5 py-3">
-                    <StatusBadge label={rep.active === 1 ? 'Active' : 'Inactive'} variant={rep.active === 1 ? 'success' : 'neutral'} />
+                    <StatusBadge label={rep.active === 1 ? t('ro_active') : t('ro_inactive')} variant={rep.active === 1 ? 'success' : 'neutral'} />
                   </td>
                   <td className="px-5 py-3">
                     {canEdit && (
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={() => { setEditRep(rep); setRepModal('edit') }}
-                          className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Edit rep">
+                          className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors" title={t('ro_tooltip_edit')}>
                           <span className="material-symbols-outlined text-sm">edit</span>
                         </button>
                         {rep.active === 1 ? (
                           <button onClick={() => handleDeactivate(rep)}
-                            className="p-1.5 text-error hover:bg-error-container/30 rounded-lg transition-colors" title="Deactivate">
+                            className="p-1.5 text-error hover:bg-error-container/30 rounded-lg transition-colors" title={t('ro_tooltip_deactivate')}>
                             <span className="material-symbols-outlined text-sm">person_off</span>
                           </button>
                         ) : (
                           <>
                             <button onClick={() => handleReactivate(rep)}
-                              className="p-1.5 text-tertiary hover:bg-tertiary/10 rounded-lg transition-colors" title="Reactivate">
+                              className="p-1.5 text-tertiary hover:bg-tertiary/10 rounded-lg transition-colors" title={t('ro_tooltip_reactivate')}>
                               <span className="material-symbols-outlined text-sm">person_check</span>
                             </button>
                             <button onClick={() => handlePermanentDelete(rep)}
-                              className="p-1.5 text-error hover:bg-error-container/30 rounded-lg transition-colors" title="Permanently delete">
+                              className="p-1.5 text-error hover:bg-error-container/30 rounded-lg transition-colors" title={t('ro_tooltip_delete')}>
                               <span className="material-symbols-outlined text-sm">delete_forever</span>
                             </button>
                           </>
@@ -716,34 +720,34 @@ export default function Roster() {
         </div>
         <div className="px-5 py-3 bg-surface-container-low/20 border-t border-outline-variant/10 flex items-center justify-between">
           <p className="text-[11px] text-on-surface-variant">
-            Showing {filteredRoster.length} of {roster.length} reps
-            {!showInactive && roster.filter(r => r.active === 0).length > 0 && ` · ${roster.filter(r => r.active === 0).length} inactive hidden`}
+            {t('ro_showing_of_reps')} {filteredRoster.length} {t('ro_of_reps')} {roster.length} {t('ro_reps_lc')}
+            {!showInactive && roster.filter(r => r.active === 0).length > 0 && ` · ${roster.filter(r => r.active === 0).length} ${t('ro_inactive_hidden')}`}
           </p>
-          <p className="text-[10px] text-on-surface-variant/60 italic">Changes auto-push to Google Sheets Roster tab</p>
+          <p className="text-[10px] text-on-surface-variant/60 italic">{t('ro_auto_push_note')}</p>
         </div>
       </GlassCard>
       ) : (
       <GlassCard elevated className="overflow-hidden">
         <div className="px-5 py-3 border-b border-outline-variant/10 flex items-center justify-between">
-          <h3 className="font-headline-md text-headline-md text-on-surface">Supervisors — {MONTHS[month - 1]} {year}</h3>
+          <h3 className="font-headline-md text-headline-md text-on-surface">{t('ro_supervisors_for')} {MONTHS[month - 1]} {year}</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-surface-container-low/50">
-                {['Sup Code','Name','Branch','Type','Reps','Target','Status'].map(h => (
-                  <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{h}</th>
+                {(['ro_col_sup_code','ro_col_name','ro_col_branch','ro_col_type','ro_col_reps','ro_col_target','ro_col_status'] as const).map(h => (
+                  <th key={h} className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{t(h)}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/10">
               {loading ? (
                 <tr><td colSpan={7} className="py-10 text-center text-on-surface-variant">
-                  <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>Loading supervisors...
+                  <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>{t('ro_loading_supervisors')}
                 </td></tr>
               ) : filteredSup.length === 0 ? (
                 <tr><td colSpan={7} className="py-10 text-center text-on-surface-variant text-body-sm">
-                  {supPublished ? 'No supervisors match the current filters.' : `No supervisor roster uploaded for ${MONTHS[month - 1]} ${year}.`}
+                  {supPublished ? t('ro_no_sups_match') : `${t('ro_no_sup_roster_uploaded')} ${MONTHS[month - 1]} ${year}.`}
                 </td></tr>
               ) : filteredSup.map(sup => (
                 <tr key={sup.id} className={`transition-colors ${sup.active === 0 ? 'opacity-50' : 'hover:bg-surface-container/20'}`}>
@@ -775,7 +779,7 @@ export default function Roster() {
                   <td className="px-5 py-3 text-body-sm tabular-nums">{sup.rep_count}</td>
                   <td className="px-5 py-3 text-body-sm font-bold tabular-nums">{fmtPts(sup.point_target)} pts</td>
                   <td className="px-5 py-3">
-                    <StatusBadge label={sup.active === 1 ? 'Active' : 'Inactive'} variant={sup.active === 1 ? 'success' : 'neutral'} />
+                    <StatusBadge label={sup.active === 1 ? t('ro_active') : t('ro_inactive')} variant={sup.active === 1 ? 'success' : 'neutral'} />
                   </td>
                 </tr>
               ))}
@@ -784,9 +788,9 @@ export default function Roster() {
         </div>
         <div className="px-5 py-3 bg-surface-container-low/20 border-t border-outline-variant/10 flex items-center justify-between">
           <p className="text-[11px] text-on-surface-variant">
-            Showing {filteredSup.length} of {supRoster.length} supervisors
+            {t('ro_showing_of_sups')} {filteredSup.length} {t('ro_of_reps')} {supRoster.length} {t('ro_supervisors_lc')}
           </p>
-          <p className="text-[10px] text-on-surface-variant/60 italic">Target = per-person target × rep count (sum of total reps target in team)</p>
+          <p className="text-[10px] text-on-surface-variant/60 italic">{t('ro_target_formula')}</p>
         </div>
       </GlassCard>
       )}

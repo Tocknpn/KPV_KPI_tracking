@@ -5,6 +5,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Lao text needs Noto Sans Lao's glyphs — Inter has none, falls back to whatever generic
+   Lao font the OS has, not the font we actually want. Deliberately UN-LAYERED (not inside
+   @layer base/utilities) — Tailwind's cascade layers rank "utilities" above "base" regardless
+   of selector specificity, so a body.lang-lo rule inside @layer base can never win against
+   AppShell.tsx/Login.tsx's `font-sans` utility class on their wrapper divs. Un-layered CSS
+   beats all layered CSS unconditionally, which is the only way to actually override it. The
+   `.font-sans` part targets those wrapper divs directly; the bare `body.lang-lo` covers
+   anything else relying on inheritance. */
+body.lang-lo,
+body.lang-lo .font-sans {
+  font-family: 'Noto Sans Lao', 'Inter', system-ui, sans-serif;
+}
+
 @layer base {
   * { box-sizing: border-box; }
 
@@ -24,13 +37,6 @@
     color: #0b1c30;
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
-  }
-
-  /* Lao text needs Noto Sans Lao's glyphs — Inter has none, falls back to tofu boxes
-     without this. Toggled on <body> by LanguageContext so it covers every screen at once,
-     not just whichever ones get translated first. */
-  body.lang-lo {
-    font-family: 'Noto Sans Lao', 'Inter', system-ui, sans-serif;
   }
 
   /* Tabular figures for data cells */
