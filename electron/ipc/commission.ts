@@ -257,15 +257,20 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
       }
     }
 
+    // A sales_sup must only ever see their own row here — effectiveBranchIds is deliberately
+    // emptied for that role above (supervisorFilter is what scopes them instead, same as the
+    // reps query), but this query never applied supervisorFilter, so the empty branch clause
+    // left it unscoped and returned every active supervisor company-wide.
+    const supervisorParams: number[] = supervisorFilter != null ? [supervisorFilter] : effectiveBranchIds
     const supervisors = prepare(db, `
       SELECT sv.id, sv.full_name, sv.nickname, sv.staff_type, sv.branch_id,
         b.name AS branch_name, b.code AS branch_code
       FROM supervisors sv
       JOIN branches b ON b.id = sv.branch_id
       WHERE sv.active = 1
-        ${effectiveBranchIds.length > 0 ? `AND sv.branch_id IN (${effectiveBranchIds.map(() => '?').join(',')})` : ''}
+        ${supervisorFilter != null ? `AND sv.id = ?` : effectiveBranchIds.length > 0 ? `AND sv.branch_id IN (${effectiveBranchIds.map(() => '?').join(',')})` : ''}
       ORDER BY sv.branch_id, sv.full_name
-    `).all(...effectiveBranchIds) as Array<{
+    `).all(...supervisorParams) as Array<{
       id: number; full_name: string; nickname: string; staff_type: string; branch_id: number; branch_name: string; branch_code: string
     }>
 
