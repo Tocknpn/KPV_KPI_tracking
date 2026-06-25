@@ -106,6 +106,29 @@ x` locally and call it done; that's exactly the bug class this whole doc is abou
   standalone delete. Can't have a delete-sync bug for an action that doesn't exist.
 - Branches — fixed set of 4, no add/delete UI, edit-only.
 
+## KPI Settings month resolution (Jewelry/Bar rates, Qty Tiers)
+
+`kpi:getBranchMetricRates` / `kpi:saveBranchMetricRates` in kpi.ts:
+
+- A rate row can be scoped to a specific `year_month`, or left `year_month IS NULL` ("Standing
+  (all months)" — the default/fallback). Same shape for tiers via `effective_to IS NULL`.
+- **Reading a month**: picks the most specific match available — branch+this-month >
+  branch+standing > global+this-month > global+standing. If the selected month has no override
+  yet, you see the standing default, not zero/blank. This mirrors the exact priority
+  `computeKpiScore` itself uses, so what HR sees always matches what actually scored that month.
+- **Saving a month**: `DELETE WHERE year_month = <that exact month>` then `INSERT` the new value
+  — scoped to ONLY that month. Past months, future months, and the standing row are untouched.
+- **Cross-device**: same as every other full-rewrite config table — save triggers
+  `pushKpiRatesIfConfigured` (fire-and-forget), which rewrites the whole `KPIRates` tab with every
+  row (every month + standing) from the saving device's local table. Other devices need to Pull
+  before they see it; once pulled, their local resolution logic picks it up the same way.
+- **Editing the Admin-maintained Defaults** (`kpi:saveDefaultMetricRates` /
+  `kpi:saveDefaultQtyTiers`, admin-only) is the exact same delete-then-insert + push pattern,
+  just targeting the standing row (`year_month IS NULL` / `effective_to IS NULL`) instead of one
+  month. Syncs the same way. Does NOT retroactively change a month that already has its own
+  saved override — those still win per the priority order; the new default only affects months
+  with no override yet (or a fresh "Use Defaults" click).
+
 ## Versioning rule
 
 Bump the patch version in `package.json` and mention the version in the commit message on every

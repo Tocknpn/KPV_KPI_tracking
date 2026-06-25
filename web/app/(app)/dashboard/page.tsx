@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/session'
-import { getEntries, getBranches, getSettings, getQtyTiers, getMonthlyTargets } from '@/lib/sheets'
+import { getEntries, getBranches, getKpiRates, getQtyTiers, getMonthlyTargets, getRoster } from '@/lib/sheets'
 import { computeKpi, kpiColor, kpiBarColor, MONTHS } from '@/lib/kpi'
 
 export const dynamic = 'force-dynamic'
@@ -11,12 +11,13 @@ export default async function DashboardPage() {
   const year = now.getFullYear()
   const month = now.getMonth() + 1
 
-  const [allEntries, branches, settings, qtyTiers, monthlyTargets] = await Promise.all([
+  const [allEntries, branches, kpiRates, qtyTiers, monthlyTargets, roster] = await Promise.all([
     getEntries(),
     getBranches(),
-    getSettings(),
+    getKpiRates(),
     getQtyTiers(),
     getMonthlyTargets(),
+    getRoster(),
   ])
 
   const isBranchScoped = session.role === 'branch_manager' || session.role === 'accountant_officer'
@@ -24,7 +25,7 @@ export default async function DashboardPage() {
     ? [session.branchCode as string]
     : undefined
 
-  const branchKpis = computeKpi(allEntries, branches, settings, qtyTiers, monthlyTargets, year, month, filterBranches)
+  const branchKpis = computeKpi(allEntries, branches, kpiRates, qtyTiers, monthlyTargets, roster, year, month, filterBranches)
 
   const overallScore = branchKpis.reduce((s, b) => s + b.total_score, 0)
   const overallTarget = branchKpis.reduce((s, b) => s + b.kpi_target, 0)

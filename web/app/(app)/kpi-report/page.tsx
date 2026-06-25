@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/session'
-import { getEntries, getBranches, getSettings, getQtyTiers, getMonthlyTargets } from '@/lib/sheets'
+import { getEntries, getBranches, getKpiRates, getQtyTiers, getMonthlyTargets, getRoster } from '@/lib/sheets'
 import { computeKpi, kpiColor, MONTHS } from '@/lib/kpi'
 
 export const dynamic = 'force-dynamic'
@@ -16,12 +16,13 @@ export default async function KpiReportPage({ searchParams }: Props) {
   const year = parseInt(params.year ?? '') || now.getFullYear()
   const month = parseInt(params.month ?? '') || now.getMonth() + 1
 
-  const [allEntries, branches, settings, qtyTiers, monthlyTargets] = await Promise.all([
+  const [allEntries, branches, kpiRates, qtyTiers, monthlyTargets, roster] = await Promise.all([
     getEntries(),
     getBranches(),
-    getSettings(),
+    getKpiRates(),
     getQtyTiers(),
     getMonthlyTargets(),
+    getRoster(),
   ])
 
   const isBranchManager = session.role === 'branch_manager' || session.role === 'accountant_officer'
@@ -31,7 +32,7 @@ export default async function KpiReportPage({ searchParams }: Props) {
   const selectedBranch = lockedBranch ?? (params.branch || null)
   const filterBranches = selectedBranch ? [selectedBranch] : undefined
 
-  const branchKpis = computeKpi(allEntries, branches, settings, qtyTiers, monthlyTargets, year, month, filterBranches)
+  const branchKpis = computeKpi(allEntries, branches, kpiRates, qtyTiers, monthlyTargets, roster, year, month, filterBranches)
 
   // Flatten all reps across displayed branches
   const allReps = branchKpis.flatMap(b => b.reps.map(r => ({ ...r, branch_name: b.name, kpi_target: b.kpi_target })))
