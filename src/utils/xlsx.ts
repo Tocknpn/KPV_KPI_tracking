@@ -51,6 +51,19 @@ export function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
 }
 
 // ── Template generators ───────────────────────────────────────────────────
+// Force a column to Excel's "Text" number format (@) so typed values like 2026-06-26
+// stay literal strings instead of Excel auto-converting them to a date serial (e.g. 46199),
+// which is what caused upload date-mismatch errors on some devices/locales.
+function forceTextColumn(ws: XLSX.WorkSheet, colIndex: number, rowCount: number): void {
+  for (let r = 0; r < rowCount; r++) {
+    const addr = XLSX.utils.encode_cell({ r, c: colIndex })
+    const cell = ws[addr]
+    if (!cell) continue
+    cell.t = 's'
+    cell.z = '@'
+  }
+}
+
 interface SalesmanStub {
   id: number
   rep_code?: string | null
@@ -84,6 +97,7 @@ export function generateDailyTemplateXLSX(salesmen: SalesmanStub[], date: string
     { wch: 16 }, // KPI_2
     { wch: 14 }, // KPI_3
   ]
+  forceTextColumn(ws, 0, dataRows.length + 1) // Date column, header + data rows
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Daily Entry')
@@ -157,6 +171,7 @@ export function generateRosterTemplateXLSX(salesmen: RosterStub[]): Uint8Array {
     { wch: 14 }, // Effective_Date
     { wch: 16 }, // Sup_Code
   ]
+  forceTextColumn(ws, 6, dataRows.length + 1) // Effective_Date column, header + data rows
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Roster')
