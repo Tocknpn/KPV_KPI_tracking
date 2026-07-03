@@ -178,6 +178,10 @@ export async function pullRosterFromSheet(
   let imported = 0
   const latestBySalesman = new Map<number, { branch_id: number; supervisor_id: number | null; staff_type: string; active: number; year_month: string }>()
 
+  // Batched into one transaction — was one auto-committed (fsync'd) statement per row,
+  // ×3-4 statements per row across a full roster pull. See connection.ts's WAL/NORMAL
+  // pragma comment for why that matters (startup freeze, antivirus scan overhead).
+  transaction(db, () => {
   for (const row of dataRows as string[][]) {
     const [monthLabel, repCode, fullName, nickname, branchCode, supervisorName, staffTypeRaw, activeStr, supervisorCode] = row
     const yearMonth = parseReadableYearMonth(monthLabel)
@@ -243,6 +247,7 @@ export async function pullRosterFromSheet(
     prepare(db, `UPDATE salesmen SET branch_id=?, supervisor_id=?, staff_type=?, active=? WHERE id=?`)
       .run(latest.branch_id, latest.supervisor_id, latest.staff_type, latest.active, salesmanId)
   }
+  })
 
   return imported
 }
@@ -259,6 +264,7 @@ export async function pullSupervisorRosterFromSheet(db: Database, sheets: Return
   const dataRows = allRows.length > 0 && String(allRows[0][0]).toLowerCase().includes('month') ? allRows.slice(1) : allRows
 
   let imported = 0
+  transaction(db, () => {
   for (const row of dataRows as string[][]) {
     const [monthLabel, supCode, fullName, , branchCode, staffTypeRaw, activeStr] = row
     const yearMonth = parseReadableYearMonth(monthLabel)
@@ -289,6 +295,7 @@ export async function pullSupervisorRosterFromSheet(db: Database, sheets: Return
     `).run(supId, yearMonth, branch.id, staffType, active)
     imported++
   }
+  })
   return imported
 }
 
@@ -330,6 +337,7 @@ export async function pullCommissionConfigsFromSheet(db: Database, sheets: Retur
   const dataRows = allRows.length > 0 && String(allRows[0][0]).toLowerCase().includes('month') ? allRows.slice(1) : allRows
 
   let imported = 0
+  transaction(db, () => {
   for (const row of dataRows as string[][]) {
     const [monthLabel, staffTypeLabel, jRate, bRate, qRate] = row
     const yearMonth = (monthLabel ?? '').toLowerCase().startsWith('standing') ? COMMISSION_DEFAULTS_YM : parseReadableYearMonth(monthLabel)
@@ -347,6 +355,7 @@ export async function pullCommissionConfigsFromSheet(db: Database, sheets: Retur
     `).run(staffType, yearMonth, parseFloat(jRate) || 0, parseFloat(bRate) || 0, parseFloat(qRate) || 0)
     imported++
   }
+  })
   return imported
 }
 
@@ -694,6 +703,7 @@ async function pullKpiSubmissions(
   const all = res.data.values ?? []
   const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'month' ? all.slice(1) : all
   let imported = 0
+  transaction(db, () => {
   for (const row of data as string[][]) {
     const [monthLabel, submittedBy, submittedAt] = row
     const yearMonth = parseReadableYearMonth(monthLabel)
@@ -702,6 +712,7 @@ async function pullKpiSubmissions(
       .run(yearMonth, submittedBy ?? null, submittedAt ?? new Date().toISOString())
     imported++
   }
+  })
   return imported
 }
 
@@ -804,12 +815,14 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     if (settRes) {
       const all = settRes.data.values ?? []
       const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'key' ? all.slice(1) : all
+      transaction(db, () => {
       for (const row of data) {
         const [key, value] = row as string[]
         if (!key || SKIP_KEYS.has(key)) continue
         prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES (?,?)`).run(key, value ?? '')
         counts.settings++
       }
+      })
     }
 
     // ── Branches ──────────────────────────────────────────────────────
@@ -817,6 +830,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     if (brRes) {
       const all = brRes.data.values ?? []
       const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'code' ? all.slice(1) : all
+      transaction(db, () => {
       for (const row of data) {
         const [code, , targetStr, b2cStr, b2bStr] = row as string[]
         if (!code) continue
@@ -829,6 +843,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
           .run(target, isNaN(b2c) ? target : b2c, isNaN(b2b) ? target : b2b, code)
         counts.branches++
       }
+      })
     }
 
     // ── KPI Rates ─────────────────────────────────────────────────────
@@ -842,6 +857,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
       const all = rateRes.data.values ?? []
       const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'metric' ? all.slice(1) : all
       const METRIC_IDS: Record<string, number> = { jewelry: 1, bar: 2, qty: 3 }
+      transaction(db, () => {
       for (const row of data) {
         const [metricName, branchCode, staffTypeLabel, appliesTo, ppuStr] = row as string[]
         const metricId = METRIC_IDS[(metricName ?? '').toLowerCase()]
@@ -863,6 +879,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
           .run(metricId, branchId, staffType, yearMonth, ppu)
         counts.kpiRates++
       }
+      })
     }
 
     // ── Qty Tiers ────────────────────────────────────────────────────
@@ -888,6 +905,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
         if (!groups.has(key)) groups.set(key, { branchCode, staffType, appliesTo, tiers: [] })
         groups.get(key)!.tiers.push({ threshold, score, order })
       }
+      transaction(db, () => {
       for (const { branchCode, staffType, appliesTo, tiers } of groups.values()) {
         const branchRow = branchCode !== 'Global'
           ? prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
@@ -920,6 +938,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
           counts.qtyTiers++
         })
       }
+      })
     }
 
     // ── Supervisors (must run before Roster so supervisor links resolve) ─
@@ -927,6 +946,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     if (supRes) {
       const all = supRes.data.values ?? []
       const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'full_name' ? all.slice(1) : all
+      transaction(db, () => {
       for (const row of data) {
         const [fullName, nickname, branchCode, staffTypeRaw, activeStr, supCodeRaw] = row as string[]
         if (!fullName || !branchCode) continue
@@ -945,6 +965,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
         }
         counts.supervisors++
       }
+      })
     }
 
     // ── Roster ─────────────────────────────────────────────────────────
@@ -965,6 +986,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     if (rosterDelRes) {
       const all = rosterDelRes.data.values ?? []
       const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'rep_code' ? all.slice(1) : all
+      transaction(db, () => {
       for (const row of data) {
         const [repCode] = row as string[]
         if (!repCode) continue
@@ -979,6 +1001,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
         prepare(db, `DELETE FROM entry_deletions WHERE salesman_id = ?`).run(sm.id)
         prepare(db, `DELETE FROM salesmen WHERE id = ?`).run(sm.id)
       }
+      })
     }
 
     // ── Daily Entries ─────────────────────────────────────────────────
@@ -992,6 +1015,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     const allEntries = entryRes.data.values ?? []
     const firstIsHeader = allEntries[0] && !String(allEntries[0][0]).match(/^\d{4}-\d{2}-\d{2}$/)
     const entryRows = firstIsHeader ? allEntries.slice(1) : allEntries
+    transaction(db, () => {
     for (const row of entryRows) {
       const [entryDate, , repCode, , jewelryStr, barStr, qtyStr, deletedFlag] = row as string[]
       if (!entryDate || !repCode) continue
@@ -1005,6 +1029,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
       prepare(db, `INSERT INTO daily_entries (salesman_id, branch_id, staff_type, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at) VALUES (?,?,?,?,?,?,?,1,?)`).run(sm.id, sm.branch_id, sm.staff_type, entryDate, parseFloat(jewelryStr) || 0, parseFloat(barStr) || 0, parseInt(qtyStr) || 0, now)
       counts.entries++
     }
+    })
 
     // ── Commission Configs ─────────────────────────────────────────────
     counts.configs += await pullCommissionConfigsFromSheet(db, sheets, sheetsId).catch(() => 0)
@@ -1016,6 +1041,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     if (usersRes) {
       const all = usersRes.data.values ?? []
       const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'username' ? all.slice(1) : all
+      transaction(db, () => {
       for (const row of data) {
         const [username, fullName, role, branchCode, supervisorName, activeStr, passwordPlain] = row as string[]
         if (!username || !role || !passwordPlain) continue
@@ -1041,6 +1067,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
         }
         counts.users++
       }
+      })
     }
 
     // ── Monthly Branch Targets ───────────────────────────────────────
@@ -1053,6 +1080,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     if (mbtRes) {
       const all = mbtRes.data.values ?? []
       const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'branch' ? all.slice(1) : all
+      transaction(db, () => {
       for (const row of data) {
         const [branchCode, monthLabel, targetStr, b2cStr, b2bStr] = row as string[]
         if (!branchCode) continue
@@ -1074,6 +1102,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
         `).run(branch.id, year, month, target, isNaN(b2c) ? target : b2c, isNaN(b2b) ? target : b2b)
         counts.monthlyTargets++
       }
+      })
     }
 
     // ── KPI monthly submissions ("HR confirmed this month" marker) ────
@@ -1085,6 +1114,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     if (auditRes) {
       const all = auditRes.data.values ?? []
       const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'occurred_at' ? all.slice(1) : all
+      transaction(db, () => {
       for (const row of data) {
         const [occurredAt, username, role, eventType, targetType, targetId, detail, branchIdStr] = row as string[]
         if (!occurredAt || !eventType) continue
@@ -1101,6 +1131,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
         `).run(occurredAt, username ?? '', role ?? '', eventType, targetType || null, targetId || null, detail || null, isNaN(branchId) ? null : branchId)
         counts.auditLogs++
       }
+      })
     }
 
     // ── Upload History (merge — append-only, same dedup-by-content shape as Audit Log) ──
@@ -1108,6 +1139,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     if (uploadRes) {
       const all = uploadRes.data.values ?? []
       const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'uploaded_at' ? all.slice(1) : all
+      transaction(db, () => {
       for (const row of data) {
         const [uploadedAt, branchCode, username, uploadType, filename, recordsCountStr, dateFrom, dateTo, monthStr, yearStr, status, notes] = row as string[]
         if (!uploadedAt || !uploadType) continue
@@ -1127,6 +1159,7 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
         `).run(uploadedAt, branch.id, u.id, uploadType, filename ?? '', parseInt(recordsCountStr, 10) || 0, dateFrom || null, dateTo || null, isNaN(month) ? null : month, isNaN(year) ? null : year, status || 'success', notes || null)
         counts.uploadLogs++
       }
+      })
     }
 
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now)

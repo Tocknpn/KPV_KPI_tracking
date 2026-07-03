@@ -52,6 +52,15 @@ export async function initDatabase(): Promise<void> {
 
   db = new Database(dbFilePath)
   db.pragma('foreign_keys = ON')
+  // WAL + NORMAL sync: default (DELETE journal + FULL sync) fsyncs on every single
+  // auto-committed statement outside an explicit transaction — with the Sheets pull's
+  // per-row writes (see sheets.ts) that's thousands of individual disk syncs on every
+  // app launch, each one also intercepted by antivirus real-time scanning. WAL lets
+  // readers proceed without blocking on writers; NORMAL still guarantees consistency
+  // after an app crash, just not after an OS-level power loss — an acceptable tradeoff
+  // for a desktop app, and standard practice for this workload.
+  db.pragma('journal_mode = WAL')
+  db.pragma('synchronous = NORMAL')
 
   const isNew = applySchema(getSchemaDb(db))
   if (isNew) {
