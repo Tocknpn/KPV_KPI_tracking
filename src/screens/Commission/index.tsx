@@ -4,6 +4,7 @@ import { GlassCard } from '../../components/ui/GlassCard'
 import { MonthDropdown } from '../../components/ui/PeriodFilter'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
+import { fiscalMonthOf, fiscalRangeLabel } from '../../utils/dates'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -90,8 +91,10 @@ export default function Commission() {
   const { selectedBranchIds, setSelectedBranchIds } = useAppStore()
 
   const now = new Date()
-  const [year, setYear]   = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const todayFiscal = fiscalMonthOf(todayISO)
+  const [year, setYear]   = useState(todayFiscal.year)
+  const [month, setMonth] = useState(todayFiscal.month)
   const [reps, setReps]   = useState<RepRow[]>([])
   const [sups, setSups]   = useState<SupRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -184,7 +187,7 @@ export default function Commission() {
           </nav>
           <h2 className="font-headline-lg text-headline-lg text-on-surface">Commission Report</h2>
           <p className="text-on-surface-variant text-body-md mt-1">
-            {scopeLabel} — {MONTHS[month - 1]} {year}
+            {scopeLabel} — {MONTHS[month - 1]} {year} <span className="text-xs">({fiscalRangeLabel(year, month)})</span>
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">

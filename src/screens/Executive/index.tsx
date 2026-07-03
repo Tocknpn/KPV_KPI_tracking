@@ -5,7 +5,7 @@ import { GlassCard } from '../../components/ui/GlassCard'
 import { RadialGauge } from '../../components/ui/RadialGauge'
 import { MonthDropdown, DateRangeBar } from '../../components/ui/PeriodFilter'
 import { useAuthStore } from '../../store/auth.store'
-import { getDefaultDateRange } from '../../utils/dates'
+import { getDefaultDateRange, fiscalMonthOf, fiscalProgress, fiscalRangeLabel, fiscalRangeForLabel } from '../../utils/dates'
 import type { ExecutiveBranchRow, TeamPerformanceRow } from '../../types'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -28,9 +28,11 @@ export default function Executive() {
 
   // ── Local date state ──────────────────────────────────────────────────
   const now = new Date()
-  const [year, setYear]   = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
-  const initRange = getDefaultDateRange(now.getFullYear(), now.getMonth() + 1)
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const todayFiscal = fiscalMonthOf(todayISO)
+  const [year, setYear]   = useState(todayFiscal.year)
+  const [month, setMonth] = useState(todayFiscal.month)
+  const initRange = getDefaultDateRange(todayFiscal.year, todayFiscal.month)
   const [dateFrom, setDateFrom] = useState(initRange.dateFrom)
   const [dateTo, setDateTo]     = useState(initRange.dateTo)
 
@@ -43,8 +45,7 @@ export default function Executive() {
   const maxDate = getDefaultDateRange(year, month).dateTo
 
   // Est. Month End helpers
-  const daysInMonth = new Date(year, month, 0).getDate()
-  const dayOfMonth  = new Date(dateTo + 'T00:00:00').getDate()
+  const { daysElapsed: dayOfMonth, daysTotal: daysInMonth } = fiscalProgress(year, month, dateTo)
   function eomPct(pct: number) { return dayOfMonth > 0 ? (pct / dayOfMonth) * daysInMonth : 0 }
 
   useEffect(() => {
@@ -82,8 +83,8 @@ export default function Executive() {
         <div>
           <h2 className="font-headline-lg text-headline-lg text-on-background">Company Overview</h2>
           <p className="text-on-surface-variant text-body-md">
-            KPI analytics · {MONTHS[month - 1]} {year}
-            {(dateFrom !== `${year}-${String(month).padStart(2,'0')}-01` || dateTo !== maxDate) && (
+            KPI analytics · {MONTHS[month - 1]} {year} <span className="text-xs">({fiscalRangeLabel(year, month)})</span>
+            {(dateFrom !== fiscalRangeForLabel(year, month).dateFrom || dateTo !== maxDate) && (
               <span className="ml-2 text-[11px] font-mono bg-surface-container px-1.5 py-0.5 rounded">{dateFrom} → {dateTo}</span>
             )}
           </p>
@@ -113,7 +114,7 @@ export default function Executive() {
               <div className="flex justify-between items-start mb-6">
                 <div>
                   <span className="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-[10px] uppercase tracking-widest mb-4 inline-block">
-                    KPI Score — {MONTHS[month - 1]} {year}
+                    KPI Score — {MONTHS[month - 1]} {year} ({fiscalRangeLabel(year, month)})
                   </span>
                   <h3 className="font-display-xl text-display-xl text-primary tabular-nums">
                     {fmtPct(overallKpiPct)}

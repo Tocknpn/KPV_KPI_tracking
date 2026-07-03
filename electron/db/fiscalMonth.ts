@@ -3,8 +3,8 @@
 // calendar 1st-to-last-day definition everywhere. year_month keys (YYYYMM strings /
 // (year, month) integer pairs) are unchanged — only what date range they map to changes.
 //
-// Mirrored in electron/db/fiscalMonth.ts for the main process (separate TS project/build,
-// no shared module path between electron/ and src/) — keep both in sync by hand.
+// Mirrored in src/utils/dates.ts for the renderer (separate TS project/build, no shared
+// module path between electron/ and src/) — keep both in sync by hand.
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -52,32 +52,13 @@ export function fiscalProgress(year: number, month: number, asOfDate: string): {
   return { daysElapsed, daysTotal }
 }
 
-export function getDefaultDateRange(year: number, month: number): { dateFrom: string; dateTo: string } {
-  const now = new Date()
-  const todayISO = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-  const todayFiscal = fiscalMonthOf(todayISO)
-  const isCurrentFiscalMonth = todayFiscal.year === year && todayFiscal.month === month
-  const { dateFrom, dateTo: fullDateTo } = fiscalRangeForLabel(year, month)
-  return { dateFrom, dateTo: isCurrentFiscalMonth ? todayISO : fullDateTo }
-}
-
-export function dayOfMonthFrom(dateTo: string): number {
-  return new Date(dateTo + 'T00:00:00').getDate()
-}
-
-// Laos/company timezone — every absolute timestamp shown in the app (audit log, upload
-// history, sync status) is forced to this zone instead of whatever timezone the device's
-// OS happens to be set to, so two devices in different locations show the same wall-clock
-// time for the same event. No DST in this zone, so this is safe year-round.
-const APP_TIMEZONE = 'Asia/Vientiane'
-
-export function fmtDateTime(iso: string | null, opts?: Intl.DateTimeFormatOptions): string {
-  if (!iso) return '—'
-  // SQLite's datetime('now') stores "YYYY-MM-DD HH:MM:SS" — no T, no Z, no offset. JS's
-  // Date constructor reads that shape as LOCAL time, not UTC, so converting "to Vientiane"
-  // became a no-op (already being treated as Vientiane) — the raw UTC number showed through
-  // unconverted, 7h behind real local time. Force it to parse as UTC, like it actually is.
-  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(iso) ? `${iso.replace(' ', 'T')}Z` : iso
-  try { return new Date(normalized).toLocaleString('en-GB', { timeZone: APP_TIMEZONE, ...opts }) }
-  catch { return iso }
-}
+// SQL CASE expression computing the fiscal YYYYMM bucket for an entry_date column, for use
+// in multi-month GROUP BY queries where a JS helper can't drive the bucketing (a JS function
+// can't run per-row inside SQL). '+1 month' clamps an overflowing day to the target month's
+// last day, but since only %Y%m is extracted, that clamping never affects the bucket.
+export const FISCAL_YM_SQL_EXPR = (col: string) => `
+  CASE WHEN CAST(strftime('%d', ${col}) AS INTEGER) >= 26
+       THEN strftime('%Y%m', ${col}, '+1 month')
+       ELSE strftime('%Y%m', ${col})
+  END
+`

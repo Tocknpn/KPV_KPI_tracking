@@ -6,6 +6,7 @@ import {
   pushMonthlyTargetsIfConfigured, pushKpiRatesIfConfigured, pushQtyTiersIfConfigured,
   pushBranchesIfConfigured, pushKpiSubmissionsIfConfigured, healLocalKpiSubmissionsBeforePush,
 } from './sheets'
+import { fiscalRangeForLabel, fiscalMonthOf } from '../db/fiscalMonth'
 import type { Database } from 'better-sqlite3'
 
 export function computeKpiScore(
@@ -18,7 +19,8 @@ export function computeKpiScore(
   staffType?: string
 ): { score: number; pct: number; tierId: number | null } {
   const pct = target > 0 ? (actual / target) * 100 : 0
-  const ym = date.slice(0, 4) + date.slice(5, 7) // YYYY-MM-DD -> YYYYMM
+  const { year: ymYear, month: ymMonth } = fiscalMonthOf(date) // which fiscal month this entry's date falls in
+  const ym = `${ymYear}${String(ymMonth).padStart(2, '0')}`
 
   // Staff-type-specific rate takes priority over metric default (jewelry/bar). Most specific
   // wins: branch+month > branch+standing(no month) > global+standing. A rate set for a
@@ -253,8 +255,7 @@ export function registerKpiHandlers(ipcMain: IpcMain): void {
     if (!['admin','hr'].includes(u.role)) throw new Error('Forbidden')
     const db = getDb()
     const branch = prepare(db, `SELECT code FROM branches WHERE id = ?`).get(branchId) as { code: string } | undefined
-    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
-    const monthEnd   = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
+    const { dateFrom: monthStart, dateTo: monthEnd } = fiscalRangeForLabel(year, month)
     const monthLabel = `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][month - 1]} ${year}`
     let configId: number
     transaction(db, () => {

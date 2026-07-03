@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { fiscalRangeForLabel, fiscalRangeLabel } from '../../utils/dates'
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -36,6 +37,7 @@ export function MonthDropdown({ year, month, onChange }: MonthDropdownProps) {
       >
         <span className="material-symbols-outlined text-sm text-primary">calendar_month</span>
         {MONTH_NAMES[month - 1]} {year}
+        <span className="text-on-surface-variant text-xs font-normal">({fiscalRangeLabel(year, month)})</span>
         <span className="material-symbols-outlined text-sm text-on-surface-variant">
           {open ? 'expand_less' : 'expand_more'}
         </span>
@@ -71,7 +73,7 @@ interface DateRangeBarProps {
 }
 
 export function DateRangeBar({ year, month, dateFrom, dateTo, maxDate, onDateFromChange, onDateToChange }: DateRangeBarProps) {
-  const minFrom = `${year}-${String(month).padStart(2, '0')}-01`
+  const minFrom = fiscalRangeForLabel(year, month).dateFrom
   return (
     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container border border-white/20 shadow-sm">
       <span className="material-symbols-outlined text-sm text-primary">date_range</span>

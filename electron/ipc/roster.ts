@@ -5,6 +5,7 @@ import { requireAuth, logAudit } from './auth'
 import { pushRosterIfConfigured, healLocalRosterBeforePush } from './sheets'
 import { snapshotSalesman, snapshotSupervisor, getRosterExactMonth, getSupervisorRosterExactMonth } from '../db/history'
 import { getBranchPointTarget, getIndividualPointTarget } from './reports'
+import { fiscalMonthOf, fiscalRangeForLabel } from '../db/fiscalMonth'
 import type { Database } from 'better-sqlite3'
 
 function requireRosterManager(token: string) {
@@ -24,11 +25,13 @@ function requireRosterViewer(token: string) {
 
 function nowYearMonth(): { year: number; month: number } {
   const now = new Date()
-  return { year: now.getFullYear(), month: now.getMonth() + 1 }
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  return fiscalMonthOf(todayISO)
 }
 
+// The fiscal period's own start date (26th of the prior calendar month), not calendar day 1.
 function effectiveDateFor(year: number, month: number): string {
-  return `${year}-${String(month).padStart(2, '0')}-01`
+  return fiscalRangeForLabel(year, month).dateFrom
 }
 
 // Attach each rep's monthly KPI point target — individual override (staff_monthly_targets)

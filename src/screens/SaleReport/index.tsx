@@ -11,7 +11,7 @@ import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import { useLanguage } from '../../i18n/LanguageContext'
 import type { TranslationKey } from '../../i18n/translations'
-import { getDefaultDateRange } from '../../utils/dates'
+import { getDefaultDateRange, fiscalMonthOf, fiscalRangeLabel } from '../../utils/dates'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -451,9 +451,11 @@ export default function SaleReport() {
   const { t } = useLanguage()
 
   const now = new Date()
-  const [year, setYear]   = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
-  const initRange = getDefaultDateRange(now.getFullYear(), now.getMonth() + 1)
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const todayFiscal = fiscalMonthOf(todayISO)
+  const [year, setYear]   = useState(todayFiscal.year)
+  const [month, setMonth] = useState(todayFiscal.month)
+  const initRange = getDefaultDateRange(todayFiscal.year, todayFiscal.month)
   const [dateFrom, setDateFrom] = useState(initRange.dateFrom)
   const [dateTo, setDateTo]     = useState(initRange.dateTo)
   const maxDate = getDefaultDateRange(year, month).dateTo
@@ -532,7 +534,7 @@ export default function SaleReport() {
       {/* ── Page Header ────────────────────────────────────────────────── */}
       <div className="mb-5">
         <h2 className="font-headline-lg text-headline-lg text-on-surface">{t('sr_title')}</h2>
-        <p className="text-on-surface-variant text-body-md mt-0.5">{scopeLabel} — {MONTHS[month - 1]} {year}</p>
+        <p className="text-on-surface-variant text-body-md mt-0.5">{scopeLabel} — {MONTHS[month - 1]} {year} <span className="text-xs">({fiscalRangeLabel(year, month)})</span></p>
       </div>
 
       {/* ── Filter Bar ─────────────────────────────────────────────────── */}
@@ -709,7 +711,7 @@ export default function SaleReport() {
               {d.byBranch.length > 0 && (
                 <GlassCard elevated className="p-6">
                   <h4 className="font-headline-md text-headline-md text-on-surface mb-1">{t('sr_branch_weight_contrib')}</h4>
-                  <p className="text-body-sm text-on-surface-variant mb-6">{MONTHS[month - 1]} {year} — {t('sr_vs')} {lmLabel}</p>
+                  <p className="text-body-sm text-on-surface-variant mb-6">{MONTHS[month - 1]} {year} <span className="text-xs">({fiscalRangeLabel(year, month)})</span> — {t('sr_vs')} {lmLabel}</p>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {/* Jewelry Weight % Contribution */}
                     <div className="rounded-xl border border-outline-variant/20 p-4">
@@ -866,7 +868,7 @@ export default function SaleReport() {
               {d.byBranch.length > 0 && (
                 <GlassCard elevated className="p-6">
                   <h4 className="font-headline-md text-headline-md text-on-surface mb-1">{t('sr_branch_analyst')}</h4>
-                  <p className="text-body-sm text-on-surface-variant mb-6">{MONTHS[month - 1]} {year} — {t('sr_vs')} {lmLabel}</p>
+                  <p className="text-body-sm text-on-surface-variant mb-6">{MONTHS[month - 1]} {year} <span className="text-xs">({fiscalRangeLabel(year, month)})</span> — {t('sr_vs')} {lmLabel}</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {d.byBranch.map(branch => (
                       <div key={branch.branch_id} className="rounded-xl p-4 border border-white/20" style={{ background: BRANCH_COLORS[d.byBranch.indexOf(branch) % BRANCH_COLORS.length] + '15', borderTop: `3px solid ${BRANCH_COLORS[d.byBranch.indexOf(branch) % BRANCH_COLORS.length]}` }}>

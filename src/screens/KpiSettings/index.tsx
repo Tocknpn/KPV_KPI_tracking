@@ -3,6 +3,7 @@ import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { useAuthStore } from '../../store/auth.store'
 import type { KpiMetric } from '../../types'
+import { fiscalMonthOf, fiscalRangeLabel } from '../../utils/dates'
 
 interface EditableTier { id?: number; threshold_pct: number; score: number }
 interface BranchRates { jewelry: { b2c: number; b2b: number }; bar: { b2c: number; b2b: number } }
@@ -24,8 +25,11 @@ export default function KpiSettings() {
   const [selectedBranch, setSelectedBranch] = useState<number | null>(null)
   const [toast, setToast] = useState('')
   // Global month filter — controls all sections
-  const [globalYear, setGlobalYear]   = useState(new Date().getFullYear())
-  const [globalMonth, setGlobalMonth] = useState(new Date().getMonth() + 1)
+  const todayD = new Date()
+  const todayISO = `${todayD.getFullYear()}-${String(todayD.getMonth() + 1).padStart(2, '0')}-${String(todayD.getDate()).padStart(2, '0')}`
+  const todayFiscal = fiscalMonthOf(todayISO)
+  const [globalYear, setGlobalYear]   = useState(todayFiscal.year)
+  const [globalMonth, setGlobalMonth] = useState(todayFiscal.month)
   // Edit Defaults mode (admin only) — Jewelry/Bar rates + Qty tiers operate on the standing
   // values every month silently falls back to, instead of this month's specific override.
   // Admin sets up Defaults only; HR submits Monthly KPI only — not a toggle, a fixed split
@@ -423,7 +427,7 @@ export default function KpiSettings() {
           onChange={e => setGlobalYear(Number(e.target.value))}
           className="bg-surface-container border-none rounded-lg px-3 py-2 text-body-sm outline-none w-24 font-bold text-primary"
         />
-        <span className="text-body-sm text-on-surface-variant ml-1">— all sections below reflect this month</span>
+        <span className="text-body-sm text-on-surface-variant ml-1">({fiscalRangeLabel(globalYear, globalMonth)}) — all sections below reflect this month</span>
         {/* "Confirmed" reflects HR's local Save All + the auto-push that fires right after
             it — it does not re-check the Sheet itself (the push is fire-and-forget and
             swallows failures), so the wording says "saved & synced" rather than overclaiming

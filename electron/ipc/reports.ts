@@ -4,6 +4,7 @@ import { prepare } from '../db/query'
 import { requireAuth } from './auth'
 import { computeKpiScore } from './kpi'
 import { getHeadcountAsOf, resolveYm, getRosterMapAsOf } from '../db/history'
+import { fiscalRangeForLabel, fiscalMonthOf, fiscalProgress, FISCAL_YM_SQL_EXPR } from '../db/fiscalMonth'
 
 function buildBranchFilter(ids: number[]): { sql: string; params: number[] } {
   if (ids.length === 0) return { sql: '', params: [] }
@@ -62,8 +63,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     }
     const db = getDb()
 
-    const daysInMonth = new Date(year, month, 0).getDate()
-    const dayOfMonth  = new Date(dateTo + 'T00:00:00').getDate()
+    const { daysElapsed: dayOfMonth, daysTotal: daysInMonth } = fiscalProgress(year, month, dateTo)
 
     const { sql: bSql, params: bParams } = buildBranchFilter(effectiveBranchIds)
 
@@ -182,8 +182,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     }
 
     const db = getDb()
-    const daysInMonth  = new Date(year, month, 0).getDate()
-    const dayOfMonth   = new Date(dateTo + 'T00:00:00').getDate()
+    const { daysElapsed: dayOfMonth, daysTotal: daysInMonth } = fiscalProgress(year, month, dateTo)
     const daysRemaining = Math.max(daysInMonth - dayOfMonth, 0)
 
     const branchTargetMap = new Map<string, number>()
@@ -279,9 +278,8 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     }
 
     const db = getDb()
-    const daysInMonth = new Date(year, month, 0).getDate()
-    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
-    const monthEnd   = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+    const { dateFrom: monthStart, dateTo: monthEnd } = fiscalRangeForLabel(year, month)
+    const daysInMonth = fiscalProgress(year, month, monthEnd).daysTotal
 
     // Reconciliation report — must reflect the EXACT month's own roster, not a carried-forward
     // one, or it'd grid a rep who already left against a month they were never on (defeats
@@ -304,7 +302,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       id: number; rep_code: string | null; full_name: string; nickname: string; branch_name: string; supervisor_name: string | null
     }>
 
-    if (!reps.length) return { reps: [], daysInMonth, published: false }
+    if (!reps.length) return { reps: [], daysInMonth, columnDates: [], published: false }
 
     const repIds = reps.map(r => r.id)
     const entryRows = prepare(db, `
@@ -315,21 +313,30 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       salesman_id: number; entry_date: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number
     }>
 
-    // Keyed by "salesmanId-day" — day-of-month only since every row is already within this
-    // exact month. A missing key means "nothing uploaded," distinct from an explicit 0 entry.
+    // Keyed by "salesmanId-entryDate" (the real calendar date, not a day-of-month digit) —
+    // a fiscal month doesn't start on day 1 (e.g. Jul 2026 runs 26 Jun .. 25 Jul), so column
+    // position can no longer be derived from the date's day digit. A missing key means
+    // "nothing uploaded," distinct from an explicit 0 entry.
     const byRepDay = new Map<string, { value: number; qty: number }>()
     for (const e of entryRows) {
-      const day = parseInt(e.entry_date.slice(8, 10), 10)
-      byRepDay.set(`${e.salesman_id}-${day}`, { value: (e.jewelry_weight_g || 0) + (e.bar_weight_g || 0), qty: e.quantity || 0 })
+      byRepDay.set(`${e.salesman_id}-${e.entry_date}`, { value: (e.jewelry_weight_g || 0) + (e.bar_weight_g || 0), qty: e.quantity || 0 })
+    }
+
+    // Walk the actual fiscal date range day-by-day so each column carries its real date —
+    // the client derives weekday from this date instead of recomposing (year, month, day)
+    // locally, which would be wrong once the period doesn't start on the 1st.
+    const columnDates: string[] = []
+    for (let cursor = new Date(monthStart + 'T00:00:00'), end = new Date(monthEnd + 'T00:00:00'); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+      columnDates.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`)
     }
 
     const result = reps.map(r => {
-      const days: Array<{ value: number; qty: number } | null> = []
+      const days: Array<{ date: string; value: number | null; qty: number | null }> = []
       let totalValue = 0, totalQty = 0
-      for (let d = 1; d <= daysInMonth; d++) {
-        const cell = byRepDay.get(`${r.id}-${d}`) ?? null
+      for (const dateStr of columnDates) {
+        const cell = byRepDay.get(`${r.id}-${dateStr}`)
         if (cell) { totalValue += cell.value; totalQty += cell.qty }
-        days.push(cell)
+        days.push({ date: dateStr, value: cell?.value ?? null, qty: cell?.qty ?? null })
       }
       return {
         id: r.id, rep_code: r.rep_code, full_name: r.full_name, nickname: r.nickname,
@@ -338,7 +345,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       }
     })
 
-    return { reps: result, daysInMonth, published: true }
+    return { reps: result, daysInMonth, columnDates, published: true }
   })
 
   ipcMain.handle('report:executive', async (_e,
@@ -516,19 +523,21 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
 
     const months: Array<{ year: number; month: number; ym: string }> = []
     const now = new Date()
+    const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const todayFiscal = fiscalMonthOf(todayISO)
     for (let i = numMonths - 1; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const d = new Date(todayFiscal.year, todayFiscal.month - 1 - i, 1)
       months.push({ year: d.getFullYear(), month: d.getMonth() + 1, ym: String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0') })
     }
 
     // One query spanning the whole window instead of one per month — same data, ~12x
     // fewer round-trips for a 6-month window (was: 1 groups query + 1 days query per month).
-    const rangeFrom = `${months[0].year}-${String(months[0].month).padStart(2,'0')}-01`
+    const rangeFrom = fiscalRangeForLabel(months[0].year, months[0].month).dateFrom
     const lastM = months[months.length - 1]
-    const rangeTo = `${lastM.year}-${String(lastM.month).padStart(2,'0')}-${new Date(lastM.year, lastM.month, 0).getDate()}`
+    const rangeTo = fiscalRangeForLabel(lastM.year, lastM.month).dateTo
 
     const allGroups = prepare(db, `
-      SELECT strftime('%Y%m', entry_date) AS ym, branch_id, staff_type,
+      SELECT ${FISCAL_YM_SQL_EXPR('entry_date')} AS ym, branch_id, staff_type,
         COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q
       FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ?
       GROUP BY ym, branch_id, staff_type
@@ -537,7 +546,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     for (const g of allGroups) groupsByYm.set(g.ym, [...(groupsByYm.get(g.ym) ?? []), g])
 
     const allDays = prepare(db, `
-      SELECT strftime('%Y%m', entry_date) AS ym, COUNT(DISTINCT entry_date) AS days
+      SELECT ${FISCAL_YM_SQL_EXPR('entry_date')} AS ym, COUNT(DISTINCT entry_date) AS days
       FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ? GROUP BY ym
     `).all(salesmanId, rangeFrom, rangeTo) as Array<{ ym: string; days: number }>
     const daysByYm = new Map(allDays.map(r => [r.ym, r.days]))
@@ -551,7 +560,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const commCfgByKey = new Map(allCommCfg.map(r => [`${r.staff_type}-${r.year_month}`, r]))
 
     const history = months.map(m => {
-      const dateTo = `${m.year}-${String(m.month).padStart(2,'0')}-${new Date(m.year, m.month, 0).getDate()}`
+      const dateTo = fiscalRangeForLabel(m.year, m.month).dateTo
       // Group by the entry's OWN stamped branch_id/staff_type — not the rep's current
       // values — so a mid-trend transfer or B2C/B2B change never re-rates past months.
       const groups = groupsByYm.get(m.ym) ?? []
@@ -579,8 +588,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('report:repDailyEntries', async (_e, token: string, salesmanId: number, year: number, month: number) => {
     requireAuth(token)
     const db = getDb()
-    const dateFrom = `${year}-${String(month).padStart(2,'0')}-01`
-    const dateTo   = `${year}-${String(month).padStart(2,'0')}-${new Date(year, month, 0).getDate()}`
+    const { dateFrom, dateTo } = fiscalRangeForLabel(year, month)
     return prepare(db, `SELECT entry_date, jewelry_weight_g, bar_weight_g, quantity FROM daily_entries WHERE salesman_id=? AND entry_date BETWEEN ? AND ? ORDER BY entry_date`).all(salesmanId, dateFrom, dateTo)
   })
 
@@ -596,8 +604,10 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
 
     const months: Array<{ year: number; month: number; ym: string }> = []
     const now = new Date()
+    const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const todayFiscal = fiscalMonthOf(todayISO)
     for (let i = numMonths - 1; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const d = new Date(todayFiscal.year, todayFiscal.month - 1 - i, 1)
       months.push({ year: d.getFullYear(), month: d.getMonth() + 1, ym: String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0') })
     }
 
@@ -616,9 +626,9 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     }
     const allRepIds = [...unionRepIds]
 
-    const rangeFrom = `${months[0].year}-${String(months[0].month).padStart(2,'0')}-01`
+    const rangeFrom = fiscalRangeForLabel(months[0].year, months[0].month).dateFrom
     const lastM = months[months.length - 1]
-    const rangeTo = `${lastM.year}-${String(lastM.month).padStart(2,'0')}-${new Date(lastM.year, lastM.month, 0).getDate()}`
+    const rangeTo = fiscalRangeForLabel(lastM.year, lastM.month).dateTo
 
     const groupsByYmThenRep = new Map<string, Array<{ salesman_id: number; branch_id: number; staff_type: string; j: number; b: number; q: number }>>()
     const targetByYmThenRep = new Map<string, number>()
@@ -626,7 +636,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     if (allRepIds.length > 0) {
       const idPh = allRepIds.map(() => '?').join(',')
       const allGroups = prepare(db, `
-        SELECT strftime('%Y%m', entry_date) AS ym, salesman_id, branch_id, staff_type,
+        SELECT ${FISCAL_YM_SQL_EXPR('entry_date')} AS ym, salesman_id, branch_id, staff_type,
           COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q
         FROM daily_entries WHERE salesman_id IN (${idPh}) AND entry_date BETWEEN ? AND ?
         GROUP BY ym, salesman_id, branch_id, staff_type
@@ -639,7 +649,7 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     }
 
     const history = months.map(m => {
-      const dateTo = `${m.year}-${String(m.month).padStart(2,'0')}-${new Date(m.year, m.month, 0).getDate()}`
+      const dateTo = fiscalRangeForLabel(m.year, m.month).dateTo
       const repIds = repIdsByYm.get(m.ym) ?? []
 
       let teamScore = 0; let teamTarget = 0; let teamJ = 0; let teamBar = 0; let teamQty = 0

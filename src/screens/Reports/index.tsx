@@ -7,7 +7,7 @@ import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import { useLanguage } from '../../i18n/LanguageContext'
 import type { TranslationKey } from '../../i18n/translations'
-import { getDefaultDateRange } from '../../utils/dates'
+import { getDefaultDateRange, fiscalProgress, fiscalRangeLabel, fiscalMonthOf } from '../../utils/dates'
 import { generateRowsXLSX, downloadXLSX } from '../../utils/xlsx'
 import { exportElementToPdf } from '../../utils/pdf'
 import { KpiSubmissionBanner } from '../../components/ui/KpiSubmissionBanner'
@@ -236,9 +236,11 @@ export default function Reports() {
 
   // ── Shared date state ──────────────────────────────────────────────────
   const now = new Date()
-  const [year, setYear]   = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
-  const initRange = getDefaultDateRange(now.getFullYear(), now.getMonth() + 1)
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const todayFiscal = fiscalMonthOf(todayISO)
+  const [year, setYear]   = useState(todayFiscal.year)
+  const [month, setMonth] = useState(todayFiscal.month)
+  const initRange = getDefaultDateRange(todayFiscal.year, todayFiscal.month)
   const [dateFrom, setDateFrom] = useState(initRange.dateFrom)
   const [dateTo, setDateTo]     = useState(initRange.dateTo)
   function handleMonthChange(y: number, m: number) {
@@ -288,8 +290,7 @@ export default function Reports() {
     : `${effectiveBranchIds.length} ${t('sr_branches_suffix')}`
 
   // EOM helpers (company overview)
-  const daysInMonth = new Date(year, month, 0).getDate()
-  const dayOfMonth  = new Date(dateTo + 'T00:00:00').getDate()
+  const { daysElapsed: dayOfMonth, daysTotal: daysInMonth } = fiscalProgress(year, month, dateTo)
   function calcEomPct(pct: number) { return dayOfMonth > 0 ? (pct / dayOfMonth) * daysInMonth : 0 }
 
   // ── Data state ─────────────────────────────────────────────────────────
@@ -330,11 +331,15 @@ export default function Reports() {
   const [trackingReps, setTrackingReps] = useState<Array<{
     id: number; rep_code: string | null; full_name: string; nickname: string
     branch_name: string; supervisor_name: string | null
-    days: Array<{ value: number; qty: number } | null>
+    days: Array<{ date: string; value: number | null; qty: number | null }>
     totalValue: number; totalQty: number
   }>>([])
   const [trackingPublished, setTrackingPublished] = useState(true)
   const [trackingDaysInMonth, setTrackingDaysInMonth] = useState(30)
+  // Real calendar date per grid column — a fiscal month doesn't start on day 1 (e.g. Jul
+  // 2026 runs 26 Jun .. 25 Jul), so weekday/day-of-month labels must come from these actual
+  // dates rather than being derived locally from (year, month, columnIndex).
+  const [trackingColumnDates, setTrackingColumnDates] = useState<string[]>([])
   const [trackingLoading, setTrackingLoading] = useState(false)
 
   // ── Load supervisors list ──────────────────────────────────────────────
@@ -380,7 +385,7 @@ export default function Reports() {
 
     setTrackingLoading(true)
     window.api.getDailyTracking(token, effectiveBranchIds, year, month)
-      .then(data => { setTrackingReps(data.reps); setTrackingDaysInMonth(data.daysInMonth); setTrackingPublished(data.published ?? true) })
+      .then(data => { setTrackingReps(data.reps); setTrackingDaysInMonth(data.daysInMonth); setTrackingColumnDates(data.columnDates ?? []); setTrackingPublished(data.published ?? true) })
       .catch(console.error)
       .finally(() => setTrackingLoading(false))
   }, [token, JSON.stringify(effectiveBranchIds), year, month, dateFrom, dateTo, lastSyncedAt])
@@ -628,10 +633,10 @@ export default function Reports() {
         const row: Record<string, string | number> = {
           Representative: r.full_name, Branch: r.branch_name, Supervisor: r.supervisor_name ?? '',
         }
-        for (let d = 1; d <= trackingDaysInMonth; d++) {
-          const cell = r.days[d - 1]
-          row[`Day ${d}`] = cell ? `${cell.value.toFixed(0)}/${cell.qty}` : ''
-        }
+        r.days.forEach((cell, i) => {
+          const label = trackingColumnDates[i] ?? cell.date
+          row[label] = cell.value !== null ? `${cell.value.toFixed(0)}/${cell.qty}` : ''
+        })
         row['Total (Baht/Qty)'] = `${r.totalValue.toFixed(0)}/${r.totalQty}`
         return row
       })
@@ -699,7 +704,7 @@ export default function Reports() {
       {/* ── Page Header ────────────────────────────────────────────────── */}
       <div className="mb-5">
         <h2 className="font-headline-lg text-headline-lg text-on-surface">{t('kr_title')}</h2>
-        <p className="text-on-surface-variant text-body-md mt-0.5">{scopeLabel} — {MONTHS[month - 1]} {year}</p>
+        <p className="text-on-surface-variant text-body-md mt-0.5">{scopeLabel} — {MONTHS[month - 1]} {year} <span className="text-xs">({fiscalRangeLabel(year, month)})</span></p>
       </div>
 
       {/* ── Shared Filter Bar ──────────────────────────────────────────── */}
@@ -778,7 +783,7 @@ export default function Reports() {
                   <div className="col-span-12 lg:col-span-6 flex items-center gap-8">
                     <div className="flex-1 min-w-0">
                       <span className="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-[12px] uppercase tracking-widest mb-3 inline-block">
-                        {t('kr_kpi_score')} — {MONTHS[month - 1]} {year}
+                        {t('kr_kpi_score')} — {MONTHS[month - 1]} {year} ({fiscalRangeLabel(year, month)})
                       </span>
                       {/* Current % → Est. month end */}
                       <div className="flex items-center gap-3 mt-1">
@@ -1182,7 +1187,7 @@ export default function Reports() {
       {activeTab === 'daily_tracking' && (
         <GlassCard elevated className="overflow-hidden">
           <div className="p-5 pb-0">
-            <h3 className="font-headline-md text-headline-md text-on-surface">{t('kr_daily_tracking_title')} — {MONTHS[month - 1]} {year}</h3>
+            <h3 className="font-headline-md text-headline-md text-on-surface">{t('kr_daily_tracking_title')} — {MONTHS[month - 1]} {year} <span className="text-body-sm font-normal text-on-surface-variant">({fiscalRangeLabel(year, month)})</span></h3>
             <p className="text-body-sm text-on-surface-variant mt-1">
               {t('kr_tracking_desc')} <strong>{t('kr_jewelry_bar_qty_day')}</strong> {t('kr_tracking_blank_note')}
             </p>
@@ -1192,14 +1197,14 @@ export default function Reports() {
               <thead>
                 <tr>
                   <th className="sticky left-0 bg-surface-container-low z-10 px-4 py-2.5 text-left font-label-md text-label-md text-on-surface-variant uppercase whitespace-nowrap">{t('kr_col_representative')}</th>
-                  {Array.from({ length: trackingDaysInMonth }, (_, i) => {
-                    const day = i + 1
-                    const dow = new Date(year, month - 1, day).getDay() // 0=Sun, 6=Sat
+                  {trackingColumnDates.map((dateStr, i) => {
+                    const d = new Date(dateStr + 'T00:00:00')
+                    const dow = d.getDay() // 0=Sun, 6=Sat
                     const isWeekend = dow === 0 || dow === 6
                     const dowLabel = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]
                     return (
-                      <th key={day} className={`px-2.5 py-2.5 text-center font-label-md text-[10px] whitespace-nowrap ${isWeekend ? 'font-bold text-on-surface bg-secondary/5' : 'text-on-surface-variant'}`}>
-                        {dowLabel} {day}
+                      <th key={i} className={`px-2.5 py-2.5 text-center font-label-md text-[10px] whitespace-nowrap ${isWeekend ? 'font-bold text-on-surface bg-secondary/5' : 'text-on-surface-variant'}`}>
+                        {dowLabel} {d.getDate()}
                       </th>
                     )
                   })}
@@ -1222,12 +1227,12 @@ export default function Reports() {
                       <p className="text-[10px] text-on-surface-variant">{r.rep_code ?? ''} · {r.supervisor_name ?? '—'} · {r.branch_name}</p>
                     </td>
                     {r.days.map((cell, i) => {
-                      const day = i + 1
-                      const dow = new Date(year, month - 1, day).getDay()
+                      const dow = new Date(cell.date + 'T00:00:00').getDay()
                       const isWeekend = dow === 0 || dow === 6
+                      const hasData = cell.value !== null
                       return (
-                        <td key={i} className={`px-2.5 py-2 text-center font-tabular-nums text-[11px] whitespace-nowrap ${isWeekend ? 'bg-secondary/5' : ''} ${cell ? 'text-on-surface' : 'text-on-surface-variant/40'}`}>
-                          {cell ? `${cell.value.toFixed(0)}/${cell.qty}` : '—'}
+                        <td key={i} className={`px-2.5 py-2 text-center font-tabular-nums text-[11px] whitespace-nowrap ${isWeekend ? 'bg-secondary/5' : ''} ${hasData ? 'text-on-surface' : 'text-on-surface-variant/40'}`}>
+                          {hasData ? `${cell.value!.toFixed(0)}/${cell.qty}` : '—'}
                         </td>
                       )
                     })}
@@ -1241,10 +1246,10 @@ export default function Reports() {
                 <tfoot>
                   <tr className="border-t-2 border-outline-variant/30">
                     <td className="sticky left-0 bg-surface-container-low z-10 px-4 py-2.5 font-bold text-body-sm">{t('kr_total')}</td>
-                    {Array.from({ length: trackingDaysInMonth }, (_, i) => {
+                    {trackingColumnDates.map((dateStr, i) => {
                       const dayTotal = trackingFiltered.reduce((sum, r) => sum + (r.days[i]?.value ?? 0), 0)
                       const dayQty   = trackingFiltered.reduce((sum, r) => sum + (r.days[i]?.qty ?? 0), 0)
-                      const dow = new Date(year, month - 1, i + 1).getDay()
+                      const dow = new Date(dateStr + 'T00:00:00').getDay()
                       const isWeekend = dow === 0 || dow === 6
                       return (
                         <td key={i} className={`px-2.5 py-2.5 text-center font-tabular-nums text-[11px] font-bold whitespace-nowrap ${isWeekend ? 'bg-secondary/10' : 'bg-surface-container-low'}`}>

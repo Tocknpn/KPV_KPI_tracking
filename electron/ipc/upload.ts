@@ -4,6 +4,7 @@ import { prepare, transaction } from '../db/query'
 import { requireAuth, requireAdmin, logAudit } from './auth'
 import { pushRosterIfConfigured, healLocalRosterBeforePush, syncEntriesToCloudIfConfigured, pushEntriesAndDeletionsIfConfigured, syncUploadLogsToCloudIfConfigured } from './sheets'
 import { snapshotSalesman, snapshotSupervisor, publishMonth, publishMonthFromDate, getRosterMapAsOf } from '../db/history'
+import { fiscalMonthOf, fiscalRangeForLabel, fiscalProgress } from '../db/fiscalMonth'
 
 export interface UploadRowResult {
   row: number
@@ -104,12 +105,12 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           }
 
           // salesmen.active only reflects "currently employed", not "on roster for THIS
-          // month" — without this check, an entry dated for a month HR hasn't set up the
-          // roster for yet (e.g. uploading July data before July's roster exists) silently
-          // inserted with no warning. Exact year_month match on purpose (not the carry-
-          // forward resolveYm() reporting uses) — this is the one place that's supposed to
-          // catch "roster isn't set up for this month yet", not paper over it.
-          const entryYearMonth = r.date.slice(0, 4) + r.date.slice(5, 7)
+          // fiscal month" — without this check, an entry dated for a fiscal month HR hasn't
+          // set up the roster for yet silently inserted with no warning. Exact year_month
+          // match on purpose (not the carry-forward resolveYm() reporting uses) — this is
+          // the one place that's supposed to catch "roster isn't set up for this month yet".
+          const { year: entryYear, month: entryMonth } = fiscalMonthOf(r.date)
+          const entryYearMonth = `${entryYear}${String(entryMonth).padStart(2, '0')}`
           const onRoster = prepare(db, `SELECT 1 FROM roster_monthly WHERE salesman_id = ? AND year_month = ?`).get(salesman.id, entryYearMonth)
           if (!onRoster) {
             const reason = `No roster for ${entryYearMonth.slice(0,4)}-${entryYearMonth.slice(4)} — ask HR/admin to set up this rep's roster for that month before uploading entries for it.`
@@ -378,12 +379,12 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           // KPI point target is always resolved from HR KPI Setting — roster upload no longer carries per-rep targets
           snapshotSalesman(db, salesmanId, r.effectiveDate)
           if (supId) snapshotSupervisor(db, supId, r.effectiveDate)
+          const todayISO = (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}` })()
           if (r.effectiveDate) publishMonthFromDate(db, r.effectiveDate)
-          else { const n = new Date(); publishMonth(db, n.getFullYear(), n.getMonth() + 1) }
+          else { const { year: py, month: pm } = fiscalMonthOf(todayISO); publishMonth(db, py, pm) }
 
-          const yearMonth = r.effectiveDate && /^\d{4}-\d{2}-\d{2}$/.test(r.effectiveDate)
-            ? r.effectiveDate.slice(0, 4) + r.effectiveDate.slice(5, 7)
-            : (() => { const n = new Date(); return `${n.getFullYear()}${String(n.getMonth() + 1).padStart(2, '0')}` })()
+          const { year: tky, month: tkm } = fiscalMonthOf(r.effectiveDate && /^\d{4}-\d{2}-\d{2}$/.test(r.effectiveDate) ? r.effectiveDate : todayISO)
+          const yearMonth = `${tky}${String(tkm).padStart(2, '0')}`
           touchedKeys.push({ yearMonth, repCode: r.repCode })
         }
       })
@@ -446,7 +447,9 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
       GROUP BY branch_id
     `).all(year, month) as Array<{ branch_id: number; last_upload: string; total_records: number }>
 
-    // Per-branch daily entry coverage (how many distinct dates have entries this month)
+    const { dateFrom, dateTo } = fiscalRangeForLabel(year, month)
+
+    // Per-branch daily entry coverage (how many distinct dates have entries this fiscal month)
     const dailyCoverage = prepare(db, `
       SELECT
         de.branch_id,
@@ -455,22 +458,20 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
         (SELECT MAX(ul.uploaded_at)
          FROM upload_logs ul
          WHERE ul.branch_id = de.branch_id AND ul.upload_type = 'daily'
-           AND CAST(strftime('%Y', ul.date_from) AS INTEGER) = ?
-           AND CAST(strftime('%m', ul.date_from) AS INTEGER) = ?
+           AND ul.date_from BETWEEN ? AND ?
            AND ul.status = 'success'
         ) AS last_daily_upload
       FROM daily_entries de
-      WHERE CAST(strftime('%Y', de.entry_date) AS INTEGER) = ?
-        AND CAST(strftime('%m', de.entry_date) AS INTEGER) = ?
+      WHERE de.entry_date BETWEEN ? AND ?
       GROUP BY de.branch_id
-    `).all(year, month, year, month) as Array<{
+    `).all(dateFrom, dateTo, dateFrom, dateTo) as Array<{
       branch_id: number; days_with_entries: number; last_entry: string; last_daily_upload: string | null
     }>
 
     // All branches
     const branches = prepare(db, `SELECT * FROM branches ORDER BY id`).all() as Array<{ id: number; name: string; code: string }>
 
-    const daysInMonth = new Date(year, month, 0).getDate()
+    const daysInMonth = fiscalProgress(year, month, dateTo).daysTotal
 
     return branches.map(b => {
       const target = targetUploads.find(t => t.branch_id === b.id)
@@ -498,7 +499,9 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('upload:getSalesmenForTemplate', async (_e, token: string, branchId: number | null) => {
     requireAuth(token)
     const now = new Date()
-    const rosterMap = getRosterMapAsOf(db, now.getFullYear(), now.getMonth() + 1)
+    const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const { year: curYear, month: curMonth } = fiscalMonthOf(todayISO)
+    const rosterMap = getRosterMapAsOf(db, curYear, curMonth)
     const salesmen = prepare(db, `SELECT id, rep_code, full_name, nickname FROM salesmen`).all() as
       Array<{ id: number; rep_code: string; full_name: string; nickname: string }>
     const branchRows = prepare(db, `SELECT id, code FROM branches`).all() as Array<{ id: number; code: string }>

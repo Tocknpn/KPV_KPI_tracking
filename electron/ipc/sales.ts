@@ -2,6 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
 import { requireAuth } from './auth'
+import { fiscalRangeForLabel, fiscalProgress, fiscalMonthOf } from '../db/fiscalMonth'
 
 // Local calendar date (not UTC) — toISOString() shifts the date across timezone offsets
 function toLocalISODate(d: Date): string {
@@ -15,8 +16,9 @@ function addDays(dateStr: string, days: number): string {
   return toLocalISODate(d)
 }
 
-function daysInMonthOf(year: number, month: number): number {
-  return new Date(year, month, 0).getDate()
+// Fiscal month immediately before (year, month) — e.g. (2026, 1) -> (2025, 12).
+function prevFiscalMonth(year: number, month: number): { year: number; month: number } {
+  return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 }
 }
 
 // Sunday-start of the calendar week (Sun–Sat) containing dateStr
@@ -91,25 +93,25 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
     const toD      = new Date(dateTo + 'T00:00:00')
     const fromD    = new Date(dateFrom + 'T00:00:00')
     const duration = Math.round((toD.getTime() - fromD.getTime()) / 86400000) + 1
-    const daysInM  = daysInMonthOf(year, month)
-    const dayOfM   = toD.getDate()
+    const { daysElapsed: dayOfM, daysTotal: daysInM } = fiscalProgress(year, month, dateTo)
     const daysRem  = daysInM - dayOfM
 
     // Previous period (same duration, right before dateFrom)
     const prevTo   = addDays(dateFrom, -1)
     const prevFrom = addDays(dateFrom, -duration)
 
-    // Same period last month (same day offsets, month-1)
-    const lmYear  = month === 1 ? year - 1 : year
-    const lmMonth = month === 1 ? 12 : month - 1
-    const lmDays  = daysInMonthOf(lmYear, lmMonth)
-    const lmFromDay = parseInt(dateFrom.slice(8))
-    const lmToDay   = Math.min(parseInt(dateTo.slice(8)), lmDays)
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const lmFrom     = `${lmYear}-${pad(lmMonth)}-${pad(lmFromDay)}`
-    const lmTo       = `${lmYear}-${pad(lmMonth)}-${pad(lmToDay)}`
-    const fullLmFrom = `${lmYear}-${pad(lmMonth)}-01`
-    const fullLmTo   = `${lmYear}-${pad(lmMonth)}-${pad(lmDays)}`
+    // Same period, previous fiscal month (same day offsets from the fiscal month's own
+    // start — a fiscal month starts on the 26th, not day 1, so the offset can't be read off
+    // the date string's day digit the way a calendar month's could).
+    const prevFiscal   = prevFiscalMonth(year, month)
+    const { dateFrom: fullLmFrom, dateTo: fullLmTo } = fiscalRangeForLabel(prevFiscal.year, prevFiscal.month)
+    const thisFiscalFrom = fiscalRangeForLabel(year, month).dateFrom
+    const msPerDay  = 86400000
+    const fromOffset = Math.round((new Date(dateFrom + 'T00:00:00').getTime() - new Date(thisFiscalFrom + 'T00:00:00').getTime()) / msPerDay)
+    const toOffset   = Math.round((new Date(dateTo   + 'T00:00:00').getTime() - new Date(thisFiscalFrom + 'T00:00:00').getTime()) / msPerDay)
+    const lmDays     = fiscalProgress(prevFiscal.year, prevFiscal.month, fullLmTo).daysTotal
+    const lmFrom     = addDays(fullLmFrom, fromOffset)
+    const lmTo       = addDays(fullLmFrom, Math.min(toOffset, lmDays - 1))
 
     // ── Aggregate periods ────────────────────────────────────────────────
     const current       = sumPeriod(db, dateFrom,   dateTo,   branchIds, staffType)
@@ -484,7 +486,7 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
     `).all(dateFrom, dateTo, ...params) as Array<{ date: string; total: number; qty: number }>
     const byDate = new Map(dailyRows.map(r => [r.date, r]))
 
-    // Walk every calendar day in the range once, bucketing into weeks and months —
+    // Walk every calendar day in the range once, bucketing into weeks and (fiscal) months —
     // guarantees trading-day counts are correct even for days with zero entries.
     type Bucket = { total: number; qty: number; days: number }
     const weekBuckets = new Map<string, Bucket>()
@@ -495,7 +497,8 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
       const dow = new Date(cursor + 'T00:00:00').getDay()
       const row = byDate.get(cursor)
       const wKey = startOfWeekSun(cursor)
-      const mKey = cursor.slice(0, 7) // YYYY-MM
+      const { year: fy, month: fm } = fiscalMonthOf(cursor)
+      const mKey = `${fy}-${String(fm).padStart(2, '0')}`
 
       const w = weekBuckets.get(wKey) ?? { total: 0, qty: 0, days: 0 }
       const m = monthBuckets.get(mKey) ?? { total: 0, qty: 0, days: 0 }
@@ -522,12 +525,13 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
     const monthlyDetail = [...monthBuckets.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([mKey, b], i, arr) => {
       const prev = i > 0 ? arr[i - 1][1] : null
       const [y, m] = mKey.split('-').map(Number)
+      const { dateFrom: fmFrom, dateTo: fmTo } = fiscalRangeForLabel(y, m)
       const sundaysInMonth = (() => {
         let n = 0
-        for (let d = 1; d <= daysInMonthOf(y, m); d++) if (new Date(y, m - 1, d).getDay() === 0) n++
+        for (let d = new Date(fmFrom + 'T00:00:00'), end = new Date(fmTo + 'T00:00:00'); d <= end; d.setDate(d.getDate() + 1)) if (d.getDay() === 0) n++
         return n
       })()
-      const fullTradingDays = daysInMonthOf(y, m) - sundaysInMonth
+      const fullTradingDays = fiscalProgress(y, m, fmTo).daysTotal - sundaysInMonth
       return {
         year_month: mKey, label: mKey,
         days: b.days, total: b.total, qty: b.qty,

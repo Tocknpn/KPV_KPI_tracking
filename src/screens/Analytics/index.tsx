@@ -7,7 +7,7 @@ import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { MonthDropdown, DateRangeBar } from '../../components/ui/PeriodFilter'
 import { useAuthStore } from '../../store/auth.store'
-import { getDefaultDateRange } from '../../utils/dates'
+import { getDefaultDateRange, fiscalMonthOf, fiscalRangeForLabel } from '../../utils/dates'
 
 interface DailyPoint { entry_date: string; jewelry: number; bar: number; qty: number }
 interface BranchContrib { id: number; name: string; code: string; total_weight: number; total_jewelry: number; total_bar: number; total_qty: number }
@@ -38,9 +38,11 @@ export default function Analytics() {
 
   // ── Local date state ──────────────────────────────────────────────────
   const now = new Date()
-  const [year, setYear]   = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
-  const initRange = getDefaultDateRange(now.getFullYear(), now.getMonth() + 1)
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const todayFiscal = fiscalMonthOf(todayISO)
+  const [year, setYear]   = useState(todayFiscal.year)
+  const [month, setMonth] = useState(todayFiscal.month)
+  const initRange = getDefaultDateRange(todayFiscal.year, todayFiscal.month)
   const [dateFrom, setDateFrom] = useState(initRange.dateFrom)
   const [dateTo, setDateTo]     = useState(initRange.dateTo)
 
@@ -86,8 +88,8 @@ export default function Analytics() {
           </nav>
           <h2 className="font-headline-lg text-headline-lg text-on-surface">Branch Performance Analytics</h2>
           <p className="text-on-surface-variant text-body-md mt-1">
-            {dateFrom === `${year}-${String(month).padStart(2,'0')}-01` && dateTo === maxDate
-              ? `${now.toLocaleString('default', { month: 'long' })} view`
+            {dateFrom === fiscalRangeForLabel(year, month).dateFrom && dateTo === maxDate
+              ? `${new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' })} ${year} view`
               : `${dateFrom} → ${dateTo}`}
           </p>
         </div>

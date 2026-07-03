@@ -66,10 +66,11 @@ interface Window {
       reps: Array<{
         id: number; rep_code: string | null; full_name: string; nickname: string
         branch_name: string; supervisor_name: string | null
-        days: Array<{ value: number; qty: number } | null>
+        days: Array<{ date: string; value: number | null; qty: number | null }>
         totalValue: number; totalQty: number
       }>
       daysInMonth: number
+      columnDates: string[]
       published?: boolean
     }>
     getExecutiveReport(token: string, year: number, month: number): Promise<import('./types').ExecutiveBranchRow[]>

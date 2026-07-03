@@ -5,6 +5,7 @@ import { prepare } from '../db/query'
 import { requireAuth, requireAdmin, logAudit } from './auth'
 import { getServiceAuth, getSetting, pushCommission, pullCommissionConfigsFromSheet } from './sheets'
 import { getRosterMapAsOf } from '../db/history'
+import { fiscalRangeForLabel } from '../db/fiscalMonth'
 
 interface CommissionConfig {
   staff_type: string
@@ -171,8 +172,9 @@ export function registerCommissionHandlers(ipcMain: IpcMain): void {
     const db = getDb()
 
     const yearMonth = `${year}${String(month).padStart(2, '0')}`
-    const dateFrom  = dfFrom ?? `${year}-${String(month).padStart(2, '0')}-01`
-    const dateTo    = dfTo   ?? `${year}-${String(month).padStart(2, '0')}-${new Date(year, month, 0).getDate()}`
+    const fiscalRange = fiscalRangeForLabel(year, month)
+    const dateFrom  = dfFrom ?? fiscalRange.dateFrom
+    const dateTo    = dfTo   ?? fiscalRange.dateTo
 
     let effectiveBranchIds = branchIds
     let supervisorFilter: number | null = null

@@ -4,6 +4,7 @@ import { prepare, transaction } from '../db/query'
 import { requireAuth, logAudit } from './auth'
 import { syncEntriesToCloudIfConfigured, pushSupervisorsIfConfigured, pushRosterIfConfigured } from './sheets'
 import { snapshotSalesman } from '../db/history'
+import { fiscalRangeForLabel } from '../db/fiscalMonth'
 
 export function registerEntryHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('entry:getSalesmen', async (_e, token: string, branchId?: number) => {
@@ -107,14 +108,14 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('entry:getEntriesByMonth', async (_e, token: string, branchId: number, year: number, month: number) => {
     requireAuth(token)
+    const { dateFrom, dateTo } = fiscalRangeForLabel(year, month)
     return prepare(getDb(), `
       SELECT de.*, s.full_name AS salesman_name
       FROM daily_entries de JOIN salesmen s ON s.id = de.salesman_id
       WHERE de.branch_id = ?
-        AND CAST(strftime('%Y', de.entry_date) AS INTEGER) = ?
-        AND CAST(strftime('%m', de.entry_date) AS INTEGER) = ?
+        AND de.entry_date BETWEEN ? AND ?
       ORDER BY de.entry_date, s.full_name
-    `).all(branchId, year, month)
+    `).all(branchId, dateFrom, dateTo)
   })
 
   ipcMain.handle('entry:save', async (_e, token: string, entry: {

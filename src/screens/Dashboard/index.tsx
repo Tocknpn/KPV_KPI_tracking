@@ -9,7 +9,7 @@ import { KpiSubmissionBanner } from '../../components/ui/KpiSubmissionBanner'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import { useLanguage } from '../../i18n/LanguageContext'
-import { getDefaultDateRange } from '../../utils/dates'
+import { getDefaultDateRange, fiscalMonthOf, fiscalRangeForLabel, fiscalRangeLabel, fiscalProgress } from '../../utils/dates'
 import type { DashboardStats } from '../../types'
 import type { TranslationKey } from '../../i18n/translations'
 
@@ -131,6 +131,7 @@ function MonthDropdown({ year, month, onChange }: MonthDropdownProps) {
       >
         <span className="material-symbols-outlined text-sm text-primary">calendar_month</span>
         {MONTH_NAMES[month - 1]} {year}
+        <span className="text-on-surface-variant text-xs font-normal">({fiscalRangeLabel(year, month)})</span>
         <span className="material-symbols-outlined text-sm text-on-surface-variant">
           {open ? 'expand_less' : 'expand_more'}
         </span>
@@ -182,9 +183,11 @@ export default function Dashboard() {
 
   // ── Local date state (independent from global app store) ──
   const now = new Date()
-  const [year, setYear]       = useState(now.getFullYear())
-  const [month, setMonth]     = useState(now.getMonth() + 1)
-  const initRange = getDefaultDateRange(now.getFullYear(), now.getMonth() + 1)
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const todayFiscal = fiscalMonthOf(todayISO)
+  const [year, setYear]       = useState(todayFiscal.year)
+  const [month, setMonth]     = useState(todayFiscal.month)
+  const initRange = getDefaultDateRange(todayFiscal.year, todayFiscal.month)
   const [dateFrom, setDateFrom] = useState(initRange.dateFrom)
   const [dateTo, setDateTo]     = useState(initRange.dateTo)
 
@@ -236,7 +239,7 @@ export default function Dashboard() {
   })()
 
   // Date range label for subtitle
-  const rangeLabel = dateFrom === `${year}-${String(month).padStart(2,'0')}-01` && dateTo === maxDateAllowed
+  const rangeLabel = dateFrom === fiscalRangeForLabel(year, month).dateFrom && dateTo === maxDateAllowed
     ? null
     : `${dateFrom} → ${dateTo}`
 
@@ -248,7 +251,7 @@ export default function Dashboard() {
         <div>
           <h2 className="font-headline-lg text-headline-lg text-on-surface">{t('dash_overview')}</h2>
           <p className="text-on-surface-variant text-body-md">
-            {MONTH_NAMES[month - 1]} {year} — {scopeLabel}
+            {MONTH_NAMES[month - 1]} {year} <span className="text-xs">({fiscalRangeLabel(year, month)})</span> — {scopeLabel}
             {rangeLabel && <span className="ml-2 text-[11px] font-mono bg-surface-container px-1.5 py-0.5 rounded">{rangeLabel}</span>}
           </p>
         </div>
@@ -273,7 +276,7 @@ export default function Dashboard() {
             <input
               type="date"
               value={dateFrom}
-              min={`${year}-${String(month).padStart(2,'0')}-01`}
+              min={fiscalRangeForLabel(year, month).dateFrom}
               max={dateTo}
               onChange={e => setDateFrom(e.target.value)}
               className="text-label-md font-label-md bg-transparent border-none outline-none text-on-surface w-32"
@@ -338,7 +341,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between mb-6">
                 <h4 className="font-headline-md text-headline-md font-bold text-on-surface">{t('dash_kpi_score')}</h4>
                 <span className="px-3 py-1 bg-surface-container-high rounded-full font-label-md text-label-md text-primary">
-                  {MONTH_NAMES[month - 1]} {year}
+                  {MONTH_NAMES[month - 1]} {year} <span className="opacity-70 text-xs">({fiscalRangeLabel(year, month)})</span>
                 </span>
               </div>
 

@@ -6,6 +6,7 @@ import {
 import type { RepDailyEntry, RepHistoryProfile, SupHistoryProfile } from '../../types'
 import { useLanguage } from '../../i18n/LanguageContext'
 import type { TranslationKey } from '../../i18n/translations'
+import { fiscalRangeForLabel } from '../../utils/dates'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -88,10 +89,16 @@ export function RepProfileModal({ id, token, onClose }: RepModalProps) {
 
   const drillChartData = useMemo(() => {
     if (granularity === 'week') {
+      // Week number WITHIN the fiscal period — a fiscal month starts on the 26th, not day
+      // 1, so "day-of-month / 7" would put the period's first week in the wrong bucket.
+      // Count days elapsed since the period's own start instead.
+      const fiscalStart = drillYM ? fiscalRangeForLabel(parseInt(drillYM.slice(0, 4)), parseInt(drillYM.slice(4))).dateFrom : null
       const weeks: Record<string, { label: string; weight: number; qty: number }> = {}
       for (const e of drillEntries) {
-        const day = parseInt(e.entry_date.slice(8))
-        const key = `W${Math.ceil(day / 7)}`
+        const dayOffset = fiscalStart
+          ? Math.round((new Date(e.entry_date + 'T00:00:00').getTime() - new Date(fiscalStart + 'T00:00:00').getTime()) / 86400000)
+          : parseInt(e.entry_date.slice(8)) - 1
+        const key = `W${Math.floor(dayOffset / 7) + 1}`
         if (!weeks[key]) weeks[key] = { label: key, weight: 0, qty: 0 }
         weeks[key].weight += e.jewelry_weight_g + e.bar_weight_g
         weeks[key].qty    += e.quantity

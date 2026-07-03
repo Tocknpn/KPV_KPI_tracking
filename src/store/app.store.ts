@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { fiscalMonthOf } from '../utils/dates'
 
 interface AppState {
   selectedBranchId: number | null
@@ -26,12 +27,14 @@ interface AppState {
 }
 
 const now = new Date()
+const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+const todayFiscal = fiscalMonthOf(todayISO)
 
 export const useAppStore = create<AppState>((set) => ({
   selectedBranchId: null,
   selectedBranchIds: [],
-  selectedYear: now.getFullYear(),
-  selectedMonth: now.getMonth() + 1,
+  selectedYear: todayFiscal.year,
+  selectedMonth: todayFiscal.month,
   unsyncedCount: 0,
   isSyncing: false,
   sidebarCollapsed: false,

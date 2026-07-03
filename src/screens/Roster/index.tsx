@@ -8,6 +8,7 @@ import { validateRosterRows } from '../../utils/csv'
 import { parseXLSX, readFileAsArrayBuffer, generateRosterTemplateXLSX, generateRowsXLSX, downloadXLSX } from '../../utils/xlsx'
 import { useLanguage } from '../../i18n/LanguageContext'
 import type { TranslationKey } from '../../i18n/translations'
+import { fiscalMonthOf, fiscalRangeLabel } from '../../utils/dates'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -242,9 +243,11 @@ export default function Roster() {
   const { t } = useLanguage()
   const { token, user, branches } = useAuthStore()
   const now = new Date()
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const todayFiscal = fiscalMonthOf(todayISO)
 
-  const [year, setYear]   = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
+  const [year, setYear]   = useState(todayFiscal.year)
+  const [month, setMonth] = useState(todayFiscal.month)
   const isHr = user?.role === 'hr'
   const canEdit = user?.role === 'admin' || user?.role === 'hr'
   const canUpload = canEdit || user?.role === 'hr_support'
@@ -431,6 +434,7 @@ export default function Roster() {
               : (supPublished
                   ? `${t('ro_subtitle_sup_published')} ${MONTHS[month - 1]} ${year} ${t('ro_subtitle_sup_note')}`
                   : `${t('ro_subtitle_sup_none_yet')} ${MONTHS[month - 1]} ${year}`)}
+            {' '}<span className="text-xs">({fiscalRangeLabel(year, month)})</span>
             <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold ml-2">{isHr ? 'HR' : 'Admin'}</span>
           </p>
         </div>
@@ -617,7 +621,7 @@ export default function Roster() {
       {view === 'reps' ? (
       <GlassCard elevated className="overflow-hidden">
         <div className="px-5 py-3 border-b border-outline-variant/10 flex items-center justify-between">
-          <h3 className="font-headline-md text-headline-md text-on-surface">{t('ro_roster_for')} {MONTHS[month - 1]} {year}</h3>
+          <h3 className="font-headline-md text-headline-md text-on-surface">{t('ro_roster_for')} {MONTHS[month - 1]} {year} <span className="text-body-sm font-normal text-on-surface-variant">({fiscalRangeLabel(year, month)})</span></h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -729,7 +733,7 @@ export default function Roster() {
       ) : (
       <GlassCard elevated className="overflow-hidden">
         <div className="px-5 py-3 border-b border-outline-variant/10 flex items-center justify-between">
-          <h3 className="font-headline-md text-headline-md text-on-surface">{t('ro_supervisors_for')} {MONTHS[month - 1]} {year}</h3>
+          <h3 className="font-headline-md text-headline-md text-on-surface">{t('ro_supervisors_for')} {MONTHS[month - 1]} {year} <span className="text-body-sm font-normal text-on-surface-variant">({fiscalRangeLabel(year, month)})</span></h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">

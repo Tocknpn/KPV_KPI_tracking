@@ -4,6 +4,9 @@ import cron from 'node-cron'
 import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
 import { requireAuth } from './auth'
+import { fiscalMonthOf, fiscalRangeForLabel } from '../db/fiscalMonth'
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
 interface EmailCfg {
   recipients: string; frequency: string; dispatch_time: string
@@ -25,14 +28,16 @@ function buildSubjectAndHtml(): { subject: string; html: string } {
   const d1  = new Date(now); d1.setDate(d1.getDate() - 1)
   const d1Str   = d1.toISOString().slice(0, 10)
   const d1Label = d1.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-  const year = now.getFullYear(); const month = now.getMonth() + 1
-  const monthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const { year, month } = fiscalMonthOf(todayISO)
+  const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`
+  const { dateFrom: mtdFrom, dateTo: mtdTo } = fiscalRangeForLabel(year, month)
 
   const mtd = prepare(db, `
     SELECT COALESCE(SUM(jewelry_weight_g),0) AS jewelry, COALESCE(SUM(bar_weight_g),0) AS bar, COALESCE(SUM(quantity),0) AS qty
     FROM daily_entries
-    WHERE CAST(strftime('%Y',entry_date) AS INTEGER)=? AND CAST(strftime('%m',entry_date) AS INTEGER)=?
-  `).get(year, month) as { jewelry: number; bar: number; qty: number }
+    WHERE entry_date BETWEEN ? AND ?
+  `).get(mtdFrom, mtdTo) as { jewelry: number; bar: number; qty: number }
 
   const d1Branch = prepare(db, `
     SELECT b.name AS branch, COALESCE(SUM(de.jewelry_weight_g),0) AS jewelry, COALESCE(SUM(de.bar_weight_g),0) AS bar, COALESCE(SUM(de.quantity),0) AS qty

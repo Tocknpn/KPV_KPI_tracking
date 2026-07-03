@@ -1,8 +1,18 @@
 import type { Database } from 'better-sqlite3'
 import { prepare } from './query'
+import { fiscalMonthOf } from './fiscalMonth'
 
 function ym(year: number, month: number): string {
   return `${year}${String(month).padStart(2, '0')}`
+}
+
+// effectiveDate (YYYY-MM-DD) -> which fiscal (year, month) it falls in; "now" falls back to
+// today's fiscal month, not today's calendar month (they differ whenever today's day >= 26).
+function fiscalYearMonthOf(effectiveDate?: string): { year: number; month: number } {
+  if (effectiveDate && /^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) return fiscalMonthOf(effectiveDate)
+  const now = new Date()
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  return fiscalMonthOf(todayISO)
 }
 
 // The nearest month <= target that actually has rows — this is the carry-forward read:
@@ -38,22 +48,15 @@ function ensureMonthMaterialized(db: Database, year: number, month: number): str
 }
 
 // Snapshot a rep's current branch/type/supervisor/active state into roster_monthly for the
-// given month (or "now" if no effectiveDate). Call after any write to the salesmen table.
-// effectiveDate (YYYY-MM-DD) lets HR backdate/future-date a change — e.g. uploading on
-// Jun 25 a transfer that should only count from Jul 1.
+// given fiscal month (or today's fiscal month if no effectiveDate). Call after any write to
+// the salesmen table. effectiveDate (YYYY-MM-DD) lets HR backdate/future-date a change — the
+// fiscal month it lands in is resolved via fiscalYearMonthOf, not the calendar month.
 export function snapshotSalesman(db: Database, salesmanId: number, effectiveDate?: string): void {
   const row = prepare(db, `SELECT branch_id, staff_type, supervisor_id, active FROM salesmen WHERE id = ?`).get(salesmanId) as
     { branch_id: number; staff_type: string; supervisor_id: number | null; active: number } | undefined
   if (!row) return
 
-  let year: number, month: number
-  if (effectiveDate && /^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
-    year = parseInt(effectiveDate.slice(0, 4), 10)
-    month = parseInt(effectiveDate.slice(5, 7), 10)
-  } else {
-    const now = new Date()
-    year = now.getFullYear(); month = now.getMonth() + 1
-  }
+  const { year, month } = fiscalYearMonthOf(effectiveDate)
 
   const targetYm = ensureMonthMaterialized(db, year, month)
   prepare(db, `
@@ -95,14 +98,7 @@ export function snapshotSupervisor(db: Database, supervisorId: number, effective
     { branch_id: number; staff_type: string; active: number } | undefined
   if (!row) return
 
-  let year: number, month: number
-  if (effectiveDate && /^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
-    year = parseInt(effectiveDate.slice(0, 4), 10)
-    month = parseInt(effectiveDate.slice(5, 7), 10)
-  } else {
-    const now = new Date()
-    year = now.getFullYear(); month = now.getMonth() + 1
-  }
+  const { year, month } = fiscalYearMonthOf(effectiveDate)
 
   const targetYm = ensureSupMonthMaterialized(db, year, month)
   prepare(db, `
@@ -129,7 +125,8 @@ export function publishMonth(db: Database, year: number, month: number): void {
 // dateStr is YYYY-MM-DD — used when a roster change carries an explicit Effective_Date
 export function publishMonthFromDate(db: Database, dateStr: string): void {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return
-  publishMonth(db, parseInt(dateStr.slice(0, 4), 10), parseInt(dateStr.slice(5, 7), 10))
+  const { year, month } = fiscalMonthOf(dateStr)
+  publishMonth(db, year, month)
 }
 
 // Active headcount for a branch AS OF a given month — resolves to the nearest published
