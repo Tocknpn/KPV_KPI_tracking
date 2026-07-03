@@ -103,6 +103,21 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
             continue
           }
 
+          // salesmen.active only reflects "currently employed", not "on roster for THIS
+          // month" — without this check, an entry dated for a month HR hasn't set up the
+          // roster for yet (e.g. uploading July data before July's roster exists) silently
+          // inserted with no warning. Exact year_month match on purpose (not the carry-
+          // forward resolveYm() reporting uses) — this is the one place that's supposed to
+          // catch "roster isn't set up for this month yet", not paper over it.
+          const entryYearMonth = r.date.slice(0, 4) + r.date.slice(5, 7)
+          const onRoster = prepare(db, `SELECT 1 FROM roster_monthly WHERE salesman_id = ? AND year_month = ?`).get(salesman.id, entryYearMonth)
+          if (!onRoster) {
+            const reason = `No roster for ${entryYearMonth.slice(0,4)}-${entryYearMonth.slice(4)} — ask HR/admin to set up this rep's roster for that month before uploading entries for it.`
+            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason })
+            errorRows.push({ row: i + 1, data: r, reason })
+            continue
+          }
+
           // Sales data is tied to KPI/commission — silently overwriting an existing record
           // would let edits slip through unreviewed. Reject instead; an Accountant Manager
           // must delete the conflicting upload batch before this rep/date can be resubmitted.
