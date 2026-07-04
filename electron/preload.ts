@@ -135,6 +135,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('report:supHistory', token, supId, numMonths),
   getTeamPerformance: (token: string, branchIds: number[], year: number, month: number, dateFrom: string, dateTo: string) =>
     ipcRenderer.invoke('report:teamPerformance', token, branchIds, year, month, dateFrom, dateTo),
+  getYearlyKpiReps: (token: string, year: number) =>
+    ipcRenderer.invoke('report:yearlyKpiReps', token, year),
+  getYearlyKpiTeams: (token: string, year: number) =>
+    ipcRenderer.invoke('report:yearlyKpiTeams', token, year),
 
   // ── Google Sheets Sync ────────────────────────────────────────────────
   syncToCloud: (token: string) =>

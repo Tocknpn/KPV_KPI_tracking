@@ -7,11 +7,11 @@ import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
 import { useLanguage } from '../../i18n/LanguageContext'
 import type { TranslationKey } from '../../i18n/translations'
-import { getDefaultDateRange, fiscalProgress, fiscalRangeLabel, fiscalMonthOf } from '../../utils/dates'
+import { getDefaultDateRange, fiscalProgress, fiscalRangeLabel, fiscalMonthOf, fiscalRangeForLabel } from '../../utils/dates'
 import { generateRowsXLSX, downloadXLSX } from '../../utils/xlsx'
 import { exportElementToPdf } from '../../utils/pdf'
 import { KpiSubmissionBanner } from '../../components/ui/KpiSubmissionBanner'
-import type { MonthlyReportRow, TeamPerformanceRow, ExecutiveBranchRow } from '../../types'
+import type { MonthlyReportRow, TeamPerformanceRow, ExecutiveBranchRow, YearlyKpiRepRow, YearlyKpiTeamRow } from '../../types'
 import { RepProfileModal, SupProfileModal } from './IndividualProfileModal'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -31,7 +31,7 @@ interface CommSupRow {
   team_commission_lak: number; supervisor_commission_lak: number; sup_pct: number
 }
 
-type ReportTab = 'company_overview' | 'supervisor' | 'performance' | 'commission' | 'customer_type' | 'daily_tracking'
+type ReportTab = 'company_overview' | 'supervisor' | 'performance' | 'commission' | 'customer_type' | 'daily_tracking' | 'yearly_kpi'
 
 // ── Utilities ─────────────────────────────────────────────────────────────
 function fmt(n: number, d = 1) { return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) }
@@ -258,6 +258,23 @@ export default function Reports() {
   const canSeeOverview = user?.role === 'admin' || user?.role === 'top_manager'
   const [activeTab, setActiveTab] = useState<ReportTab>(canSeeOverview ? 'company_overview' : 'performance')
 
+  // ── Yearly KPI — independent of the shared month/date-range state above; this tab
+  // is a fixed fiscal-year aggregate (Dec 26 prior year – Dec 25 this year), not a
+  // month/range selection, so it gets its own year stepper instead of MonthDropdown.
+  const [kpiYear, setKpiYear] = useState(todayFiscal.year)
+  const [yearlyKpiSubTab, setYearlyKpiSubTab] = useState<'reps' | 'teams'>('reps')
+  const [yearlyRepRows, setYearlyRepRows] = useState<YearlyKpiRepRow[]>([])
+  const [yearlyTeamRows, setYearlyTeamRows] = useState<YearlyKpiTeamRow[]>([])
+  const [yearlyLoading, setYearlyLoading] = useState(false)
+  const [yearlyRepSortCol, setYearlyRepSortCol] = useState('kpi_pct')
+  const [yearlyRepSortDir, setYearlyRepSortDir] = useState<'asc' | 'desc'>('desc')
+  const [yearlyTeamSortCol, setYearlyTeamSortCol] = useState('kpi_pct')
+  const [yearlyTeamSortDir, setYearlyTeamSortDir] = useState<'asc' | 'desc'>('desc')
+  // Capped denominator for "Active Months" — the current in-progress year shows out of
+  // however many fiscal months have actually elapsed, not all 12, so a partially-elapsed
+  // year doesn't look like everyone is "missing" months that haven't happened yet.
+  const yearlyMonthsElapsed = kpiYear === todayFiscal.year ? todayFiscal.month : 12
+
   // ── Toast ──────────────────────────────────────────────────────────────
   const [toast, setToast] = useState('')
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3500) }
@@ -351,6 +368,19 @@ export default function Reports() {
       .catch(console.error)
   }, [token, user?.role, user?.branchId])
 
+  // ── Yearly KPI — isolated from the big shared-state effect below since it's keyed on
+  // kpiYear, not year/month/dateFrom/dateTo (a fixed fiscal-year aggregate, not a range).
+  useEffect(() => {
+    if (!token) return
+    setYearlyLoading(true)
+    Promise.all([
+      window.api.getYearlyKpiReps(token, kpiYear),
+      window.api.getYearlyKpiTeams(token, kpiYear),
+    ]).then(([reps, teams]) => { setYearlyRepRows(reps); setYearlyTeamRows(teams) })
+      .catch(console.error)
+      .finally(() => setYearlyLoading(false))
+  }, [token, kpiYear, lastSyncedAt])
+
   useEffect(() => { setSelectedSupIds([]) }, [JSON.stringify(effectiveBranchIds)])
 
   // ── Load all data when filters change ─────────────────────────────────
@@ -410,6 +440,14 @@ export default function Reports() {
   function handleCommSupSort(col: string) {
     if (commSupSortCol === col) setCommSupSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setCommSupSortCol(col); setCommSupSortDir('desc') }
+  }
+  function handleYearlyRepSort(col: string) {
+    if (yearlyRepSortCol === col) setYearlyRepSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setYearlyRepSortCol(col); setYearlyRepSortDir('desc') }
+  }
+  function handleYearlyTeamSort(col: string) {
+    if (yearlyTeamSortCol === col) setYearlyTeamSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setYearlyTeamSortCol(col); setYearlyTeamSortDir('desc') }
   }
 
   // ── Shared filter helpers ──────────────────────────────────────────────
@@ -554,6 +592,44 @@ export default function Reports() {
   const commTotalB2c = commReps.filter(r => r.staff_type === 'b2c').reduce((s, r) => s + r.commission_lak, 0)
   const commTotalB2b = commReps.filter(r => r.staff_type === 'b2b').reduce((s, r) => s + r.commission_lak, 0)
 
+  // ── Yearly KPI derived ──────────────────────────────────────────────────
+  const filteredYearlyReps = yearlyRepRows.filter(r =>
+    matchesType(r.staff_type) &&
+    (effectiveBranchIds.length === 0 || effectiveBranchIds.includes(r.branch_id)) &&
+    matchesSup(r.supervisor_name)
+  )
+  const filteredYearlyTeams = yearlyTeamRows.filter(t =>
+    matchesType(t.staff_type) &&
+    (effectiveBranchIds.length === 0 || effectiveBranchIds.includes(t.branch_id))
+  )
+  const sortedYearlyReps = [...filteredYearlyReps].sort((a, b) => {
+    const mul = yearlyRepSortDir === 'asc' ? 1 : -1
+    switch (yearlyRepSortCol) {
+      case 'full_name':      return a.full_name.localeCompare(b.full_name) * mul
+      case 'branch_name':    return a.branch_name.localeCompare(b.branch_name) * mul
+      case 'active_months':  return (a.active_months - b.active_months) * mul
+      case 'total_score':    return (a.total_score - b.total_score) * mul
+      case 'avg_score':      return (a.avg_score - b.avg_score) * mul
+      case 'total_target':   return (a.total_target - b.total_target) * mul
+      case 'kpi_pct':        return (a.kpi_pct - b.kpi_pct) * mul
+      default: return 0
+    }
+  })
+  const sortedYearlyTeams = [...filteredYearlyTeams].sort((a, b) => {
+    const mul = yearlyTeamSortDir === 'asc' ? 1 : -1
+    switch (yearlyTeamSortCol) {
+      case 'full_name':      return a.full_name.localeCompare(b.full_name) * mul
+      case 'branch_name':    return a.branch_name.localeCompare(b.branch_name) * mul
+      case 'rep_count':      return (a.rep_count - b.rep_count) * mul
+      case 'active_months':  return (a.active_months - b.active_months) * mul
+      case 'total_score':    return (a.total_score - b.total_score) * mul
+      case 'avg_score':      return (a.avg_score - b.avg_score) * mul
+      case 'total_target':   return (a.total_target - b.total_target) * mul
+      case 'kpi_pct':        return (a.kpi_pct - b.kpi_pct) * mul
+      default: return 0
+    }
+  })
+
   // ── Company Overview derived ───────────────────────────────────────────
   const filteredExecRows = effectiveBranchIds.length === 0
     ? execRows
@@ -640,6 +716,24 @@ export default function Reports() {
         row['Total (Baht/Qty)'] = `${r.totalValue.toFixed(0)}/${r.totalQty}`
         return row
       })
+    } else if (activeTab === 'yearly_kpi') {
+      if (yearlyKpiSubTab === 'reps') {
+        filename = `yearly_kpi_reps_${kpiYear}`
+        rows = sortedYearlyReps.map(r => ({
+          Representative: r.full_name, Branch: r.branch_name, 'Team Sup': r.supervisor_name ?? '', Type: r.staff_type,
+          'Active Months': `${r.active_months}/${yearlyMonthsElapsed}`,
+          'Total Score (pts)': r.total_score, 'Avg Score (pts)': r.avg_score.toFixed(1),
+          'Total Target (pts)': r.total_target, 'KPI %': r.kpi_pct.toFixed(1),
+        }))
+      } else {
+        filename = `yearly_kpi_teams_${kpiYear}`
+        rows = sortedYearlyTeams.map(t => ({
+          Supervisor: t.full_name, Branch: t.branch_name, Type: t.staff_type, Reps: t.rep_count,
+          'Active Months': `${t.active_months}/${yearlyMonthsElapsed}`,
+          'Total Score (pts)': t.total_score, 'Avg Score (pts)': t.avg_score.toFixed(1),
+          'Total Target (pts)': t.total_target, 'KPI %': t.kpi_pct.toFixed(1),
+        }))
+      }
     }
 
     return { rows, filename }
@@ -681,6 +775,7 @@ export default function Reports() {
     ...(canSeeOverview ? [{ key: 'company_overview' as const, label: t('kr_tab_company_overview'), icon: 'leaderboard'        }] : []),
     { key: 'supervisor'    as const, label: t('kr_tab_supervisor'), icon: 'supervisor_account' },
     { key: 'performance'   as const, label: t('kr_tab_performance'), icon: 'insert_chart'      },
+    { key: 'yearly_kpi'    as const, label: t('kr_tab_yearly_kpi'), icon: 'emoji_events'       },
     { key: 'commission'    as const, label: t('kr_tab_commission'), icon: 'payments'           },
     { key: 'customer_type' as const, label: t('kr_tab_customer_type'), icon: 'group'             },
     { key: 'daily_tracking' as const, label: t('kr_tab_daily_tracking'), icon: 'calendar_month'    },
@@ -709,9 +804,23 @@ export default function Reports() {
 
       {/* ── Shared Filter Bar ──────────────────────────────────────────── */}
       <div className="relative z-[100] flex flex-wrap items-center gap-3 mb-5 p-4 rounded-2xl bg-surface-container/40 border border-white/20 backdrop-blur-sm">
-        <MonthDropdown year={year} month={month} onChange={handleMonthChange} />
-        <DateRangeBar year={year} month={month} dateFrom={dateFrom} dateTo={dateTo} maxDate={maxDate}
-          onDateFromChange={setDateFrom} onDateToChange={setDateTo} />
+        {activeTab === 'yearly_kpi' ? (
+          <div className="flex items-center gap-1 px-1 py-1 rounded-lg bg-surface-container border border-white/20">
+            <button onClick={() => setKpiYear(y => y - 1)}
+              className="p-1.5 rounded-md hover:bg-surface-container-high text-on-surface-variant transition-colors">
+              <span className="material-symbols-outlined text-sm">chevron_left</span>
+            </button>
+            <span className="px-2 font-label-md text-label-md text-on-surface min-w-12 text-center">{kpiYear}</span>
+            <button onClick={() => setKpiYear(y => Math.min(y + 1, todayFiscal.year))} disabled={kpiYear >= todayFiscal.year}
+              className="p-1.5 rounded-md hover:bg-surface-container-high text-on-surface-variant transition-colors disabled:opacity-30 disabled:hover:bg-transparent">
+              <span className="material-symbols-outlined text-sm">chevron_right</span>
+            </button>
+          </div>
+        ) : (<>
+          <MonthDropdown year={year} month={month} onChange={handleMonthChange} />
+          <DateRangeBar year={year} month={month} dateFrom={dateFrom} dateTo={dateTo} maxDate={maxDate}
+            onDateFromChange={setDateFrom} onDateToChange={setDateTo} />
+        </>)}
         {!isBranchScoped && (
           <BranchDropdown branches={branches} selectedIds={selectedBranchIds} onChange={setSelectedBranchIds} />
         )}
@@ -1178,6 +1287,186 @@ export default function Reports() {
           ))}
         </div>
       )}
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          TAB: Yearly KPI — sum of each active fiscal month's score / count of active
+          months. Grouped by CURRENT branch/team (not a historical snapshot) — a rep who
+          transferred mid-year shows up under their branch today with the full year's
+          score intact. Fiscal year = Dec 26 (prior year) – Dec 25 (this year).
+      ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'yearly_kpi' && (<>
+        <div className="flex flex-wrap items-center gap-4 mb-4">
+          <div className="flex rounded-xl bg-surface-container overflow-hidden border border-white/20">
+            {(['reps', 'teams'] as const).map(tab => (
+              <button key={tab} onClick={() => setYearlyKpiSubTab(tab)}
+                className={`px-5 py-2.5 font-label-md text-label-md transition-colors capitalize
+                  ${yearlyKpiSubTab === tab ? 'bg-primary text-white' : 'text-on-surface-variant hover:bg-surface-container-high'}`}>
+                {tab === 'reps' ? t('kr_tab_performance') : t('kr_tab_supervisor')}
+              </button>
+            ))}
+          </div>
+          <p className="text-body-sm text-on-surface-variant ml-1">
+            {t('kr_fiscal_year')} {kpiYear} ({fiscalRangeForLabel(kpiYear, 1).dateFrom} → {fiscalRangeForLabel(kpiYear, 12).dateTo})
+          </p>
+        </div>
+
+        {yearlyKpiSubTab === 'reps' && (
+          <GlassCard className="overflow-hidden shadow-sm border border-white/40" elevated>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-surface-variant/20 border-b border-white/40">
+                    <SortTh label={t('kr_col_representative')} col="full_name"     sortCol={yearlyRepSortCol} sortDir={yearlyRepSortDir} onSort={handleYearlyRepSort} />
+                    {isMultiBranch && <SortTh label={t('kr_col_branch')} col="branch_name" sortCol={yearlyRepSortCol} sortDir={yearlyRepSortDir} onSort={handleYearlyRepSort} />}
+                    <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{t('kr_col_type')}</th>
+                    <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{t('kr_col_team_sup')}</th>
+                    <SortTh label={t('kr_col_active_months')} col="active_months" sortCol={yearlyRepSortCol} sortDir={yearlyRepSortDir} onSort={handleYearlyRepSort} right />
+                    <SortTh label={t('kr_col_total_score')}   col="total_score"   sortCol={yearlyRepSortCol} sortDir={yearlyRepSortDir} onSort={handleYearlyRepSort} right />
+                    <SortTh label={t('kr_col_avg_score')}     col="avg_score"     sortCol={yearlyRepSortCol} sortDir={yearlyRepSortDir} onSort={handleYearlyRepSort} right />
+                    <SortTh label={t('kr_col_total_target')}  col="total_target"  sortCol={yearlyRepSortCol} sortDir={yearlyRepSortDir} onSort={handleYearlyRepSort} right />
+                    <SortTh label={t('kr_col_kpi_pct')}       col="kpi_pct"       sortCol={yearlyRepSortCol} sortDir={yearlyRepSortDir} onSort={handleYearlyRepSort} right />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/20">
+                  {yearlyLoading ? (
+                    <tr><td colSpan={8} className="py-12 text-center text-on-surface-variant">
+                      <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>
+                      {t('kr_loading')}
+                    </td></tr>
+                  ) : sortedYearlyReps.length === 0 ? (
+                    <tr><td colSpan={8} className="py-8 text-center text-on-surface-variant text-body-sm">{t('kr_no_results_found')}</td></tr>
+                  ) : sortedYearlyReps.map(r => (
+                    <tr key={r.id} className="hover:bg-primary/[0.02] transition-colors">
+                      <td className="px-5 py-3 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold uppercase
+                            ${r.staff_type === 'b2b' ? 'bg-secondary/10 text-secondary' : 'bg-primary/10 text-primary'}`}>
+                            {r.full_name.slice(0, 1)}
+                          </div>
+                          <div>
+                            <p className="font-label-md text-label-md font-bold">{r.full_name}</p>
+                            <p className="text-[10px] text-on-surface-variant font-mono">{r.rep_code}</p>
+                          </div>
+                        </div>
+                      </td>
+                      {isMultiBranch && <td className="px-5 py-3 text-body-sm text-on-surface-variant whitespace-nowrap">{r.branch_name}</td>}
+                      <td className="px-5 py-3"><TypeBadge type={r.staff_type} /></td>
+                      <td className="px-5 py-3 text-body-sm text-on-surface-variant whitespace-nowrap">{r.supervisor_name ?? '—'}</td>
+                      <td className="px-5 py-3 text-right font-tabular-nums text-body-sm">{r.active_months} / {yearlyMonthsElapsed}</td>
+                      <td className="px-5 py-3 text-right font-tabular-nums text-body-sm font-bold">{fmtPts(r.total_score)}</td>
+                      <td className="px-5 py-3 text-right font-tabular-nums text-body-sm">{fmt(r.avg_score, 1)}</td>
+                      <td className="px-5 py-3 text-right font-tabular-nums text-body-sm">{fmtPts(r.total_target)}</td>
+                      <td className="px-5 py-3 text-right">
+                        <span className={`font-tabular-nums font-bold text-body-sm ${kpiColor(r.kpi_pct)}`}>{fmtPct(r.kpi_pct)}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {!yearlyLoading && sortedYearlyReps.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-surface-variant/20 border-t border-white/40">
+                      <td colSpan={isMultiBranch ? 4 : 3} className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase">
+                        {sortedYearlyReps.length} {t('kr_reps_suffix')}
+                      </td>
+                      <td className="px-5 py-3 text-right font-tabular-nums font-bold text-body-sm">
+                        {fmtPts(sortedYearlyReps.reduce((s, r) => s + r.total_score, 0))}
+                      </td>
+                      <td className="px-5 py-3 text-right font-tabular-nums font-bold text-body-sm">
+                        {fmt(sortedYearlyReps.reduce((s, r) => s + r.avg_score, 0) / sortedYearlyReps.length, 1)}
+                      </td>
+                      <td className="px-5 py-3 text-right font-tabular-nums font-bold text-body-sm">
+                        {fmtPts(sortedYearlyReps.reduce((s, r) => s + r.total_target, 0))}
+                      </td>
+                      <td className="px-5 py-3 text-right font-tabular-nums font-bold">
+                        {fmtPct((sortedYearlyReps.reduce((s, r) => s + r.total_score, 0) / (sortedYearlyReps.reduce((s, r) => s + r.total_target, 0) || 1)) * 100)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </GlassCard>
+        )}
+
+        {yearlyKpiSubTab === 'teams' && (
+          <GlassCard className="overflow-hidden shadow-sm border border-white/40" elevated>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-surface-variant/20 border-b border-white/40">
+                    <SortTh label={t('kr_col_supervisor')} col="full_name"    sortCol={yearlyTeamSortCol} sortDir={yearlyTeamSortDir} onSort={handleYearlyTeamSort} />
+                    {isMultiBranch && <SortTh label={t('kr_col_branch')} col="branch_name" sortCol={yearlyTeamSortCol} sortDir={yearlyTeamSortDir} onSort={handleYearlyTeamSort} />}
+                    <th className="px-5 py-4 font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">{t('kr_col_type')}</th>
+                    <SortTh label={t('kr_col_reps')}     col="rep_count"     sortCol={yearlyTeamSortCol} sortDir={yearlyTeamSortDir} onSort={handleYearlyTeamSort} right />
+                    <SortTh label={t('kr_col_active_months')} col="active_months" sortCol={yearlyTeamSortCol} sortDir={yearlyTeamSortDir} onSort={handleYearlyTeamSort} right />
+                    <SortTh label={t('kr_col_total_score')}   col="total_score"   sortCol={yearlyTeamSortCol} sortDir={yearlyTeamSortDir} onSort={handleYearlyTeamSort} right />
+                    <SortTh label={t('kr_col_avg_score')}     col="avg_score"     sortCol={yearlyTeamSortCol} sortDir={yearlyTeamSortDir} onSort={handleYearlyTeamSort} right />
+                    <SortTh label={t('kr_col_total_target')}  col="total_target"  sortCol={yearlyTeamSortCol} sortDir={yearlyTeamSortDir} onSort={handleYearlyTeamSort} right />
+                    <SortTh label={t('kr_col_kpi_pct')}       col="kpi_pct"       sortCol={yearlyTeamSortCol} sortDir={yearlyTeamSortDir} onSort={handleYearlyTeamSort} right />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/20">
+                  {yearlyLoading ? (
+                    <tr><td colSpan={8} className="py-12 text-center text-on-surface-variant">
+                      <span className="material-symbols-outlined animate-spin-slow text-2xl block mx-auto mb-2">sync</span>
+                      {t('kr_loading')}
+                    </td></tr>
+                  ) : sortedYearlyTeams.length === 0 ? (
+                    <tr><td colSpan={8} className="py-8 text-center text-on-surface-variant text-body-sm">{t('kr_no_results_found')}</td></tr>
+                  ) : sortedYearlyTeams.map(team => (
+                    <tr key={team.id} className="hover:bg-primary/[0.02] transition-colors">
+                      <td className="px-5 py-3 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold uppercase
+                            ${team.staff_type === 'b2b' ? 'bg-secondary/10 text-secondary' : 'bg-primary/10 text-primary'}`}>
+                            {team.full_name.slice(0, 1)}
+                          </div>
+                          <p className="font-label-md text-label-md font-bold">{team.full_name}</p>
+                        </div>
+                      </td>
+                      {isMultiBranch && <td className="px-5 py-3 text-body-sm text-on-surface-variant whitespace-nowrap">{team.branch_name}</td>}
+                      <td className="px-5 py-3"><TypeBadge type={team.staff_type} /></td>
+                      <td className="px-5 py-3 text-right font-tabular-nums text-body-sm">{team.rep_count}</td>
+                      <td className="px-5 py-3 text-right font-tabular-nums text-body-sm">{team.active_months} / {yearlyMonthsElapsed}</td>
+                      <td className="px-5 py-3 text-right font-tabular-nums text-body-sm font-bold">{fmtPts(team.total_score)}</td>
+                      <td className="px-5 py-3 text-right font-tabular-nums text-body-sm">{fmt(team.avg_score, 1)}</td>
+                      <td className="px-5 py-3 text-right font-tabular-nums text-body-sm">{fmtPts(team.total_target)}</td>
+                      <td className="px-5 py-3 text-right">
+                        <span className={`font-tabular-nums font-bold text-body-sm ${kpiColor(team.kpi_pct)}`}>{fmtPct(team.kpi_pct)}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {!yearlyLoading && sortedYearlyTeams.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-surface-variant/20 border-t border-white/40">
+                      <td colSpan={isMultiBranch ? 3 : 2} className="px-5 py-3 font-label-md text-label-md text-on-surface-variant uppercase">
+                        {sortedYearlyTeams.length} {t('kr_supervisors_suffix')}
+                      </td>
+                      <td className="px-5 py-3 text-right font-tabular-nums font-bold text-body-sm">
+                        {sortedYearlyTeams.reduce((s, r) => s + r.rep_count, 0)}
+                      </td>
+                      <td />
+                      <td className="px-5 py-3 text-right font-tabular-nums font-bold text-body-sm">
+                        {fmtPts(sortedYearlyTeams.reduce((s, r) => s + r.total_score, 0))}
+                      </td>
+                      <td className="px-5 py-3 text-right font-tabular-nums font-bold text-body-sm">
+                        {fmt(sortedYearlyTeams.reduce((s, r) => s + r.avg_score, 0) / sortedYearlyTeams.length, 1)}
+                      </td>
+                      <td className="px-5 py-3 text-right font-tabular-nums font-bold text-body-sm">
+                        {fmtPts(sortedYearlyTeams.reduce((s, r) => s + r.total_target, 0))}
+                      </td>
+                      <td className="px-5 py-3 text-right font-tabular-nums font-bold">
+                        {fmtPct((sortedYearlyTeams.reduce((s, r) => s + r.total_score, 0) / (sortedYearlyTeams.reduce((s, r) => s + r.total_target, 0) || 1)) * 100)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </GlassCard>
+        )}
+      </>)}
 
       {/* ═══════════════════════════════════════════════════════════════════
           TAB: Daily Tracking — reconciliation grid, not a scoring report.

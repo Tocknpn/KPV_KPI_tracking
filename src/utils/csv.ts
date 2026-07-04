@@ -92,6 +92,8 @@ export interface RosterRowRaw { repCode: string; fullName: string; nickname: str
 export function validateDailyRows(parsed: ParseResult): { rows: DailyRowRaw[]; errors: string[] } {
   const errors = [...parsed.errors]
   const rows: DailyRowRaw[] = []
+  const now = new Date()
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
   for (let i = 0; i < parsed.rawRows.length; i++) {
     const pos = parsed.rawRows[i]
@@ -100,6 +102,11 @@ export function validateDailyRows(parsed: ParseResult): { rows: DailyRowRaw[]; e
     const date = pos[0] ?? ''
     if (!date || !date.match(/^\d{4}-\d{2}-\d{2}$/)) {
       errors.push(`Row ${lineNum}: Invalid date "${date}". Use YYYY-MM-DD format.`); continue
+    }
+    // Same rule the server enforces — catch it here too so the accountant sees it
+    // immediately on file selection, not after a round-trip to the server.
+    if (date > todayISO) {
+      errors.push(`Row ${lineNum}: Date "${date}" is in the future — sales can only be entered for today or an earlier date.`); continue
     }
     const repCode = pos[1] ?? ''
     if (!repCode) {

@@ -195,6 +195,28 @@ export function getSupervisorRosterExactMonth(db: Database, year: number, month:
   return { published: rows.length > 0, rows }
 }
 
+// Nearest supervisor_roster_monthly month <= target that actually has rows — the
+// supervisor-side equivalent of resolveYm, since that function is hardcoded to
+// roster_monthly and can't be reused for the separate supervisor table.
+function resolveSupYm(db: Database, year: number, month: number): string | null {
+  const target = ym(year, month)
+  const row = prepare(db, `SELECT MAX(year_month) AS ym FROM supervisor_roster_monthly WHERE year_month <= ?`).get(target) as { ym: string | null } | undefined
+  return row?.ym ?? null
+}
+
+// Per-supervisor roster facts AS OF a given month, carry-forward — the supervisor-side
+// equivalent of getRosterMapAsOf. Used by yearly KPI aggregation to determine which months
+// a supervisor was active, the same way getRosterMapAsOf does for reps.
+export function getSupervisorRosterMapAsOf(db: Database, year: number, month: number): Map<number, { branch_id: number; staff_type: string; active: number }> {
+  const map = new Map<number, { branch_id: number; staff_type: string; active: number }>()
+  const resolved = resolveSupYm(db, year, month)
+  if (!resolved) return map
+  const rows = prepare(db, `SELECT supervisor_id, branch_id, staff_type, active FROM supervisor_roster_monthly WHERE year_month = ?`).all(resolved) as
+    Array<{ supervisor_id: number; branch_id: number; staff_type: string; active: number }>
+  for (const r of rows) map.set(r.supervisor_id, { branch_id: r.branch_id, staff_type: r.staff_type, active: r.active })
+  return map
+}
+
 // Full roster snapshot AS OF a given month — used by report:teamPerformance and similar
 // calculations that need a sensible value even for a month HR forgot to re-upload.
 // published=false means there is no month, past or present, with any roster data at all.

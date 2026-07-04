@@ -220,6 +220,40 @@ export interface TeamPerformanceRow {
   branch_target: number
 }
 
+export interface YearlyKpiRepRow {
+  id: number
+  rep_code: string
+  full_name: string
+  nickname: string
+  branch_id: number
+  branch_name: string
+  branch_code: string
+  supervisor_id: number | null
+  supervisor_name: string | null
+  staff_type: string
+  active_months: number
+  total_score: number
+  avg_score: number
+  total_target: number
+  kpi_pct: number
+}
+
+export interface YearlyKpiTeamRow {
+  id: number
+  full_name: string
+  nickname: string
+  branch_id: number
+  branch_name: string
+  branch_code: string
+  staff_type: string
+  rep_count: number
+  active_months: number
+  total_score: number
+  avg_score: number
+  total_target: number
+  kpi_pct: number
+}
+
 export interface CommissionConfig {
   id: number
   staff_type: string

@@ -84,8 +84,22 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     try {
       transaction(db, () => {
         const now = new Date().toISOString()
+        // Sales can't be entered for a day that hasn't happened yet — without this, a
+        // future-dated row would still get scored/aggregated normally, silently inflating
+        // reconciliation totals (Daily Tracking sums the whole fiscal period, not just
+        // month-to-date) with sales that haven't actually occurred. Historical dates,
+        // including ones from a prior fiscal month, are unaffected — only the upper bound
+        // is enforced here.
+        const nowDate = new Date()
+        const todayISO = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}-${String(nowDate.getDate()).padStart(2, '0')}`
         for (let i = 0; i < rows.length; i++) {
           const r = rows[i]
+          if (r.date > todayISO) {
+            const reason = `Entry date ${r.date} is in the future — sales can only be entered for today or an earlier date.`
+            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason })
+            errorRows.push({ row: i + 1, data: r, reason })
+            continue
+          }
           const salesman = prepare(db, `SELECT id, branch_id, staff_type FROM salesmen WHERE rep_code = ? AND active = 1`).get(r.repCode) as
             { id: number; branch_id: number; staff_type: string } | undefined
           if (!salesman) {

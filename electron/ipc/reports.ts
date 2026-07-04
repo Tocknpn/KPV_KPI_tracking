@@ -3,7 +3,7 @@ import { getDb } from '../db/connection'
 import { prepare } from '../db/query'
 import { requireAuth } from './auth'
 import { computeKpiScore } from './kpi'
-import { getHeadcountAsOf, resolveYm, getRosterMapAsOf } from '../db/history'
+import { getHeadcountAsOf, resolveYm, getRosterMapAsOf, getSupervisorRosterMapAsOf } from '../db/history'
 import { fiscalRangeForLabel, fiscalMonthOf, fiscalProgress, FISCAL_YM_SQL_EXPR } from '../db/fiscalMonth'
 
 function buildBranchFilter(ids: number[]): { sql: string; params: number[] } {
@@ -673,6 +673,196 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     })
     const currentRepCount = (prepare(db, `SELECT COUNT(*) AS cnt FROM salesmen WHERE supervisor_id=? AND active=1`).get(supId) as { cnt: number }).cnt
     return { ...sup, rep_count: currentRepCount, history }
+  })
+
+  // ── Yearly KPI (reps) — sum of each active fiscal month's score / count of active months,
+  // grouped by the rep's CURRENT branch/supervisor (not a historical snapshot). A fully
+  // deactivated rep never appears — "current status" has no meaning for someone who's left.
+  ipcMain.handle('report:yearlyKpiReps', async (_e, token: string, year: number) => {
+    requireAuth(token)
+    const db = getDb()
+
+    const now = new Date()
+    const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const todayFiscal = fiscalMonthOf(todayISO)
+    if (year > todayFiscal.year) return []
+    // The in-progress year stops at today's fiscal month — otherwise carry-forward roster
+    // resolution would report future months as "active" with zero score, deflating the average.
+    const lastMonth = year === todayFiscal.year ? todayFiscal.month : 12
+
+    const months: Array<{ year: number; month: number; ym: string }> = []
+    for (let m = 1; m <= lastMonth; m++) months.push({ year, month: m, ym: `${year}${String(m).padStart(2, '0')}` })
+
+    const reps = prepare(db, `
+      SELECT s.id, s.rep_code, s.full_name, s.nickname,
+             s.branch_id, b.name AS branch_name, b.code AS branch_code,
+             s.supervisor_id, sup.full_name AS supervisor_name, s.staff_type
+      FROM salesmen s
+      JOIN branches b ON b.id = s.branch_id
+      LEFT JOIN supervisors sup ON sup.id = s.supervisor_id
+      WHERE s.active = 1
+    `).all() as Array<{
+      id: number; rep_code: string; full_name: string; nickname: string
+      branch_id: number; branch_name: string; branch_code: string
+      supervisor_id: number | null; supervisor_name: string | null; staff_type: string
+    }>
+    if (!reps.length) return []
+    const repIds = reps.map(r => r.id)
+
+    // One roster-map resolution per month (not per rep) — carry-forward, same semantics
+    // every other scoring report uses (report:monthly, teamPerformance, commission, supHistory).
+    const rosterByYm = new Map(months.map(m => [m.ym, getRosterMapAsOf(db, m.year, m.month)]))
+
+    const rangeFrom = fiscalRangeForLabel(year, 1).dateFrom
+    const rangeTo   = fiscalRangeForLabel(year, lastMonth).dateTo
+    const idPh = repIds.map(() => '?').join(',')
+
+    const allGroups = prepare(db, `
+      SELECT ${FISCAL_YM_SQL_EXPR('entry_date')} AS ym, salesman_id, branch_id, staff_type,
+        COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q
+      FROM daily_entries WHERE salesman_id IN (${idPh}) AND entry_date BETWEEN ? AND ?
+      GROUP BY ym, salesman_id, branch_id, staff_type
+    `).all(...repIds, rangeFrom, rangeTo) as Array<{ ym: string; salesman_id: number; branch_id: number; staff_type: string; j: number; b: number; q: number }>
+    const groupsByYmRep = new Map<string, typeof allGroups>()
+    for (const g of allGroups) groupsByYmRep.set(`${g.ym}-${g.salesman_id}`, [...(groupsByYmRep.get(`${g.ym}-${g.salesman_id}`) ?? []), g])
+
+    const allTargets = prepare(db, `
+      SELECT salesman_id, year_month, point_target FROM staff_monthly_targets
+      WHERE salesman_id IN (${idPh}) AND year_month IN (${months.map(() => '?').join(',')})
+    `).all(...repIds, ...months.map(m => m.ym)) as Array<{ salesman_id: number; year_month: string; point_target: number }>
+    const targetByYmRep = new Map(allTargets.map(t => [`${t.year_month}-${t.salesman_id}`, t.point_target]))
+
+    return reps.map(rep => {
+      let activeMonths = 0, totalScore = 0, totalTarget = 0
+      for (const m of months) {
+        const rosterEntry = rosterByYm.get(m.ym)?.get(rep.id)
+        if (!rosterEntry || rosterEntry.active !== 1) continue
+        activeMonths++
+        const dateTo = fiscalRangeForLabel(m.year, m.month).dateTo
+        const groups = groupsByYmRep.get(`${m.ym}-${rep.id}`) ?? []
+        let monthScore = 0
+        for (const g of groups) {
+          monthScore += computeKpiScore(db, 1, g.branch_id, g.j, 0, dateTo, g.staff_type).score
+                      + computeKpiScore(db, 2, g.branch_id, g.b, 0, dateTo, g.staff_type).score
+                      + computeKpiScore(db, 3, g.branch_id, g.q, 0, dateTo, g.staff_type).score
+        }
+        // Fallback target anchor is the rep's CURRENT branch/staff_type, same convention
+        // report:repHistory already uses — not the historical roster for that month.
+        const pt = targetByYmRep.get(`${m.ym}-${rep.id}`) ?? getBranchPointTarget(db, rep.branch_id, m.year, m.month, rep.staff_type)
+        totalScore += monthScore
+        totalTarget += pt
+      }
+      return {
+        ...rep,
+        active_months: activeMonths,
+        total_score: totalScore,
+        avg_score: activeMonths > 0 ? totalScore / activeMonths : 0,
+        total_target: totalTarget,
+        kpi_pct: totalTarget > 0 ? (totalScore / totalTarget) * 100 : 0,
+      }
+    })
+  })
+
+  // ── Yearly KPI (teams) — same formula as reps, applied to a supervisor's team. Team
+  // membership per month comes from the same carry-forward roster resolution used by
+  // report:supHistory; the supervisor's OWN active-month status comes from
+  // getSupervisorRosterMapAsOf, independent of team size that month.
+  ipcMain.handle('report:yearlyKpiTeams', async (_e, token: string, year: number) => {
+    requireAuth(token)
+    const db = getDb()
+
+    const now = new Date()
+    const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const todayFiscal = fiscalMonthOf(todayISO)
+    if (year > todayFiscal.year) return []
+    const lastMonth = year === todayFiscal.year ? todayFiscal.month : 12
+
+    const months: Array<{ year: number; month: number; ym: string }> = []
+    for (let m = 1; m <= lastMonth; m++) months.push({ year, month: m, ym: `${year}${String(m).padStart(2, '0')}` })
+
+    const sups = prepare(db, `
+      SELECT sv.id, sv.full_name, sv.nickname, sv.branch_id, b.name AS branch_name, b.code AS branch_code, sv.staff_type
+      FROM supervisors sv JOIN branches b ON b.id = sv.branch_id
+      WHERE sv.active = 1
+    `).all() as Array<{ id: number; full_name: string; nickname: string; branch_id: number; branch_name: string; branch_code: string; staff_type: string }>
+    if (!sups.length) return []
+
+    const supRosterByYm = new Map(months.map(m => [m.ym, getSupervisorRosterMapAsOf(db, m.year, m.month)]))
+
+    // One getRosterMapAsOf call per month, inverted ONCE into a per-supervisor rep-id index —
+    // reused for every supervisor below, so this stays O(months), not O(months × supervisors).
+    const repIdsBySupThenYm = new Map<string, number[]>()
+    const unionRepIds = new Set<number>()
+    for (const m of months) {
+      const rosterMap = getRosterMapAsOf(db, m.year, m.month)
+      const bySup = new Map<number, number[]>()
+      for (const [repId, v] of rosterMap) {
+        if (v.active === 1 && v.supervisor_id != null) {
+          bySup.set(v.supervisor_id, [...(bySup.get(v.supervisor_id) ?? []), repId])
+        }
+      }
+      for (const sup of sups) {
+        const ids = bySup.get(sup.id) ?? []
+        repIdsBySupThenYm.set(`${sup.id}-${m.ym}`, ids)
+        for (const id of ids) unionRepIds.add(id)
+      }
+    }
+    const allRepIds = [...unionRepIds]
+
+    const rangeFrom = fiscalRangeForLabel(year, 1).dateFrom
+    const rangeTo   = fiscalRangeForLabel(year, lastMonth).dateTo
+
+    const groupsByYmRep = new Map<string, Array<{ salesman_id: number; branch_id: number; staff_type: string; j: number; b: number; q: number }>>()
+    const targetByYmRep = new Map<string, number>()
+
+    if (allRepIds.length > 0) {
+      const idPh = allRepIds.map(() => '?').join(',')
+      const allGroups = prepare(db, `
+        SELECT ${FISCAL_YM_SQL_EXPR('entry_date')} AS ym, salesman_id, branch_id, staff_type,
+          COALESCE(SUM(jewelry_weight_g),0) AS j, COALESCE(SUM(bar_weight_g),0) AS b, COALESCE(SUM(quantity),0) AS q
+        FROM daily_entries WHERE salesman_id IN (${idPh}) AND entry_date BETWEEN ? AND ?
+        GROUP BY ym, salesman_id, branch_id, staff_type
+      `).all(...allRepIds, rangeFrom, rangeTo) as Array<{ ym: string; salesman_id: number; branch_id: number; staff_type: string; j: number; b: number; q: number }>
+      for (const g of allGroups) groupsByYmRep.set(`${g.ym}-${g.salesman_id}`, [...(groupsByYmRep.get(`${g.ym}-${g.salesman_id}`) ?? []), g])
+
+      const allTargets = prepare(db, `
+        SELECT salesman_id, year_month, point_target FROM staff_monthly_targets
+        WHERE salesman_id IN (${idPh}) AND year_month IN (${months.map(() => '?').join(',')})
+      `).all(...allRepIds, ...months.map(m => m.ym)) as Array<{ salesman_id: number; year_month: string; point_target: number }>
+      for (const t of allTargets) targetByYmRep.set(`${t.year_month}-${t.salesman_id}`, t.point_target)
+    }
+
+    return sups.map(sup => {
+      let activeMonths = 0, totalScore = 0, totalTarget = 0
+      for (const m of months) {
+        const supActive = supRosterByYm.get(m.ym)?.get(sup.id)?.active === 1
+        if (!supActive) continue
+        activeMonths++
+        const dateTo = fiscalRangeForLabel(m.year, m.month).dateTo
+        const repIds = repIdsBySupThenYm.get(`${sup.id}-${m.ym}`) ?? []
+        for (const repId of repIds) {
+          // Fallback target anchor is the supervisor's CURRENT branch/staff_type, same
+          // convention report:supHistory already uses.
+          totalTarget += targetByYmRep.get(`${m.ym}-${repId}`) ?? getBranchPointTarget(db, sup.branch_id, m.year, m.month, sup.staff_type)
+          const groups = groupsByYmRep.get(`${m.ym}-${repId}`) ?? []
+          for (const g of groups) {
+            totalScore += computeKpiScore(db, 1, g.branch_id, g.j, 0, dateTo, g.staff_type).score
+                        + computeKpiScore(db, 2, g.branch_id, g.b, 0, dateTo, g.staff_type).score
+                        + computeKpiScore(db, 3, g.branch_id, g.q, 0, dateTo, g.staff_type).score
+          }
+        }
+      }
+      const currentRepCount = (prepare(db, `SELECT COUNT(*) AS cnt FROM salesmen WHERE supervisor_id=? AND active=1`).get(sup.id) as { cnt: number }).cnt
+      return {
+        ...sup,
+        rep_count: currentRepCount,
+        active_months: activeMonths,
+        total_score: totalScore,
+        avg_score: activeMonths > 0 ? totalScore / activeMonths : 0,
+        total_target: totalTarget,
+        kpi_pct: totalTarget > 0 ? (totalScore / totalTarget) * 100 : 0,
+      }
+    })
   })
 
   ipcMain.handle('report:branchAnalytics', async (_e,

@@ -75,6 +75,8 @@ interface Window {
     }>
     getExecutiveReport(token: string, year: number, month: number): Promise<import('./types').ExecutiveBranchRow[]>
     getBranchAnalytics(token: string, year: number, month: number): Promise<{ dailyTotals: unknown[]; branchContrib: unknown[] }>
+    getYearlyKpiReps(token: string, year: number): Promise<import('./types').YearlyKpiRepRow[]>
+    getYearlyKpiTeams(token: string, year: number): Promise<import('./types').YearlyKpiTeamRow[]>
 
     // Sheets
     syncToCloud(token: string): Promise<{ success: boolean; count?: number; message?: string; error?: string }>
