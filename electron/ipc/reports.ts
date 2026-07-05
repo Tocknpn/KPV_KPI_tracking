@@ -714,7 +714,13 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const rosterByYm = new Map(months.map(m => [m.ym, getRosterMapAsOf(db, m.year, m.month)]))
 
     const rangeFrom = fiscalRangeForLabel(year, 1).dateFrom
-    const rangeTo   = fiscalRangeForLabel(year, lastMonth).dateTo
+    // For the in-progress year, clamp the query's upper bound to TODAY, not the current
+    // fiscal month's nominal end (day 25) — otherwise this would sum any future-dated
+    // entries that exist (upload-time validation blocks new ones, but that guard doesn't
+    // cover the Sheets pull path, so it isn't a reliable enough backstop on its own).
+    // Every other current-period report (Dashboard, Monthly) clamps the same way via
+    // getDefaultDateRange; this mirrors that instead of trusting upload validation alone.
+    const rangeTo = year === todayFiscal.year ? todayISO : fiscalRangeForLabel(year, lastMonth).dateTo
     const idPh = repIds.map(() => '?').join(',')
 
     const allGroups = prepare(db, `
@@ -810,7 +816,11 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const allRepIds = [...unionRepIds]
 
     const rangeFrom = fiscalRangeForLabel(year, 1).dateFrom
-    const rangeTo   = fiscalRangeForLabel(year, lastMonth).dateTo
+    // Same clamp as report:yearlyKpiReps — for the in-progress year, cap the query at
+    // today, not the current fiscal month's nominal end, so a future-dated entry (which
+    // upload validation should block, but doesn't cover the Sheets pull path) can't
+    // inflate the still-partial current month's contribution to the yearly total.
+    const rangeTo = year === todayFiscal.year ? todayISO : fiscalRangeForLabel(year, lastMonth).dateTo
 
     const groupsByYmRep = new Map<string, Array<{ salesman_id: number; branch_id: number; staff_type: string; j: number; b: number; q: number }>>()
     const targetByYmRep = new Map<string, number>()
