@@ -6,7 +6,7 @@ const STORAGE_KEY = 'app_language'
 interface LanguageContextValue {
   lang: Lang
   setLang: (l: Lang) => void
-  t: (key: TranslationKey) => string
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string
 }
 
 const LanguageContext = createContext<LanguageContextValue | null>(null)
@@ -28,8 +28,13 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     setLangState(l)
   }
 
-  function t(key: TranslationKey): string {
-    return translations[key][lang]
+  function t(key: TranslationKey, params?: Record<string, string | number>): string {
+    const str = translations[key][lang]
+    if (!params) return str
+    return Object.entries(params).reduce(
+      (acc, [name, value]) => acc.replace(new RegExp(`\\{${name}\\}`, 'g'), String(value)),
+      str,
+    )
   }
 
   return (

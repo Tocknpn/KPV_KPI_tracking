@@ -425,6 +425,7 @@ export const translations = {
   ro_rule_eff_date:        { en: 'Effective_Date (YYYY-MM-DD) is required — decides which month the row counts for.', lo: 'Effective_Date (YYYY-MM-DD) ຕ້ອງມີ — ກຳນົດວ່າແຖວນັ້ນແມ່ນຂອງເດືອນໃດ.' },
   ro_rule_sup_required:    { en: 'Sup_Code AND Team_Sup_Name are both required — missing either one skips the row.', lo: 'ຕ້ອງມີທັງ Sup_Code ແລະ Team_Sup_Name — ຂາດອັນໃດອັນໜຶ່ງ ແຖວນັ້ນຈະຖືກຂ້າມ.' },
   ro_rule_kpi_settings:    { en: "KPI point targets aren't set here — that's done in KPI Settings.", lo: 'ເປົ້າຄະແນນ KPI ບໍ່ໄດ້ຕັ້ງຢູ່ນີ້ — ໄປຕັ້ງຢູ່ KPI Settings.' },
+  ro_field_effective_date: { en: 'Effective Date', lo: 'ວັນທີມີຜົນ' },
   ro_drop_file:            { en: 'Drop XLSX file here or click to browse', lo: 'ລາກໄຟລ໌ XLSX ມາວາງທີ່ນີ້ ຫຼື ຄລິກເພື່ອເລືອກໄຟລ໌' },
   ro_close:                { en: 'Close', lo: 'ປິດ' },
   ro_uploading:            { en: 'Uploading...', lo: 'ກຳລັງອັບໂຫລດ...' },
@@ -490,6 +491,48 @@ export const translations = {
   ro_showing_of_sups:      { en: 'Showing', lo: 'ສະແດງ' },
   ro_supervisors_lc:       { en: 'supervisors', lo: 'ຫົວໜ້າທີມ' },
   ro_target_formula:       { en: 'Target = per-person target × rep count (sum of total reps target in team)', lo: 'ເປົ້າ = ເປົ້າຕໍ່ຄົນ × ຈຳນວນພະນັກງານ (ລວມເປົ້າທີມ)' },
+
+  // ── Upload error codes ──
+  err_no_rows:                 { en: 'No data rows found in the file — check the file isn\'t empty and has a header row plus at least one data row.', lo: 'No data rows found in the file — check the file isn\'t empty and has a header row plus at least one data row.' }, // TODO: translate
+  err_date_future:             { en: 'Entry date {date} is in the future — sales can only be entered for today or an earlier date.', lo: 'Entry date {date} is in the future — sales can only be entered for today or an earlier date.' }, // TODO: translate
+  err_rep_not_found:           { en: 'Rep code not found in roster — check for typos, or ask HR to confirm this rep is active.', lo: 'Rep code not found in roster — check for typos, or ask HR to confirm this rep is active.' }, // TODO: translate
+  err_rep_wrong_branch:        { en: 'This rep code belongs to a different branch — you can only upload entries for your own branch.', lo: 'This rep code belongs to a different branch — you can only upload entries for your own branch.' }, // TODO: translate
+  err_no_roster_for_month:     { en: 'No roster set up for {yearMonth} yet — ask HR/admin to publish this rep\'s roster for that month before uploading entries for it.', lo: 'No roster set up for {yearMonth} yet — ask HR/admin to publish this rep\'s roster for that month before uploading entries for it.' }, // TODO: translate
+  err_duplicate_entry:         { en: 'An entry already exists for this rep and date — ask an Accountant Manager to clear the conflicting upload batch before re-uploading.', lo: 'An entry already exists for this rep and date — ask an Accountant Manager to clear the conflicting upload batch before re-uploading.' }, // TODO: translate
+  err_missing_rep_code:        { en: 'Missing Rep Code — every row must have one.', lo: 'Missing Rep Code — every row must have one.' }, // TODO: translate
+  err_missing_full_name:       { en: 'Missing Full Name for rep {repCode}.', lo: 'Missing Full Name for rep {repCode}.' }, // TODO: translate
+  err_missing_branch_code:     { en: 'Missing Branch Code for rep {repCode}.', lo: 'Missing Branch Code for rep {repCode}.' }, // TODO: translate
+  err_branch_not_found:        { en: 'Branch code "{branchCode}" not found for rep {repCode} — check Branch_Code matches an existing branch.', lo: 'Branch code "{branchCode}" not found for rep {repCode} — check Branch_Code matches an existing branch.' }, // TODO: translate
+  err_missing_supervisor_info: { en: 'Missing supervisor info for rep {repCode} — both Sup_Code and Team_Sup_Name are required.', lo: 'Missing supervisor info for rep {repCode} — both Sup_Code and Team_Sup_Name are required.' }, // TODO: translate
+  err_file_empty:              { en: 'File is empty or has no data rows — add a header row plus at least one data row.', lo: 'File is empty or has no data rows — add a header row plus at least one data row.' }, // TODO: translate
+  err_column_count:            { en: 'Row {line}: expected {expected} columns but found {got} — check for extra or missing commas.', lo: 'Row {line}: expected {expected} columns but found {got} — check for extra or missing commas.' }, // TODO: translate
+  err_invalid_date_format:     { en: 'Row {line}: invalid date "{date}" — use YYYY-MM-DD format.', lo: 'Row {line}: invalid date "{date}" — use YYYY-MM-DD format.' }, // TODO: translate
+  err_date_future_row:         { en: 'Row {line}: date "{date}" is in the future — sales can only be entered for today or an earlier date.', lo: 'Row {line}: date "{date}" is in the future — sales can only be entered for today or an earlier date.' }, // TODO: translate
+  err_missing_rep_code_row:    { en: 'Row {line}: missing Rep Code.', lo: 'Row {line}: missing Rep Code.' }, // TODO: translate
+  err_missing_full_name_row:   { en: 'Row {line}: missing Full Name.', lo: 'Row {line}: missing Full Name.' }, // TODO: translate
+  err_missing_branch_code_row: { en: 'Row {line}: missing Branch Code.', lo: 'Row {line}: missing Branch Code.' }, // TODO: translate
+  err_missing_effective_date:  { en: 'Row {line}: missing Effective_Date — required, use YYYY-MM-DD format.', lo: 'Row {line}: missing Effective_Date — required, use YYYY-MM-DD format.' }, // TODO: translate
+  err_invalid_effective_date:  { en: 'Row {line}: invalid Effective_Date "{date}" — use YYYY-MM-DD format.', lo: 'Row {line}: invalid Effective_Date "{date}" — use YYYY-MM-DD format.' }, // TODO: translate
+  err_file_read_failed:        { en: 'Could not read this file — check it isn\'t open in another program and try again.', lo: 'Could not read this file — check it isn\'t open in another program and try again.' }, // TODO: translate
+  err_upload_failed:           { en: 'Upload failed — check your connection and try again, or contact support if this keeps happening.', lo: 'Upload failed — check your connection and try again, or contact support if this keeps happening.' }, // TODO: translate
 } satisfies Record<string, Record<Lang, string>>
 
 export type TranslationKey = keyof typeof translations
+
+// ── Error-code lookup helper ────────────────────────────────────────────────
+// Backend IPC handlers (upload:daily / upload:roster) return per-row rejection reasons as
+// an UPPER_SNAKE `code` (e.g. "ERR_REP_NOT_FOUND") that isn't guaranteed to exactly match a
+// TranslationKey's casing. This checks the code as-is, then lower-cased, before giving up —
+// used by DailyEntry/Roster upload screens to safely call t(code, params) without crashing
+// on an unrecognized/future backend code.
+export function hasTranslationKey(key: string): key is TranslationKey {
+  return Object.prototype.hasOwnProperty.call(translations, key)
+}
+
+export function resolveErrorCode(code: string | undefined | null): TranslationKey | null {
+  if (!code) return null
+  if (hasTranslationKey(code)) return code
+  const lower = code.toLowerCase()
+  if (hasTranslationKey(lower)) return lower
+  return null
+}

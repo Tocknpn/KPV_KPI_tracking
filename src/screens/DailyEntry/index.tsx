@@ -3,14 +3,24 @@ import { AppShell } from '../../components/layout/AppShell'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { useAuthStore } from '../../store/auth.store'
 import { useAppStore } from '../../store/app.store'
-import { validateDailyRows } from '../../utils/csv'
+import { validateDailyRows, type ParseError } from '../../utils/csv'
 import { useLanguage } from '../../i18n/LanguageContext'
+import { resolveErrorCode } from '../../i18n/translations'
 import { parseXLSX, readFileAsArrayBuffer, generateDailyTemplateXLSX, downloadXLSX } from '../../utils/xlsx'
 
 function fmt(n: number) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 
 interface UploadSummary { totalRecords: number; totalJewelry: number; totalBar: number; totalQty: number; totalWeight: number; complete: number; errors: number }
-interface ErrorRow { row: number; data: { date: string; repCode: string; jewelryWeightG: number; barWeightG: number; quantity: number }; reason: string }
+interface ErrorRow {
+  row: number
+  data: { date: string; repCode: string; jewelryWeightG: number; barWeightG: number; quantity: number }
+  // `code`/`params` are the machine-readable rejection reason (t(code, params)); `reason` is
+  // the backend's raw English string, kept only as a defensive fallback if `code` is missing
+  // or unrecognized (shouldn't happen, but don't crash on an unexpected backend code).
+  reason?: string
+  code?: string
+  params?: Record<string, string>
+}
 
 export default function DailyEntry() {
   const { t } = useLanguage()
@@ -22,7 +32,7 @@ export default function DailyEntry() {
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploading, setUploading]   = useState(false)
   const [preview, setPreview]       = useState<{ headers: string[]; sample: string[][] } | null>(null)
-  const [uploadErrors, setUploadErrors]  = useState<string[]>([])
+  const [uploadErrors, setUploadErrors]  = useState<ParseError[]>([])
   const [uploadResult, setUploadResult] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -54,8 +64,8 @@ export default function DailyEntry() {
         sample:  parsed.rows.slice(0, 3).map(r => parsed.headers.map(h => r[h] ?? '')),
       })
       if (parsed.errors.length) setUploadErrors(parsed.errors)
-    } catch (e) {
-      setUploadErrors([e instanceof Error ? e.message : 'Failed to read file'])
+    } catch {
+      setUploadErrors([{ code: 'err_file_read_failed' }])
     }
   }
 
@@ -86,7 +96,10 @@ export default function DailyEntry() {
         setUploadErrors(errors)
         setUploadFile(null); setPreview(null)
       } else {
-        setUploadErrors([res.error ?? 'Upload failed'])
+        // Prefer the backend's machine-readable code (e.g. ERR_NO_ROWS -> err_no_rows) so this
+        // renders localised; fall back to the generic upload-failed message for anything the
+        // backend hasn't attached a recognized code to yet.
+        setUploadErrors([{ code: resolveErrorCode(res.code) ?? 'err_upload_failed', params: res.params }])
       }
     } finally { setUploading(false) }
   }
@@ -219,7 +232,7 @@ interface PanelProps {
   onDownloadTemplate: () => void; templateFilename: string
   onFilePick: (f: File) => void; uploadFile: File | null
   uploading: boolean; preview: { headers: string[]; sample: string[][] } | null
-  errors: string[]; result: string | null
+  errors: ParseError[]; result: string | null
   onSubmit: () => void; onReset: () => void
   isDragging: boolean; setIsDragging: (v: boolean) => void
   fileRef: React.RefObject<HTMLInputElement>
@@ -316,7 +329,10 @@ function CSVUploadPanel({ title, description, templateNote, onDownloadTemplate, 
             <div className="p-4 bg-error-container/20 border-t border-error/10">
               <p className="font-label-md text-label-md text-error mb-2">⚠ {t('de_warnings')} ({errors.length})</p>
               <ul className="space-y-1 max-h-32 overflow-y-auto">
-                {errors.map((e, i) => <li key={i} className="text-[11px] text-on-error-container">{e}</li>)}
+                {errors.map((e, i) => {
+                  const key = resolveErrorCode(e.code)
+                  return <li key={i} className="text-[11px] text-on-error-container">{key ? t(key, e.params) : e.code}</li>
+                })}
               </ul>
             </div>
           )}
@@ -389,7 +405,9 @@ function ErrorFixModal({ rows, onReupload, onClose }: {
         <div className="overflow-y-auto flex-1 p-6 space-y-3">
           {local.map((r, i) => (
             <div key={i} className="border border-error/20 bg-error-container/10 rounded-xl p-4">
-              <p className="text-[11px] text-error font-bold mb-2">{t('de_row')} {r.row}: {r.reason}</p>
+              <p className="text-[11px] text-error font-bold mb-2">
+                {t('de_row')} {r.row}: {(() => { const key = resolveErrorCode(r.code); return key ? t(key, r.params) : (r.reason ?? r.code ?? '') })()}
+              </p>
               <div className="grid grid-cols-5 gap-3">
                 <div>
                   <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('de_field_date')}</label>

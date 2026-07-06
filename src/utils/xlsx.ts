@@ -1,18 +1,20 @@
 import * as XLSX from 'xlsx'
-import type { ParseResult } from './csv'
+import type { ParseResult, ParseError } from './csv'
 
 // ── Read XLSX file as ParseResult (same shape as CSV parser output) ────────
+// Errors are structured as code + params (see csv.ts's ParseError) so the renderer can
+// localise them via t(code, params) instead of baking English sentences in here.
 export function parseXLSX(buffer: ArrayBuffer): ParseResult {
-  const errors: string[] = []
+  const errors: ParseError[] = []
   try {
     const workbook = XLSX.read(buffer, { type: 'array' })
     const sheetName = workbook.SheetNames[0]
-    if (!sheetName) return { headers: [], rows: [], rawRows: [], errors: ['File has no sheets.'] }
+    if (!sheetName) return { headers: [], rows: [], rawRows: [], errors: [{ code: 'err_file_empty' }] }
 
     const sheet = workbook.Sheets[sheetName]
     const raw: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
 
-    if (raw.length < 2) return { headers: [], rows: [], rawRows: [], errors: ['File is empty or has no data rows.'] }
+    if (raw.length < 2) return { headers: [], rows: [], rawRows: [], errors: [{ code: 'err_file_empty' }] }
 
     const headerRow = raw[0] as string[]
     const headers = headerRow.map(h => String(h).trim().toLowerCase().replace(/\s+/g, '_'))
@@ -24,7 +26,7 @@ export function parseXLSX(buffer: ArrayBuffer): ParseResult {
       const isEmpty = rowArr.every(v => v === '' || v == null)
       if (isEmpty) continue
       if (rowArr.length !== headers.length) {
-        errors.push(`Row ${i + 1}: expected ${headers.length} columns, got ${rowArr.length}. Skipped.`)
+        errors.push({ code: 'err_column_count', params: { line: i + 1, expected: headers.length, got: rowArr.length } })
         continue
       }
       const trimmed = rowArr.map(v => String(v ?? '').trim())
@@ -35,8 +37,8 @@ export function parseXLSX(buffer: ArrayBuffer): ParseResult {
     }
 
     return { headers, rows, rawRows, errors }
-  } catch (e) {
-    return { headers: [], rows: [], rawRows: [], errors: [e instanceof Error ? e.message : 'Failed to parse XLSX file.'] }
+  } catch {
+    return { headers: [], rows: [], rawRows: [], errors: [{ code: 'err_file_read_failed' }] }
   }
 }
 

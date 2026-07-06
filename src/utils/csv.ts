@@ -1,17 +1,25 @@
 // ── CSV Parser ────────────────────────────────────────────────────────────
+// Errors are purely in-memory/display-only (never persisted to DB or logs) — structured as
+// a code + params so the renderer can localise them via t(code, params) instead of baking
+// English sentences in here.
+export interface ParseError {
+  code: string
+  params?: Record<string, string | number>
+}
+
 export interface ParseResult {
   headers: string[]
   rows: Record<string, string>[]
   rawRows: string[][]  // positional column arrays, no header row
-  errors: string[]
+  errors: ParseError[]
 }
 
 export function parseCSV(text: string): ParseResult {
   const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n')
-  if (lines.length < 2) return { headers: [], rows: [], rawRows: [], errors: ['File is empty or has no data rows.'] }
+  if (lines.length < 2) return { headers: [], rows: [], rawRows: [], errors: [{ code: 'err_file_empty' }] }
 
   const headers = splitCSVLine(lines[0]).map(h => h.trim().toLowerCase().replace(/\s+/g, '_'))
-  const errors: string[] = []
+  const errors: ParseError[] = []
   const rows: Record<string, string>[] = []
   const rawRows: string[][] = []
 
@@ -20,7 +28,7 @@ export function parseCSV(text: string): ParseResult {
     if (!line) continue
     const values = splitCSVLine(line)
     if (values.length !== headers.length) {
-      errors.push(`Row ${i + 1}: expected ${headers.length} columns, got ${values.length}. Skipped.`)
+      errors.push({ code: 'err_column_count', params: { line: i + 1, expected: headers.length, got: values.length } })
       continue
     }
     const trimmed = values.map(v => v.trim())
@@ -89,7 +97,7 @@ export interface TargetRowRaw { repCode: string; year: number; month: number; je
 export interface RosterRowRaw { repCode: string; fullName: string; nickname: string; branchCode: string; supervisorName: string; supervisorCode?: string; staffType: 'b2c' | 'b2b'; effectiveDate: string }
 
 // Column positions for daily template: Date, Rep_Code, Full_Name, Branch_Code, Supervisor_Name, KPI_1, KPI_2, KPI_3
-export function validateDailyRows(parsed: ParseResult): { rows: DailyRowRaw[]; errors: string[] } {
+export function validateDailyRows(parsed: ParseResult): { rows: DailyRowRaw[]; errors: ParseError[] } {
   const errors = [...parsed.errors]
   const rows: DailyRowRaw[] = []
   const now = new Date()
@@ -101,16 +109,16 @@ export function validateDailyRows(parsed: ParseResult): { rows: DailyRowRaw[]; e
 
     const date = pos[0] ?? ''
     if (!date || !date.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      errors.push(`Row ${lineNum}: Invalid date "${date}". Use YYYY-MM-DD format.`); continue
+      errors.push({ code: 'err_invalid_date_format', params: { line: lineNum, date } }); continue
     }
     // Same rule the server enforces — catch it here too so the accountant sees it
     // immediately on file selection, not after a round-trip to the server.
     if (date > todayISO) {
-      errors.push(`Row ${lineNum}: Date "${date}" is in the future — sales can only be entered for today or an earlier date.`); continue
+      errors.push({ code: 'err_date_future_row', params: { line: lineNum, date } }); continue
     }
     const repCode = pos[1] ?? ''
     if (!repCode) {
-      errors.push(`Row ${lineNum}: Missing Rep Code.`); continue
+      errors.push({ code: 'err_missing_rep_code_row', params: { line: lineNum } }); continue
     }
 
     rows.push({
@@ -126,7 +134,9 @@ export function validateDailyRows(parsed: ParseResult): { rows: DailyRowRaw[]; e
 }
 
 // Column positions for target template: Rep_Code, Full_Name, Branch_Code, Supervisor_Name, Year, Month, Jewelry_Target, Bar_Target, Quantity_Target
-export function validateTargetRows(parsed: ParseResult): { rows: TargetRowRaw[]; errors: string[] } {
+// NOTE: Target Upload is confirmed dead code with no UI — kept only for type-consistency with
+// the shared ParseResult/ParseError shape, not translated (nothing ever renders these codes).
+export function validateTargetRows(parsed: ParseResult): { rows: TargetRowRaw[]; errors: ParseError[] } {
   const errors = [...parsed.errors]
   const rows: TargetRowRaw[] = []
 
@@ -136,12 +146,12 @@ export function validateTargetRows(parsed: ParseResult): { rows: TargetRowRaw[];
 
     const repCode = pos[0] ?? ''
     if (!repCode) {
-      errors.push(`Row ${lineNum}: Missing Rep Code.`); continue
+      errors.push({ code: 'err_missing_rep_code_row', params: { line: lineNum } }); continue
     }
     const year  = parseInt(pos[4] ?? '')
     const month = parseInt(pos[5] ?? '')
     if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
-      errors.push(`Row ${lineNum}: Invalid year/month.`); continue
+      errors.push({ code: 'err_target_invalid_year_month', params: { line: lineNum } }); continue
     }
 
     rows.push({
@@ -161,7 +171,7 @@ export function validateTargetRows(parsed: ParseResult): { rows: TargetRowRaw[];
 // KPI point target is not part of the roster — it is always looked up from HR KPI Setting.
 // Effective_Date is the month this roster row counts for — there is no app-level month picker;
 // the file is the single source of truth for which month each row belongs to.
-export function validateRosterRows(parsed: ParseResult): { rows: RosterRowRaw[]; errors: string[] } {
+export function validateRosterRows(parsed: ParseResult): { rows: RosterRowRaw[]; errors: ParseError[] } {
   const errors = [...parsed.errors]
   const rows: RosterRowRaw[] = []
 
@@ -170,19 +180,19 @@ export function validateRosterRows(parsed: ParseResult): { rows: RosterRowRaw[];
     const lineNum = i + 2
 
     const repCode = (pos[0] ?? '').trim()
-    if (!repCode) { errors.push(`Row ${lineNum}: Missing Rep Code.`); continue }
+    if (!repCode) { errors.push({ code: 'err_missing_rep_code_row', params: { line: lineNum } }); continue }
     const fullName = (pos[1] ?? '').trim()
-    if (!fullName) { errors.push(`Row ${lineNum}: Missing Full Name.`); continue }
+    if (!fullName) { errors.push({ code: 'err_missing_full_name_row', params: { line: lineNum } }); continue }
     const branchCode = (pos[3] ?? '').trim().toUpperCase()
-    if (!branchCode) { errors.push(`Row ${lineNum}: Missing Branch Code.`); continue }
+    if (!branchCode) { errors.push({ code: 'err_missing_branch_code_row', params: { line: lineNum } }); continue }
 
     const rawStaffType = (pos[5] ?? '').trim().toLowerCase()
     const staffType: 'b2c' | 'b2b' = rawStaffType === 'b2b' ? 'b2b' : 'b2c'
 
     const effectiveDate = (pos[6] ?? '').trim()
-    if (!effectiveDate) { errors.push(`Row ${lineNum}: Missing Effective_Date — required, use YYYY-MM-DD.`); continue }
+    if (!effectiveDate) { errors.push({ code: 'err_missing_effective_date', params: { line: lineNum } }); continue }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
-      errors.push(`Row ${lineNum}: Invalid Effective_Date "${effectiveDate}" — use YYYY-MM-DD.`); continue
+      errors.push({ code: 'err_invalid_effective_date', params: { line: lineNum, date: effectiveDate } }); continue
     }
 
     rows.push({

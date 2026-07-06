@@ -12,6 +12,11 @@ export interface UploadRowResult {
   date?: string
   status: 'ok' | 'error'
   reason?: string
+  // Machine-readable counterpart to `reason`, for the renderer's i18n layer (t(errCode, params)).
+  // Named `errCode` (not `code`) to avoid colliding with the existing `code` field above, which
+  // holds the rep code, not an error code.
+  errCode?: string
+  params?: Record<string, string>
 }
 
 export interface DailyRow {
@@ -65,10 +70,10 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
     // Admin is intentionally excluded — Sales Upload is Accountant Officer's (branch-scoped)
     // and Accountant Manager's (cross-branch) job per the role spec.
     if (!['accountant_officer', 'accountant_manager'].includes(user.role)) throw new Error('Forbidden')
-    if (!rows.length) return { success: false, error: 'No rows to import.' }
+    if (!rows.length) return { success: false, error: 'No rows to import.', code: 'ERR_NO_ROWS' }
 
     const results: UploadRowResult[] = []
-    const errorRows: Array<{ row: number; data: DailyRow; reason: string }> = []
+    const errorRows: Array<{ row: number; data: DailyRow; reason: string; code: string; params?: Record<string, string> }> = []
     let imported = 0
     let sumJewelry = 0, sumBar = 0, sumQty = 0
 
@@ -96,15 +101,17 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           const r = rows[i]
           if (r.date > todayISO) {
             const reason = `Entry date ${r.date} is in the future — sales can only be entered for today or an earlier date.`
-            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason })
-            errorRows.push({ row: i + 1, data: r, reason })
+            const errCode = 'ERR_DATE_FUTURE'
+            const params = { date: r.date }
+            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason, errCode, params })
+            errorRows.push({ row: i + 1, data: r, reason, code: errCode, params })
             continue
           }
           const salesman = prepare(db, `SELECT id, branch_id, staff_type FROM salesmen WHERE rep_code = ? AND active = 1`).get(r.repCode) as
             { id: number; branch_id: number; staff_type: string } | undefined
           if (!salesman) {
-            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason: 'Rep code not found in roster' })
-            errorRows.push({ row: i + 1, data: r, reason: 'Rep code not found in roster' })
+            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason: 'Rep code not found in roster', errCode: 'ERR_REP_NOT_FOUND' })
+            errorRows.push({ row: i + 1, data: r, reason: 'Rep code not found in roster', code: 'ERR_REP_NOT_FOUND' })
             continue
           }
 
@@ -113,8 +120,8 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           // this, a file containing another branch's rep codes would insert fine.
           if (user.branch_id && salesman.branch_id !== user.branch_id) {
             const reason = 'Rep code belongs to a different branch — you can only upload for your own branch.'
-            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason })
-            errorRows.push({ row: i + 1, data: r, reason })
+            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason, errCode: 'ERR_REP_WRONG_BRANCH' })
+            errorRows.push({ row: i + 1, data: r, reason, code: 'ERR_REP_WRONG_BRANCH' })
             continue
           }
 
@@ -128,8 +135,10 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           const onRoster = prepare(db, `SELECT 1 FROM roster_monthly WHERE salesman_id = ? AND year_month = ?`).get(salesman.id, entryYearMonth)
           if (!onRoster) {
             const reason = `No roster for ${entryYearMonth.slice(0,4)}-${entryYearMonth.slice(4)} — ask HR/admin to set up this rep's roster for that month before uploading entries for it.`
-            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason })
-            errorRows.push({ row: i + 1, data: r, reason })
+            const errCode = 'ERR_NO_ROSTER_FOR_MONTH'
+            const params = { yearMonth: `${entryYearMonth.slice(0,4)}-${entryYearMonth.slice(4)}` }
+            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason, errCode, params })
+            errorRows.push({ row: i + 1, data: r, reason, code: errCode, params })
             continue
           }
 
@@ -139,8 +148,8 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           const existing = prepare(db, `SELECT id FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).get(salesman.id, r.date) as { id: number } | undefined
           if (existing) {
             const reason = 'Existing record for this rep/date — ask an Accountant Manager to clear the conflicting upload batch before re-uploading.'
-            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason })
-            errorRows.push({ row: i + 1, data: r, reason })
+            results.push({ row: i + 1, code: r.repCode, date: r.date, status: 'error', reason, errCode: 'ERR_DUPLICATE_ENTRY' })
+            errorRows.push({ row: i + 1, data: r, reason, code: 'ERR_DUPLICATE_ENTRY' })
             continue
           }
 
@@ -335,24 +344,51 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('upload:roster', async (_e, token: string, rows: RosterRow[]) => {
     const u = requireAuth(token)
     if (!['admin', 'hr', 'hr_support'].includes(u.role)) throw new Error('Forbidden')
-    if (!rows.length) return { success: false, error: 'No rows to import.' }
+    if (!rows.length) return { success: false, error: 'No rows to import.', code: 'ERR_NO_ROWS' }
 
     let created = 0; let updated = 0; const skipped: string[] = []
+    const errorRows: Array<{ row: number; data: RosterRow; code: string; params?: Record<string, string> }> = []
     const touchedKeys: Array<{ yearMonth: string; repCode: string }> = []
 
     try {
       transaction(db, () => {
-        for (const r of rows) {
-          if (!r.repCode || !r.fullName || !r.branchCode) { skipped.push(r.repCode || '?'); continue }
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i]
+          // Split into three separate, sequential checks (rather than one compound condition)
+          // so each produces an accurate, distinct code — a compound check only ever tells the
+          // user "something's missing" without saying what.
+          if (!r.repCode) {
+            skipped.push('?')
+            errorRows.push({ row: i + 1, data: r, code: 'ERR_MISSING_REP_CODE' })
+            continue
+          }
+          if (!r.fullName) {
+            skipped.push(`${r.repCode}(missing full name)`)
+            errorRows.push({ row: i + 1, data: r, code: 'ERR_MISSING_FULL_NAME', params: { repCode: r.repCode } })
+            continue
+          }
+          if (!r.branchCode) {
+            skipped.push(`${r.repCode}(missing branch code)`)
+            errorRows.push({ row: i + 1, data: r, code: 'ERR_MISSING_BRANCH_CODE', params: { repCode: r.repCode } })
+            continue
+          }
 
           const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(r.branchCode) as { id: number } | undefined
-          if (!branch) { skipped.push(`${r.repCode}(bad branch:${r.branchCode})`); continue }
+          if (!branch) {
+            skipped.push(`${r.repCode}(bad branch:${r.branchCode})`)
+            errorRows.push({ row: i + 1, data: r, code: 'ERR_BRANCH_NOT_FOUND', params: { repCode: r.repCode, branchCode: r.branchCode } })
+            continue
+          }
 
           // Both Sup_Code AND Team_Sup_Name are required now — "either one" let a row through
           // with just a typed name and no code, which then auto-created a brand-new supervisor
           // instead of matching the real one whenever the name didn't exactly match what's on
           // file (typo, nickname, Lao spelling variant). Code is the only unambiguous match.
-          if (!r.supervisorCode || !r.supervisorName) { skipped.push(`${r.repCode}(missing supervisor info)`); continue }
+          if (!r.supervisorCode || !r.supervisorName) {
+            skipped.push(`${r.repCode}(missing supervisor info)`)
+            errorRows.push({ row: i + 1, data: r, code: 'ERR_MISSING_SUPERVISOR_INFO', params: { repCode: r.repCode } })
+            continue
+          }
 
           const staffType = r.staffType === 'b2b' ? 'b2b' : 'b2c'
 
@@ -405,7 +441,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
       healLocalRosterBeforePush(db, touchedKeys).then(() => pushRosterIfConfigured(db)).catch(() => {})
       logAudit(db, u.id, u.username, u.role, 'roster_bulk_upload',
         `${rows.length} rows — ${created} created, ${updated} updated${skipped.length ? `, ${skipped.length} skipped` : ''}`, 'roster_upload')
-      return { success: true, created, updated, skipped: skipped.length, skippedCodes: skipped }
+      return { success: true, created, updated, skipped: skipped.length, skippedCodes: skipped, errorRows }
     } catch (e: unknown) {
       return { success: false, error: e instanceof Error ? e.message : String(e) }
     }

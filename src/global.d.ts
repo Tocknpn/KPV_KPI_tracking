@@ -86,7 +86,16 @@ interface Window {
     saveSheetsConfig(token: string, config: { sheetsId: string; serviceAccountPath: string }): Promise<{ success: boolean }>
 
     // Upload
-    uploadDaily(token: string, rows: unknown[], meta: unknown): Promise<{ success: boolean; count?: number; skipped?: number; results?: Array<{ row: number; code: string; date?: string; status: 'ok' | 'error'; reason?: string }>; error?: string }>
+    uploadDaily(token: string, rows: unknown[], meta: unknown): Promise<{
+      success: boolean; count?: number; skipped?: number
+      results?: Array<{ row: number; code: string; date?: string; status: 'ok' | 'error'; reason?: string; errCode?: string; params?: Record<string, string> }>
+      // Per-row rejections — `code`/`params` are the machine-readable counterpart to `reason`,
+      // for the renderer's i18n layer (t(code, params)); `reason` kept as a defensive fallback
+      // for any row the backend hasn't attached a code to yet.
+      errorRows?: Array<{ row: number; data: import('./utils/csv').DailyRowRaw; reason?: string; code?: string; params?: Record<string, string> }>
+      summary?: { totalRecords: number; totalJewelry: number; totalBar: number; totalQty: number; totalWeight: number; complete: number; errors: number }
+      error?: string; code?: string; params?: Record<string, string>
+    }>
     uploadTargets(token: string, rows: unknown[], meta: unknown): Promise<{ success: boolean; count?: number; error?: string }>
     getUploadLogs(token: string, branchId?: number, uploadType?: string, limit?: number): Promise<unknown[]>
     getUploadCoverage(token: string, year: number, month: number): Promise<unknown[]>
@@ -128,7 +137,15 @@ interface Window {
     deactivateRosterRep(token: string, id: number, year?: number, month?: number): Promise<{ success: boolean }>
     reactivateRosterRep(token: string, id: number, year?: number, month?: number): Promise<{ success: boolean }>
     permanentlyDeleteRosterRep(token: string, id: number): Promise<{ success: boolean; error?: string }>
-    uploadRoster(token: string, rows: unknown[]): Promise<{ success: boolean; created?: number; updated?: number; skipped?: number; skippedCodes?: string[]; error?: string }>
+    uploadRoster(token: string, rows: unknown[]): Promise<{
+      success: boolean; created?: number; updated?: number; skipped?: number
+      // Legacy plain-string skip reasons — kept for backward compat, superseded by errorRows below.
+      skippedCodes?: string[]
+      // Per-row rejections — `code`/`params` are the machine-readable counterpart, for the
+      // renderer's i18n layer (t(code, params)); editable via the Roster screen's Fix-Errors modal.
+      errorRows?: Array<{ row: number; data: import('./utils/csv').RosterRowRaw; code?: string; params?: Record<string, string> }>
+      error?: string; code?: string; params?: Record<string, string>
+    }>
     getRosterTemplate(token: string): Promise<Array<Record<string, unknown>>>
     forceSyncAll(token: string): Promise<{ success: boolean; count?: number; message?: string; error?: string }>
   }

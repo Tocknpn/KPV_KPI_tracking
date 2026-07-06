@@ -4,15 +4,28 @@ import { GlassCard } from '../../components/ui/GlassCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useAuthStore } from '../../store/auth.store'
 import type { RosterRow, Supervisor, SupervisorRosterRow } from '../../types'
-import { validateRosterRows } from '../../utils/csv'
+import { validateRosterRows, type ParseError, type RosterRowRaw } from '../../utils/csv'
 import { parseXLSX, readFileAsArrayBuffer, generateRosterTemplateXLSX, generateRowsXLSX, downloadXLSX } from '../../utils/xlsx'
 import { useLanguage } from '../../i18n/LanguageContext'
-import type { TranslationKey } from '../../i18n/translations'
+import { resolveErrorCode, type TranslationKey } from '../../i18n/translations'
 import { fiscalMonthOf, fiscalRangeLabel } from '../../utils/dates'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 function fmtPts(n: number) { return n.toLocaleString('en-US', { maximumFractionDigits: 0 }) }
+
+// Per-row roster rejection from upload:roster — `code`/`params` are the machine-readable
+// counterpart to the backend's raw reason string, for the renderer's i18n layer (t(code, params)).
+interface RosterErrorRow { row: number; data: RosterRowRaw; code?: string; params?: Record<string, string> }
+
+// Renders a ParseError/errorRow's code via t(), falling back to the raw code string if it's
+// missing or doesn't resolve to a known TranslationKey — defensive against an unrecognized
+// backend code rather than crashing.
+function errText(t: (key: TranslationKey, params?: Record<string, string | number>) => string, code: string | undefined, params: Record<string, string | number> | undefined, fallback?: string): string {
+  const key = resolveErrorCode(code)
+  if (key) return t(key, params)
+  return fallback ?? code ?? ''
+}
 
 // ── Rep create/edit modal ────────────────────────────────────────────────────
 interface RepModalProps {
@@ -129,21 +142,25 @@ function RepModal({ mode, initial, branches, supervisors, onSave, onClose }: Rep
 }
 
 // ── Roster upload modal — file drops here, auto-syncs to Sheets on success ──
-function RosterUploadModal({ token, onDone, onClose }: {
+function RosterUploadModal({ token, onDone, onErrorRows, onClose }: {
   token: string
   onDone: (msg: string) => void
+  // Lifts row-level rejections up to the main screen, which owns the Fix-Errors modal —
+  // mirrors DailyEntry, where ErrorFixModal is rendered by the main screen, not nested here.
+  onErrorRows: (rows: RosterErrorRow[]) => void
   onClose: () => void
 }) {
   const { t } = useLanguage()
   const [file, setFile]       = useState<File | null>(null)
-  const [errors, setErrors]   = useState<string[]>([])
+  const [errors, setErrors]   = useState<ParseError[]>([])
+  const [legacyWarnings, setLegacyWarnings] = useState<string[]>([])
   const [result, setResult]   = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function pickFile(f: File) {
-    setFile(f); setErrors([]); setResult(null)
+    setFile(f); setErrors([]); setLegacyWarnings([]); setResult(null)
   }
 
   async function submit() {
@@ -158,13 +175,20 @@ function RosterUploadModal({ token, onDone, onClose }: {
       const res = await window.api.uploadRoster(token, rows)
       if (res.success) {
         setResult(`Created: ${res.created} · Updated: ${res.updated}${res.skipped ? ` · Skipped: ${res.skipped}` : ''}`)
-        // Backend already sends the exact reason per skipped row (e.g. "IT-010(missing
-        // supervisor info)") — surface it instead of leaving the count as the only signal,
-        // or fixing a skip means guessing which row and why from a bare number.
-        if (res.skippedCodes?.length) setErrors(res.skippedCodes)
+        const rejected = res.errorRows ?? []
+        if (rejected.length) {
+          // Structured per-row rejections — hand off to the Fix-Errors modal instead of a
+          // plain warning list, so these rows can be corrected and reuploaded in place.
+          onErrorRows(rejected)
+        } else if (res.skippedCodes?.length) {
+          // Fallback for a backend that hasn't attached structured errorRows yet — these are
+          // pre-built plain-English strings (not translation keys), shown as-is rather than
+          // silently dropped.
+          setLegacyWarnings(res.skippedCodes)
+        }
         onDone(`Roster uploaded — created ${res.created}, updated ${res.updated}.`)
       } else {
-        setErrors([res.error ?? 'Upload failed'])
+        setErrors([{ code: resolveErrorCode(res.code) ?? 'err_upload_failed', params: res.params }])
       }
     } finally { setUploading(false) }
   }
@@ -205,15 +229,16 @@ function RosterUploadModal({ token, onDone, onClose }: {
               <span className="material-symbols-outlined text-secondary">description</span>
               <span className="text-body-sm font-bold">{file.name}</span>
             </div>
-            <button onClick={() => { setFile(null); setErrors([]); setResult(null) }} className="text-on-surface-variant hover:text-error">
+            <button onClick={() => { setFile(null); setErrors([]); setLegacyWarnings([]); setResult(null) }} className="text-on-surface-variant hover:text-error">
               <span className="material-symbols-outlined text-sm">close</span>
             </button>
           </div>
         )}
 
-        {errors.length > 0 && (
+        {(errors.length > 0 || legacyWarnings.length > 0) && (
           <div className="mt-3 p-3 bg-error-container/20 rounded-lg max-h-32 overflow-y-auto">
-            {errors.map((e, i) => <p key={i} className="text-[11px] text-error">{e}</p>)}
+            {errors.map((e, i) => <p key={`e${i}`} className="text-[11px] text-error">{errText(t, e.code, e.params)}</p>)}
+            {legacyWarnings.map((w, i) => <p key={`w${i}`} className="text-[11px] text-error">{w}</p>)}
           </div>
         )}
         {result && (
@@ -231,6 +256,112 @@ function RosterUploadModal({ token, onDone, onClose }: {
             className="flex-1 py-2.5 rounded-lg bg-secondary text-white font-label-md flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50">
             <span className={`material-symbols-outlined text-sm ${uploading ? 'animate-spin-slow' : ''}`}>{uploading ? 'sync' : 'cloud_upload'}</span>
             {uploading ? t('ro_uploading') : t('ro_upload_roster_btn')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Roster error-fix modal: HR/admin edits rejected rows here, then reuploads ───────────────
+// Modeled directly on DailyEntry's ErrorFixModal (src/screens/DailyEntry/index.tsx).
+function RosterErrorFixModal({ rows, onReupload, onClose }: {
+  rows: RosterErrorRow[]
+  onReupload: (fixed: RosterErrorRow[]) => Promise<void>
+  onClose: () => void
+}) {
+  const { t } = useLanguage()
+  const [local, setLocal] = useState<RosterErrorRow[]>(rows)
+  const [submitting, setSubmitting] = useState(false)
+
+  function updateField(idx: number, field: keyof RosterRowRaw, value: string) {
+    setLocal(prev => prev.map((r, i) => i === idx ? {
+      ...r,
+      data: {
+        ...r.data,
+        [field]: field === 'staffType' ? (value === 'b2b' ? 'b2b' : 'b2c') : value,
+      },
+    } : r))
+  }
+
+  async function handleReupload() {
+    setSubmitting(true)
+    try { await onReupload(local) } finally { setSubmitting(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col animate-slide-in">
+        <div className="flex justify-between items-center p-6 border-b border-outline-variant/10">
+          <div>
+            <h3 className="font-headline-md text-on-surface">{t('de_fix_error_records')}</h3>
+            <p className="text-body-sm text-on-surface-variant mt-0.5">{t('de_fix_modal_desc')}</p>
+          </div>
+          <button onClick={onClose} className="text-on-surface-variant hover:text-error transition-colors">
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-6 space-y-3">
+          {local.map((r, i) => (
+            <div key={i} className="border border-error/20 bg-error-container/10 rounded-xl p-4">
+              <p className="text-[11px] text-error font-bold mb-2">{t('de_row')} {r.row}: {errText(t, r.code, r.params)}</p>
+              <div className="grid grid-cols-4 gap-3">
+                <div>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('ro_col_rep_code')}</label>
+                  <input value={r.data.repCode} onChange={e => updateField(i, 'repCode', e.target.value)}
+                    className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('ro_full_name_req')}</label>
+                  <input value={r.data.fullName} onChange={e => updateField(i, 'fullName', e.target.value)}
+                    className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('ro_nickname')}</label>
+                  <input value={r.data.nickname} onChange={e => updateField(i, 'nickname', e.target.value)}
+                    className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('ro_col_branch')}</label>
+                  <input value={r.data.branchCode} onChange={e => updateField(i, 'branchCode', e.target.value)}
+                    className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('ro_supervisor')}</label>
+                  <input value={r.data.supervisorName} onChange={e => updateField(i, 'supervisorName', e.target.value)}
+                    className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('ro_col_sup_code')}</label>
+                  <input value={r.data.supervisorCode ?? ''} onChange={e => updateField(i, 'supervisorCode', e.target.value)}
+                    className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('ro_staff_type')}</label>
+                  <select value={r.data.staffType} onChange={e => updateField(i, 'staffType', e.target.value)}
+                    className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20">
+                    <option value="b2c">B2C</option>
+                    <option value="b2b">B2B</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-on-surface-variant uppercase block mb-1">{t('ro_field_effective_date')}</label>
+                  <input value={r.data.effectiveDate} onChange={e => updateField(i, 'effectiveDate', e.target.value)}
+                    placeholder="YYYY-MM-DD"
+                    className="w-full bg-white border border-outline-variant/30 rounded-lg px-2 py-1.5 text-body-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-3 p-6 border-t border-outline-variant/10">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border border-outline-variant text-on-surface-variant font-label-md hover:bg-surface-container transition-colors">
+            {t('de_close')}
+          </button>
+          <button onClick={handleReupload} disabled={submitting}
+            className="flex-1 py-2.5 rounded-lg bg-primary text-white font-label-md flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 shadow-primary">
+            <span className={`material-symbols-outlined text-sm ${submitting ? 'animate-spin-slow' : ''}`}>{submitting ? 'sync' : 'cloud_upload'}</span>
+            {submitting ? t('de_reuploading') : t('de_reupload_fixed')}
           </button>
         </div>
       </div>
@@ -264,6 +395,8 @@ export default function Roster() {
   const [toast, setToast]             = useState('')
   const [dlTemplate, setDlTemplate]   = useState(false)
   const [showUpload, setShowUpload]   = useState(false)
+  const [rosterErrorRows, setRosterErrorRows] = useState<RosterErrorRow[]>([])
+  const [showRosterFixModal, setShowRosterFixModal] = useState(false)
   type RosterSort = { col: 'rep_code' | 'full_name' | 'branch_name' | 'supervisor_name' | 'staff_type'; dir: 'asc' | 'desc' }
   const [sort, setSort]               = useState<RosterSort>({ col: 'full_name', dir: 'asc' })
   const [filterBranch, setFilterBranch] = useState<number | 'all'>('all')
@@ -395,6 +528,20 @@ export default function Roster() {
     setYear(y); setMonth(m)
   }
 
+  // Reupload corrected roster rows (HR/admin fixed them in the Fix-Errors modal) — same
+  // signature as the initial upload, just the corrected subset.
+  async function reuploadFixedRosterRows(fixed: RosterErrorRow[]) {
+    if (!token) return
+    const rows = fixed.map(f => f.data)
+    const res = await window.api.uploadRoster(token, rows)
+    if (res.success) {
+      const stillErrored = res.errorRows ?? []
+      setRosterErrorRows(stillErrored)
+      if (stillErrored.length === 0) { setShowRosterFixModal(false); showToast(`Roster uploaded — created ${res.created}, updated ${res.updated}.`) }
+      loadRoster()
+    }
+  }
+
   return (
     <AppShell title="KPV Sale Tracking" allowedRoles={['admin', 'hr', 'top_manager', 'hr_support']}>
       {toast && (
@@ -418,7 +565,16 @@ export default function Roster() {
         <RosterUploadModal
           token={token}
           onDone={msg => { showToast(msg); loadRoster() }}
+          onErrorRows={rows => { setRosterErrorRows(rows); setShowRosterFixModal(true); setShowUpload(false) }}
           onClose={() => setShowUpload(false)}
+        />
+      )}
+
+      {showRosterFixModal && (
+        <RosterErrorFixModal
+          rows={rosterErrorRows}
+          onReupload={reuploadFixedRosterRows}
+          onClose={() => setShowRosterFixModal(false)}
         />
       )}
 
