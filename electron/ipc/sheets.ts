@@ -1,12 +1,32 @@
 import { IpcMain, dialog, BrowserWindow } from 'electron'
-import { ENABLE_TOMBSTONE_AUTO_CLEANUP } from '../../src/config/syncFlags'
+import { ENABLE_TOMBSTONE_AUTO_CLEANUP, SYNC_DELETION_CHUNK_SIZE, SYNC_RETRY_ATTEMPTS, SYNC_RETRY_BASE_MS, SYNC_FALLBACK_CACHE_PATH } from '../../src/config/syncFlags'
 import { google } from 'googleapis'
 import bcrypt from 'bcryptjs'
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync, existsSync, writeFileSync } from 'fs'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth } from './auth'
 import type { Database } from 'better-sqlite3'
+// ---------- Sync robustness helpers ----------
+function sleep(ms: number): Promise<void> {
+  return new Promise(res => setTimeout(res, ms));
+}
+async function retryWithBackoff<T>(fn: () => Promise<T>, attempts: number = SYNC_RETRY_ATTEMPTS, baseMs: number = SYNC_RETRY_BASE_MS): Promise<T> {
+  let lastError: any;
+  for (let i = 0; i < attempts; i++) {
+    try { return await fn(); }
+    catch (e) { lastError = e; await sleep(baseMs * Math.pow(2, i)); }
+  }
+  throw lastError;
+}
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
 
 // ── Tab name registry ─────────────────────────────────────────────────────────
 const TABS = {
@@ -413,9 +433,6 @@ async function pushMonthlyBranchTargets(db: Database, sheets: ReturnType<typeof 
   await writeTab(sheets, spreadsheetId, TABS.MONTHLY_TARGETS, ['Branch', 'Month', 'Target (pts/person)', 'B2C Target Override', 'B2B Target Override'], rows)
 }
 
-// "HR confirmed this month" marker — previously local-only, which meant it got silently
-// wiped (with no way to recover) every time bootstrapConnect switched/re-pulled a sheet.
-// Pushing/pulling it like every other config tab lets it survive a sheet-source switch.
 async function pushKpiSubmissions(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
   const rows = (prepare(db, `SELECT year_month, submitted_by, submitted_at FROM kpi_monthly_submissions ORDER BY year_month`).all() as Array<{
     year_month: string; submitted_by: string | null; submitted_at: string
@@ -424,55 +441,98 @@ async function pushKpiSubmissions(db: Database, sheets: ReturnType<typeof google
   await writeTab(sheets, spreadsheetId, TABS.KPI_SUBMISSIONS, ['Month', 'submitted_by', 'submitted_at'], rows)
 }
 
-// ── Shared push: unsynced daily entries + unsynced delete tombstones ──────────
-// Single choke point both syncEntriesToCloudIfConfigured (fire-and-forget) and the manual
-// "Push to Sheets" button delegate to — previously each had its own copy of this exact
-// append logic, which is how the Entries push code drifted in the first place. Append-only:
-// new entries and tombstone rows are appended, the tab itself is never cleared/rewritten.
 async function pushEntriesAndDeletions(db: Database): Promise<number> {
-  const sheetsId = getSetting('sheets_id')
-  const saPath   = getSetting('service_account_path')
-  if (!sheetsId || !saPath) return 0
+  const sheetsId = getSetting('sheets_id');
+  const saPath = getSetting('service_account_path');
+  if (!sheetsId || !saPath) return 0;
 
-  const auth   = getServiceAuth(saPath)
-  const sheets = google.sheets({ version: 'v4', auth })
+  const auth = getServiceAuth(saPath);
+  const sheets = google.sheets({ version: 'v4', auth });
 
+  // Load any pending rows from previous failed syncs
+  let pending: { entries: any[]; deletions: any[] } | null = null;
+  if (existsSync(SYNC_FALLBACK_CACHE_PATH)) {
+    try { pending = JSON.parse(readFileSync(SYNC_FALLBACK_CACHE_PATH, 'utf8')); } catch {}
+  }
+
+  // Gather unsynced entries and deletions from DB
   const unsyncedEntries = prepare(db, `
     SELECT de.id, de.entry_date, b.code AS branch_code, s.rep_code, s.full_name, de.jewelry_weight_g, de.bar_weight_g, de.quantity
     FROM daily_entries de JOIN salesmen s ON s.id=de.salesman_id JOIN branches b ON b.id=de.branch_id
-    WHERE de.synced=0 ORDER BY de.entry_date, de.branch_id
-  `).all() as Array<{ id: number; entry_date: string; branch_code: string; rep_code: string | null; full_name: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number }>
+    WHERE de.synced=0 ORDER BY de.entry_date, de.branch_code
+  `).all() as Array<{ id: number; entry_date: string; branch_code: string; rep_code: string | null; full_name: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number }>;
 
   const unsyncedDeletions = prepare(db, `
     SELECT ed.salesman_id, ed.entry_date, b.code AS branch_code, s.rep_code, s.full_name
     FROM entry_deletions ed JOIN salesmen s ON s.id=ed.salesman_id JOIN branches b ON b.id=s.branch_id
     WHERE ed.synced=0 ORDER BY ed.entry_date
-  `).all() as Array<{ salesman_id: number; entry_date: string; branch_code: string; rep_code: string | null; full_name: string }>
+  `).all() as Array<{ salesman_id: number; entry_date: string; branch_code: string; rep_code: string | null; full_name: string }>;
 
-  if (!unsyncedEntries.length && !unsyncedDeletions.length) return 0
+  // Merge pending rows with current unsynced data
+  const allEntries = pending?.entries ?? [];
+  const allDeletions = pending?.deletions ?? [];
+  allEntries.push(...unsyncedEntries);
+  allDeletions.push(...unsyncedDeletions);
 
-  const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: `${TABS.ENTRIES}!A1` }).catch(() => null)
+  // Prepare rows for ENTRIES sheet
+  const entryRows = allEntries.map(e => [e.entry_date, e.branch_code, e.rep_code ?? '', e.full_name, e.jewelry_weight_g, e.bar_weight_g, e.quantity, '']);
+  const delRows = allDeletions.map(d => [d.entry_date, d.branch_code, d.rep_code ?? '', d.full_name, '', '', '', '1']);
+  const rows = [...entryRows, ...delRows];
+  if (rows.length === 0) return 0;
+
+  // Ensure header exists
+  const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: `${TABS.ENTRIES}!A1` }).catch(() => null);
   if (!headerCheck?.data?.values?.[0]?.[0]) {
-    await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetsId, requestBody: { requests: [{ addSheet: { properties: { title: TABS.ENTRIES } } }] } }).catch(() => {})
-    await sheets.spreadsheets.values.update({ spreadsheetId: sheetsId, range: `${TABS.ENTRIES}!A1`, valueInputOption: 'USER_ENTERED', requestBody: { values: [SHEET_HEADERS] } })
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetsId, requestBody: { requests: [{ addSheet: { properties: { title: TABS.ENTRIES } } }] } }).catch(() => {});
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetsId,
+      range: `${TABS.ENTRIES}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [SHEET_HEADERS] },
+    });
   }
 
-  const rows = [
-    ...unsyncedEntries.map(e => [e.entry_date, e.branch_code, e.rep_code ?? '', e.full_name, e.jewelry_weight_g, e.bar_weight_g, e.quantity, '']),
-    ...unsyncedDeletions.map(d => [d.entry_date, d.branch_code, d.rep_code ?? '', d.full_name, '', '', '', '1']),
-  ]
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: sheetsId, range: `${TABS.ENTRIES}!A:H`, valueInputOption: 'USER_ENTERED',
-    requestBody: { values: rows },
-  })
+  // Send rows with retry and chunking for deletions
+  try {
+    if (entryRows.length) {
+      await retryWithBackoff(() => sheets.spreadsheets.values.append({
+        spreadsheetId: sheetsId,
+        range: `${TABS.ENTRIES}!A:H`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: entryRows },
+      }));
+    }
+    const deletionChunks = chunkArray(delRows, SYNC_DELETION_CHUNK_SIZE);
+    for (const chunk of deletionChunks) {
+      await retryWithBackoff(() => sheets.spreadsheets.values.append({
+        spreadsheetId: sheetsId,
+        range: `${TABS.ENTRIES}!A:H`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: chunk },
+      }));
+    }
+  } catch (e) {
+    // Cache pending rows for later retry
+    try { writeFileSync(SYNC_FALLBACK_CACHE_PATH, JSON.stringify({ entries: allEntries, deletions: allDeletions })); } catch {}
+    prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('push', ?, 'failed')`).run(rows.length);
+    console.error('[sync] pushEntriesAndDeletions failed, cached for retry:', e);
+    throw e;
+  }
 
-  const now = new Date().toISOString()
-  unsyncedEntries.forEach(e => prepare(db, `UPDATE daily_entries SET synced=1 WHERE id=?`).run(e.id))
-  unsyncedDeletions.forEach(d => prepare(db, `UPDATE entry_deletions SET synced=1 WHERE salesman_id=? AND entry_date=?`).run(d.salesman_id, d.entry_date))
-  prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now)
-  prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('push', ?, 'success')`).run(rows.length)
+  // Mark original rows as synced
+  transaction(db, () => {
+    unsyncedEntries.forEach(r => prepare(db, `UPDATE daily_entries SET synced=1 WHERE id=?`).run(r.id));
+    unsyncedDeletions.forEach(r => prepare(db, `UPDATE entry_deletions SET synced=1 WHERE salesman_id=? AND entry_date=?`).run(r.salesman_id, r.entry_date));
+  });
 
-  return rows.length
+  // Clear fallback cache on success
+  try { writeFileSync(SYNC_FALLBACK_CACHE_PATH, JSON.stringify({ entries: [], deletions: [] })); } catch {}
+
+  const now = new Date().toISOString();
+  prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now);
+  prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('push', ?, 'success')`).run(rows.length);
+  console.info('[sync] pushEntriesAndDeletions succeeded, rows sent:', rows.length);
+  return rows.length;
 }
 
 // ── Push all unsynced daily entries — exported for use in entries.ts, upload.ts ─
