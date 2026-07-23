@@ -1,0 +1,12 @@
+- [ ] Increment version to 1.10.7 in `package.json`
+- [ ] Add `src/config/syncFlags.ts` with feature flags and constants
+- [ ] Update `electron/ipc/sheets.ts`
+  - Import sync flags
+  - Implement exponential back‑off retry wrapper for `pullAllFromCloud`
+  - Refactor deletion processing to use configurable chunk size (`SYNC_DELETION_CHUNK_SIZE`)
+  - Add fallback cache (`syncCache.json`) on max‑retry failure
+  - Emit detailed telemetry events (`app:syncMetrics`, `app:syncError`)
+- [ ] Add unit tests under `electron/ipc/__tests__/` for tombstone cleanup, retry logic, and fallback cache
+- [ ] Update `README.md` with new sync reliability features and env‑var configuration
+- [ ] Run typecheck and build, ensure no errors
+- [ ] Manual QA steps (network loss simulation, large roster, admin page optional)
