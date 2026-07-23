@@ -170,12 +170,13 @@ async function pushSupervisorRoster(db: Database, sheets: ReturnType<typeof goog
 export async function pullRosterFromSheet(
   db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string,
   skipKeys: Set<string> = new Set(), skipRepCodes: Set<string> = new Set(),
-): Promise<number> {
+): Promise<{ imported: number; repCodesOnSheet: Set<string> }> {
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Roster!A:I' })
   const allRows = res.data.values ?? []
   const dataRows = allRows.length > 0 && String(allRows[0][0]).toLowerCase().includes('month') ? allRows.slice(1) : allRows
 
   let imported = 0
+  const repCodesOnSheet = new Set<string>()
   const latestBySalesman = new Map<number, { branch_id: number; supervisor_id: number | null; staff_type: string; active: number; year_month: string }>()
 
   // Batched into one transaction — was one auto-committed (fsync'd) statement per row,
@@ -186,6 +187,7 @@ export async function pullRosterFromSheet(
     const [monthLabel, repCode, fullName, nickname, branchCode, supervisorName, staffTypeRaw, activeStr, supervisorCode] = row
     const yearMonth = parseReadableYearMonth(monthLabel)
     if (!yearMonth || !repCode || !fullName || !branchCode) continue
+    repCodesOnSheet.add(repCode)
     if (skipRepCodes.has(repCode)) continue
     if (skipKeys.has(`${yearMonth}|${repCode}`)) continue
     const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
@@ -249,7 +251,7 @@ export async function pullRosterFromSheet(
   }
   })
 
-  return imported
+  return { imported, repCodesOnSheet }
 }
 
 // Pull-back for SupervisorRoster — column order must stay in lockstep with
@@ -973,7 +975,12 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     // a remote device with no admin/hr login depends entirely on this pull succeeding, and a
     // swallowed auth/permission error on just this tab would look identical to "nothing new
     // to import" with zero way for anyone on that device to tell the difference.
-    try { counts.roster += await pullRosterFromSheet(db, sheets, sheetsId) }
+    let repCodesOnSheet = new Set<string>()
+    try {
+      const rosterRes = await pullRosterFromSheet(db, sheets, sheetsId)
+      counts.roster += rosterRes.imported
+      repCodesOnSheet = rosterRes.repCodesOnSheet
+    }
     catch (e) { sectionErrors.push(`Roster: ${e instanceof Error ? e.message : String(e)}`) }
     try { counts.supervisorRoster += await pullSupervisorRosterFromSheet(db, sheets, sheetsId) }
     catch (e) { sectionErrors.push(`SupervisorRoster: ${e instanceof Error ? e.message : String(e)}`) }
@@ -990,6 +997,10 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
       for (const row of data) {
         const [repCode] = row as string[]
         if (!repCode) continue
+
+        // Skip deleting if this rep is currently present in the pulled Roster sheet tab
+        if (repCodesOnSheet.has(repCode)) continue
+
         const sm = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(repCode) as { id: number } | undefined
         if (!sm) continue
         // Same guard roster:permanentlyDelete itself uses — if this device somehow still has
