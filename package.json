@@ -7,9 +7,14 @@
   "scripts": {
     "dev": "electron-vite dev --config electron.vite.config.mjs",
     "build": "electron-vite build --config electron.vite.config.mjs",
-    "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win --x64",
-    "typecheck": "tsc --noEmit"
+    "dist": "npm run build && npm run electron-builder",
+    "dist:win": "npm run build && npm run electron-builder --win --x64",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist out",
+    "set:electron:22": "npx json -I -f package.json -e \"this.electron='22.3.0'\"",
+    "set:electron:31": "npx json -I -f package.json -e \"this.electron='^31.0.0'\"",
+    "build:win7": "npm run set:electron:22 && npm run clean && npm run build && npm run dist:win",
+    "build:win10": "npm run set:electron:31 && npm run clean && npm run build && npm run dist:win"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
