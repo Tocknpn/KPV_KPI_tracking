@@ -43,7 +43,7 @@ function weekNumberSun(dateStr: string): number {
 
 function buildFilters(branchIds: number[], staffType?: string): { branchSql: string; typeSql: string; params: unknown[] } {
   const branchSql = branchIds.length > 0 ? `AND de.branch_id IN (${branchIds.map(() => '?').join(',')})` : ''
-  const typeSql   = staffType ? `AND s.staff_type = ?` : ''
+  const typeSql   = staffType ? `AND de.staff_type = ?` : ''
   const params: unknown[] = [...branchIds, ...(staffType ? [staffType] : [])]
   return { branchSql, typeSql, params }
 }
