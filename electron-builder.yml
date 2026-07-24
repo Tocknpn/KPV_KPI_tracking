@@ -1,4 +1,4 @@
-appId: com.salestrackpro.app
+appId: ${APP_ID:-com.salestrackpro.app}
 productName: SalesTrack Pro
 copyright: Copyright © 2026 SalesTrack Pro
 
