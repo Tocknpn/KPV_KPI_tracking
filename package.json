@@ -1,14 +1,14 @@
 {
   "name": "salestrack-pro",
-  "version": "1.10.7",
+  "version": "1.10.8",
   "description": "Gold & Jewelry Sales Performance Tracking System",
   "author": "SalesTrack Pro",
   "main": "out/main/main.js",
   "scripts": {
     "dev": "electron-vite dev --config electron.vite.config.mjs",
     "build": "electron-vite build --config electron.vite.config.mjs",
-    "dist": "npm run build && npm run electron-builder",
-    "dist:win": "npm run build && npm run electron-builder --win --x64",
+    "dist": "npm run build && npx electron-builder",
+    "dist:win": "npm run build && npx electron-builder --win --x64",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist out",
     "set:electron:22": "npx json -I -f package.json -e \"this.electron='22.3.0'\"",
@@ -50,6 +50,7 @@
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.5.2",
-    "vite": "^5.3.1"
+    "vite": "^5.3.1",
+    "rimraf": "^5.0.0"
   }
 }
