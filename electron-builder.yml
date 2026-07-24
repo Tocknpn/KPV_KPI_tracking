@@ -24,6 +24,7 @@ extraResources:
 
 win:
   icon: build/icon.png
+  artifactName: ${productName}-${version}-${arch}-${os}.exe
   target:
     - target: nsis
       arch:
