@@ -10,7 +10,7 @@
     "dist": "npm run build && npx electron-builder",
     "dist:win": "npm run build && npx electron-builder --win --x64",
     "typecheck": "tsc --noEmit",
-    "clean": "rimraf dist out",
+    "clean": "npx rimraf dist out",
     "set:electron:22": "npx json -I -f package.json -e \"this.electron='22.3.0'\"",
     "set:electron:31": "npx json -I -f package.json -e \"this.electron='^31.0.0'\"",
     "build:win7": "npm run set:electron:22 && npm run clean && npm run build && npm run dist:win",
@@ -52,6 +52,5 @@
     "typescript": "^5.5.2",
     "vite": "^5.3.1",
     "rimraf": "^5.0.0"
-  },
-  "electron": "22.3.0"
+  }
 }
