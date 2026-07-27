@@ -24,6 +24,8 @@ export default function App() {
   const [updateDownloading, setUpdateDownloading] = useState(false)
   const [updateReady, setUpdateReady] = useState(false)
   const [downloadPercent, setDownloadPercent] = useState(0)
+  const [updateError, setUpdateError] = useState<string | null>(null)
+  const [downloadPercent, setDownloadPercent] = useState(0)
 
   useEffect(() => {
     // Poll once: if DB already ready (fast startup), resolve immediately.
@@ -48,6 +50,7 @@ export default function App() {
     window.api.onUpdateAvailable(info => setUpdateVersion(info.version))
     window.api.onUpdateDownloaded(() => { setUpdateDownloading(false); setUpdateReady(true) })
     window.api.onUpdateProgress(p => setDownloadPercent(Math.round(p.percent)))
+    window.api.onUpdateError(msg => setUpdateError(msg))
   }, [])
 
   function handleDownloadUpdate() {
@@ -65,6 +68,18 @@ export default function App() {
           <code className="mx-1 px-1.5 py-0.5 bg-surface-container rounded">startup-error.log</code> in the app's data folder.
         </p>
         <pre className="max-w-2xl max-h-64 overflow-auto bg-surface-container text-on-surface text-xs p-4 rounded-lg whitespace-pre-wrap">{initError}</pre>
+      </div>
+    )
+  }
+
+  // Updater error banner
+  if (updateError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-error/10 to-error/5 gap-4 p-8">
+        <span className="material-symbols-outlined text-5xl text-error">warning</span>
+        <p className="text-on-surface font-bold text-lg">Update failed</p>
+        <p className="text-on-surface-variant text-sm text-center max-w-xl">{updateError}</p>
+        <button onClick={() => { setUpdateError(null); setUpdateDownloading(true); window.api.downloadUpdate(); }} className="px-3 py-1 rounded-md bg-white text-primary font-bold hover:opacity-90">Retry</button>
       </div>
     )
   }
