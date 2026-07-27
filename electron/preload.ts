@@ -1,7 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 // Expose safe, typed IPC API to the renderer via window.api
-contextBridge.exposeInMainWorld('api', {
+console.log('[preload] preload script loaded – window.api will be exposed')
+function safeExpose(name, api) {
+  try {
+    contextBridge.exposeInMainWorld(name, api)
+    console.log(`[preload] ✔ ${name} exposed`)
+  } catch (e) {
+    console.error(`[preload] ❌ Failed to expose ${name}:`, e)
+  }
+}
+safeExpose('api', {
   // ── Auth ──────────────────────────────────────────────────────────────
   login: (username: string, password: string) =>
     ipcRenderer.invoke('auth:login', username, password),
