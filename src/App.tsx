@@ -28,29 +28,38 @@ export default function App() {
 
 
   useEffect(() => {
-    // Poll once: if DB already ready (fast startup), resolve immediately.
-    // Otherwise register listener for the event (normal 20-30s startup).
-    window.api.checkAppReady().then((res: { ready: boolean, error?: string }) => {
-      if (res.error) setInitError(res.error)
-      else if (res.ready) setDbReady(true)
-      else window.api.onAppReady(() => setDbReady(true))
-    })
-    window.api.onAppInitError((message: string) => setInitError(message))
-    // Surfaces the startup auto-pull's outcome (configured/success/error) so a device with
-    // no admin/hr login still sees why its data looks stale or empty — see TopBar banner.
-    window.api.onStartupSyncResult(r => {
-      setSyncBanner(r)
-      // main.ts already ran a full pull before this window was even interactive — record
-      // when, so Login's own post-submit pull can skip re-doing the exact same full
-      // table-by-table merge a few seconds later if nothing's changed since (see Login.tsx).
-      if (r.success) setLastSyncedAt(new Date().toISOString())
-    })
-    // electron-updater found a newer GitHub release — user decides whether to download,
-    // nothing happens automatically (see main.ts: autoDownload = false).
-    window.api.onUpdateAvailable(info => setUpdateVersion(info.version))
-    window.api.onUpdateDownloaded(() => { setUpdateDownloading(false); setUpdateReady(true) })
-    window.api.onUpdateProgress(p => setDownloadPercent(Math.round(p.percent)))
-    window.api.onUpdateError(msg => setUpdateError(msg))
+    console.log('[App] useEffect start – window.api', !!window.api)
+    // Ensure preload API is available before invoking any methods.
+    if (window.api?.checkAppReady) {
+      window.api.checkAppReady().then((res: { ready: boolean, error?: string }) => {
+        if (res.error) setInitError(res.error)
+        else if (res.ready) setDbReady(true)
+        else window.api?.onAppReady?.(() => setDbReady(true))
+      })
+    } else {
+      console.warn('[App] preload API not ready – will retry on next render')
+    }
+    if (window.api?.onAppInitError) {
+      window.api.onAppInitError((message: string) => setInitError(message))
+    }
+    if (window.api?.onStartupSyncResult) {
+      window.api.onStartupSyncResult(r => {
+        setSyncBanner(r)
+        if (r.success) setLastSyncedAt(new Date().toISOString())
+      })
+    }
+    if (window.api?.onUpdateAvailable) {
+      window.api.onUpdateAvailable(info => setUpdateVersion(info.version))
+    }
+    if (window.api?.onUpdateDownloaded) {
+      window.api.onUpdateDownloaded(() => { setUpdateDownloading(false); setUpdateReady(true) })
+    }
+    if (window.api?.onUpdateProgress) {
+      window.api.onUpdateProgress(p => setDownloadPercent(Math.round(p.percent)))
+    }
+    if (window.api?.onUpdateError) {
+      window.api.onUpdateError(msg => setUpdateError(msg))
+    }
   }, [])
 
   function handleDownloadUpdate() {

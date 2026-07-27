@@ -76,6 +76,21 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  // Global error handling – forward unexpected failures to renderer for visibility
+  process.on('uncaughtException', (err) => {
+    console.error('[global] uncaughtException:', err)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('app:init-error', err instanceof Error ? err.message : String(err))
+    }
+  })
+  process.on('unhandledRejection', (reason) => {
+    console.error('[global] unhandledRejection:', reason)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const msg = reason instanceof Error ? reason.message : String(reason)
+      mainWindow.webContents.send('app:init-error', msg)
+    }
+  })
+
   // Allow renderer to poll readiness synchronously (handles fast-startup race)
   ipcMain.handle('app:isReady', () => ({ ready: isDbReady, error: initErrorMessage }))
 
