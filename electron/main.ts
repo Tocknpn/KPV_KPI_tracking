@@ -175,7 +175,7 @@ app.whenReady().then(async () => {
   // before a download starts; quitAndInstall only fires when they explicitly click it
   // (see ipcMain handlers below), never silently mid-session.
   autoUpdater.autoDownload = false
-  autoUpdater.disableDelta = true // Forcibly disable delta updates to prevent slow chunked downloads and checksum failure loops
+  autoUpdater.disableDifferentialDownload = true // Forcibly disable delta updates to prevent slow chunked downloads and checksum failure loops
   autoUpdater.on('update-available', (info) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('updater:available', { version: info.version })
