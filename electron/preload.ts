@@ -235,7 +235,7 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('upload:getRepUploadStatus', token, branchIds, days),
 
   // ── Startup lifecycle ─────────────────────────────────────────────────
-  checkAppReady: () => ipcRenderer.invoke('app:isReady') as Promise<boolean>,
+  checkAppReady: () => ipcRenderer.invoke('app:isReady') as Promise<{ ready: boolean, error?: string }>,
   onAppReady: (cb: () => void) => ipcRenderer.once('app:ready', cb),
   onAppInitError: (cb: (message: string) => void) => ipcRenderer.once('app:init-error', (_e, message: string) => cb(message)),
   onStartupSyncResult: (cb: (r: { configured: boolean; success: boolean; error?: string }) => void) =>

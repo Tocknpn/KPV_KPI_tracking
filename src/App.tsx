@@ -27,8 +27,9 @@ export default function App() {
   useEffect(() => {
     // Poll once: if DB already ready (fast startup), resolve immediately.
     // Otherwise register listener for the event (normal 20-30s startup).
-    window.api.checkAppReady().then((ready: boolean) => {
-      if (ready) setDbReady(true)
+    window.api.checkAppReady().then((res: { ready: boolean, error?: string }) => {
+      if (res.error) setInitError(res.error)
+      else if (res.ready) setDbReady(true)
       else window.api.onAppReady(() => setDbReady(true))
     })
     window.api.onAppInitError((message: string) => setInitError(message))

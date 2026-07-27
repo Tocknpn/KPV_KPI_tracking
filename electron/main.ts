@@ -67,6 +67,7 @@ function createWindow(): void {
 }
 
 let isDbReady = false
+let initErrorMessage: string | null = null
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.salestrackpro.app')
@@ -76,7 +77,7 @@ app.whenReady().then(async () => {
   })
 
   // Allow renderer to poll readiness synchronously (handles fast-startup race)
-  ipcMain.handle('app:isReady', () => isDbReady)
+  ipcMain.handle('app:isReady', () => ({ ready: isDbReady, error: initErrorMessage }))
 
   // User-initiated update actions — never triggered automatically, only from the
   // in-app "Update available" banner the renderer shows on 'updater:available'.
@@ -114,6 +115,7 @@ app.whenReady().then(async () => {
     // Without this, a thrown error here leaves the renderer spinning on "Starting up…"
     // forever with no way to tell what broke — surface it instead of failing silently.
     const message = e instanceof Error ? (e.stack ?? e.message) : String(e)
+    initErrorMessage = message
     console.error('[startup] Database init failed:', message)
     try { writeFileSync(join(app.getPath('userData'), 'startup-error.log'), `${new Date().toISOString()}\n${message}\n`) } catch { /* best effort */ }
     if (mainWindow && !mainWindow.isDestroyed()) {

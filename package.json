@@ -1,13 +1,13 @@
 {
   "name": "salestrack-pro",
-  "version": "1.10.9",
+  "version": "1.10.10",
   "description": "Gold & Jewelry Sales Performance Tracking System",
   "author": "SalesTrack Pro",
   "main": "out/main/main.js",
   "scripts": {
     "dev": "electron-vite dev --config electron.vite.config.mjs",
-    "dev:win7-32": "npm run set:electron:22 && npm install --arch=ia32 && cross-env APP_ID=com.salestrackpro.app.win7 npm run dev",
-    "dev:win10": "npm run set:electron:31 && npm install --arch=x64 && cross-env APP_ID=com.salestrackpro.app.win10 npm run dev",
+    "dev:win7-32": "npm run set:electron:22 && npm install --arch=ia32 && npx electron-builder install-app-deps --ia32 && cross-env APP_ID=com.salestrackpro.app.win7 npm run dev",
+    "dev:win10": "npm run set:electron:31 && npm install --arch=x64 && npx electron-builder install-app-deps --x64 && cross-env APP_ID=com.salestrackpro.app.win10 npm run dev",
     "build": "electron-vite build --config electron.vite.config.mjs",
     "dist": "npm run build && npx electron-builder",
     "dist:win": "npm run build && npx electron-builder --win --x64",
