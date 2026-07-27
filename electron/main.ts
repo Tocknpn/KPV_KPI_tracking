@@ -9,6 +9,20 @@ import { pullAllFromCloud, getSetting } from './ipc/sheets'
 
 let mainWindow: BrowserWindow | null = null
 
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+  process.exit(0)
+}
+
+app.on('second-instance', () => {
+  // Someone tried to run a second instance, we should focus our window.
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  }
+})
+
 // Dev: build/icon.png lives at the project root, two levels up from out/main/main.js.
 // Packaged: copied into resources/ via electron-builder.yml's extraResources — win.icon
 // in that file only sets the installer/.exe/shortcut icon, the live window needs its own.

@@ -1,11 +1,13 @@
 {
   "name": "salestrack-pro",
-  "version": "1.10.8",
+  "version": "1.10.9",
   "description": "Gold & Jewelry Sales Performance Tracking System",
   "author": "SalesTrack Pro",
   "main": "out/main/main.js",
   "scripts": {
     "dev": "electron-vite dev --config electron.vite.config.mjs",
+    "dev:win7-32": "npm run set:electron:22 && npm install --arch=ia32 && cross-env APP_ID=com.salestrackpro.app.win7 npm run dev",
+    "dev:win10": "npm run set:electron:31 && npm install --arch=x64 && cross-env APP_ID=com.salestrackpro.app.win10 npm run dev",
     "build": "electron-vite build --config electron.vite.config.mjs",
     "dist": "npm run build && npx electron-builder",
     "dist:win": "npm run build && npx electron-builder --win --x64",
@@ -14,9 +16,9 @@
     "clean": "npx rimraf dist out",
     "set:electron:22": "npx json -I -f package.json -e \"this.electron='22.3.0'\" && npx json -I -f package.json -e \"this.devDependencies.electron='22.3.0'\"",
     "set:electron:31": "npx json -I -f package.json -e \"this.electron='^31.0.0'\" && npx json -I -f package.json -e \"this.devDependencies.electron='^31.0.0'\"",
-    "build:win7": "npm run set:electron:22 && npm run clean && npm run build && cross-env APP_ID=com.salestrackpro.app.win7 npm run dist:win",
-    "build:win7-32": "npm run set:electron:22 && npm run clean && npm run build && cross-env APP_ID=com.salestrackpro.app.win7 npm run dist:win32",
-    "build:win10": "npm run set:electron:31 && npm run clean && npm run build && cross-env APP_ID=com.salestrackpro.app.win10 npm run dist:win"
+    "build:win7": "npm run set:electron:22 && npm install --arch=x64 && npm run clean && cross-env APP_ID=com.salestrackpro.app.win7 CHANNEL=win7 npm run dist:win",
+    "build:win7-32": "npm run set:electron:22 && npm install --arch=ia32 && npm run clean && cross-env APP_ID=com.salestrackpro.app.win7 CHANNEL=win7 npm run dist:win32",
+    "build:win10": "npm run set:electron:31 && npm install --arch=x64 && npm run clean && cross-env APP_ID=com.salestrackpro.app.win10 CHANNEL=latest npm run dist:win"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
@@ -47,7 +49,7 @@
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.19",
     "cross-env": "^7.0.3",
-    "electron": "22.3.0",
+    "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
     "electron-vite": "^2.3.0",
     "postcss": "^8.4.38",
@@ -56,5 +58,5 @@
     "vite": "^5.3.1",
     "rimraf": "^5.0.0"
   },
-  "electron": "22.3.0"
+  "electron": "^31.0.0"
 }

@@ -54,3 +54,4 @@ publish:
   # with "No published versions on GitHub" until someone manually publishes the draft on
   # github.com. releaseType: release publishes it immediately on upload instead.
   releaseType: release
+  channel: ${env.CHANNEL}
