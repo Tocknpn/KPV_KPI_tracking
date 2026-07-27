@@ -19,8 +19,8 @@
     "build:win7": "npm run set:electron:22 && npm install --arch=x64 && npm run clean && cross-env APP_ID=com.salestrackpro.app.win7 CHANNEL=win7 npm run dist:win",
     "build:win7-32": "npm run set:electron:22 && npm install --arch=ia32 && npm run clean && cross-env APP_ID=com.salestrackpro.app.win7 CHANNEL=win7 npm run dist:win32",
     "build:win10": "npm run set:electron:31 && npm install --arch=x64 && npm run clean && cross-env APP_ID=com.salestrackpro.app.win10 CHANNEL=latest npm run dist:win",
-    "publish:win7-32": "cross-env-shell \"CHANNEL=win7 APP_ID=com.salestrackpro.app.win7 npm run set:electron:22 && npm install --arch=ia32 && npm run clean && npm run build && npx electron-builder --win --ia32 --publish always\"",
-    "publish:win10": "cross-env-shell \"CHANNEL=latest APP_ID=com.salestrackpro.app.win10 npm run set:electron:31 && npm install --arch=x64 && npm run clean && npm run build && npx electron-builder --win --x64 --publish always\""
+    "publish:win7-32": "npm run set:electron:22 && npm install --arch=ia32 && npm run clean && npm run build && cross-env APP_ID=com.salestrackpro.app.win7 CHANNEL=win7 npx electron-builder --win --ia32 --publish always",
+    "publish:win10": "npm run set:electron:31 && npm install --arch=x64 && npm run clean && npm run build && cross-env APP_ID=com.salestrackpro.app.win10 CHANNEL=latest npx electron-builder --win --x64 --publish always"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
