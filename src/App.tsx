@@ -25,7 +25,7 @@ export default function App() {
   const [updateReady, setUpdateReady] = useState(false)
   const [downloadPercent, setDownloadPercent] = useState(0)
   const [updateError, setUpdateError] = useState<string | null>(null)
-  const [downloadPercent, setDownloadPercent] = useState(0)
+
 
   useEffect(() => {
     // Poll once: if DB already ready (fast startup), resolve immediately.
