@@ -255,9 +255,10 @@ safeExpose('api', {
     ipcRenderer.on('updater:available', (_e, info) => cb(info)),
   onUpdateDownloaded: (cb: () => void) =>
     ipcRenderer.on('updater:downloaded', () => cb()),
-  // New: receive incremental download progress (percent 0‑100)
   onUpdateProgress: (cb: (data: { percent: number }) => void) =>
     ipcRenderer.on('updater:progress', (_e, data) => cb(data)),
+  onUpdateError: (cb: (msg: string) => void) =>
+    ipcRenderer.on('updater:error', (_e, msg) => cb(msg)),
   downloadUpdate: () => ipcRenderer.invoke('updater:download'),
   installUpdate: () => ipcRenderer.invoke('updater:install'),
 
