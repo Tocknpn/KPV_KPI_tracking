@@ -172,6 +172,13 @@ app.whenReady().then(async () => {
   })
   autoUpdater.on('error', (err) => {
     console.warn('[updater] check/download failed:', err?.message)
+  // Forward download progress to renderer (percentage 0‑100)
+  autoUpdater.on('download-progress', (progress) => {
+    const percent = Math.round(progress.percent)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater:progress', { percent })
+    }
+  })
   })
   if (is.dev) {
     console.log('[updater] skipped in dev')

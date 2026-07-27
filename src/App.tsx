@@ -23,6 +23,7 @@ export default function App() {
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [updateDownloading, setUpdateDownloading] = useState(false)
   const [updateReady, setUpdateReady] = useState(false)
+  const [downloadPercent, setDownloadPercent] = useState(0)
 
   useEffect(() => {
     // Poll once: if DB already ready (fast startup), resolve immediately.
@@ -46,6 +47,7 @@ export default function App() {
     // nothing happens automatically (see main.ts: autoDownload = false).
     window.api.onUpdateAvailable(info => setUpdateVersion(info.version))
     window.api.onUpdateDownloaded(() => { setUpdateDownloading(false); setUpdateReady(true) })
+    window.api.onUpdateProgress(p => setDownloadPercent(Math.round(p.percent)))
   }, [])
 
   function handleDownloadUpdate() {
@@ -97,7 +99,7 @@ export default function App() {
             <>
               <span>Update available — v{updateVersion}.</span>
               <button onClick={handleDownloadUpdate} disabled={updateDownloading} className="px-3 py-1 rounded-md bg-white text-primary font-bold hover:opacity-90 disabled:opacity-60">
-                {updateDownloading ? 'Downloading…' : 'Update'}
+                {updateDownloading ? `Downloading… ${downloadPercent}%` : 'Update'}
               </button>
             </>
           )}
