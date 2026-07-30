@@ -1,5 +1,5 @@
-import { IpcMain, dialog, BrowserWindow } from 'electron'
-import { ENABLE_TOMBSTONE_AUTO_CLEANUP, SYNC_DELETION_CHUNK_SIZE, SYNC_RETRY_ATTEMPTS, SYNC_RETRY_BASE_MS, SYNC_FALLBACK_CACHE_PATH } from '../../src/config/syncFlags'
+import { IpcMain, dialog, BrowserWindow, app } from 'electron'
+import { ENABLE_TOMBSTONE_AUTO_CLEANUP, SYNC_DELETION_CHUNK_SIZE, SYNC_RETRY_ATTEMPTS, SYNC_RETRY_BASE_MS } from '../../src/config/syncFlags'
 import { google } from 'googleapis'
 import bcrypt from 'bcryptjs'
 import { readFileSync, existsSync, writeFileSync } from 'fs'
@@ -7,7 +7,17 @@ import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth } from './auth'
 import type { Database } from 'better-sqlite3'
-// ---------- Sync robustness helpers ----------
+
+// Stable per-device path for the sync fallback cache.
+// Using app.getPath('userData') instead of a literal relative path means this
+// always lands in %APPDATA%\<appName>\ regardless of what directory the user
+// launches the exe from (a relative path resolves against the shell's cwd,
+// which is undefined for desktop shortcuts and Electron packaged apps).
+function getSyncCachePath(): string {
+  const { join } = require('path') as typeof import('path')
+  return join(app.getPath('userData'), 'syncCache.json')
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(res => setTimeout(res, ms));
 }
@@ -446,39 +456,56 @@ async function pushEntriesAndDeletions(db: Database): Promise<number> {
   const saPath = getSetting('service_account_path');
   if (!sheetsId || !saPath) return 0;
 
-  const auth = getServiceAuth(saPath);
-  const sheets = google.sheets({ version: 'v4', auth });
-
-  // Load any pending rows from previous failed syncs
-  let pending: { entries: any[]; deletions: any[] } | null = null;
-  if (existsSync(SYNC_FALLBACK_CACHE_PATH)) {
-    try { pending = JSON.parse(readFileSync(SYNC_FALLBACK_CACHE_PATH, 'utf8')); } catch {}
-  }
-
-  // Gather unsynced entries and deletions from DB
+  // Gather unsynced entries and deletions from DB first — if both are empty
+  // AND there's no pending-entries cache, skip the entire function without
+  // touching the filesystem or opening a Sheets connection.
   const unsyncedEntries = prepare(db, `
     SELECT de.id, de.entry_date, b.code AS branch_code, s.rep_code, s.full_name, de.jewelry_weight_g, de.bar_weight_g, de.quantity
     FROM daily_entries de JOIN salesmen s ON s.id=de.salesman_id JOIN branches b ON b.id=de.branch_id
     WHERE de.synced=0 ORDER BY de.entry_date, de.branch_code
   `).all() as Array<{ id: number; entry_date: string; branch_code: string; rep_code: string | null; full_name: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number }>;
 
+  // Deletions always come from the DB (synced=0 rows) — NEVER from the
+  // fallback cache.  The cache only retries failed *entry* pushes, which are
+  // safe to replay (the Sheet treats a duplicate data row as a harmless
+  // duplicate — the pull deduplicates by last-write-wins on the same key).
+  // Replaying cached *deletions* is catastrophically unsafe: a Deleted='1'
+  // tombstone that already reached the Sheet on a previous attempt would be
+  // appended again on the retry, causing every device's next pull to re-delete
+  // entries that may have been re-uploaded in the meantime.  This was the
+  // exact mechanism that erased VangThong and Morning Market's July entries.
   const unsyncedDeletions = prepare(db, `
     SELECT ed.salesman_id, ed.entry_date, b.code AS branch_code, s.rep_code, s.full_name
     FROM entry_deletions ed JOIN salesmen s ON s.id=ed.salesman_id JOIN branches b ON b.id=s.branch_id
     WHERE ed.synced=0 ORDER BY ed.entry_date
   `).all() as Array<{ salesman_id: number; entry_date: string; branch_code: string; rep_code: string | null; full_name: string }>;
 
-  // Merge pending rows with current unsynced data
-  const allEntries = pending?.entries ?? [];
-  const allDeletions = pending?.deletions ?? [];
-  allEntries.push(...unsyncedEntries);
-  allDeletions.push(...unsyncedDeletions);
+  // Load any pending *entry* rows from a previous failed push — safe to retry
+  // because entry rows are idempotent (pull uses last-write-wins per key).
+  // Deletion rows from a previous cache are intentionally NOT replayed (see above).
+  const cachePath = getSyncCachePath();
+  let pendingEntries: any[] = [];
+  if (existsSync(cachePath)) {
+    try {
+      const raw = JSON.parse(readFileSync(cachePath, 'utf8'));
+      // Accept both the old {entries,deletions} shape and the new {entries} shape.
+      pendingEntries = Array.isArray(raw?.entries) ? raw.entries : [];
+      // Silently drop any cached deletions — they must not be replayed.
+    } catch { /* corrupt cache — ignore */ }
+  }
+
+  const allEntries = [...pendingEntries, ...unsyncedEntries];
+  // Deletions are always DB-fresh only.
+  const allDeletions = [...unsyncedDeletions];
 
   // Prepare rows for ENTRIES sheet
   const entryRows = allEntries.map(e => [e.entry_date, e.branch_code, e.rep_code ?? '', e.full_name, e.jewelry_weight_g, e.bar_weight_g, e.quantity, '']);
   const delRows = allDeletions.map(d => [d.entry_date, d.branch_code, d.rep_code ?? '', d.full_name, '', '', '', '1']);
   const rows = [...entryRows, ...delRows];
   if (rows.length === 0) return 0;
+
+  const auth = getServiceAuth(saPath);
+  const sheets = google.sheets({ version: 'v4', auth });
 
   // Ensure header exists
   const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: `${TABS.ENTRIES}!A1` }).catch(() => null);
@@ -512,10 +539,11 @@ async function pushEntriesAndDeletions(db: Database): Promise<number> {
       }));
     }
   } catch (e) {
-    // Cache pending rows for later retry
-    try { writeFileSync(SYNC_FALLBACK_CACHE_PATH, JSON.stringify({ entries: allEntries, deletions: allDeletions })); } catch {}
+    // Cache only the pending *entry* rows for later retry — deletions are
+    // always re-read from the DB on the next attempt, never cached.
+    try { writeFileSync(cachePath, JSON.stringify({ entries: allEntries })); } catch {}
     prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('push', ?, 'failed')`).run(rows.length);
-    console.error('[sync] pushEntriesAndDeletions failed, cached for retry:', e);
+    console.error('[sync] pushEntriesAndDeletions failed, entry rows cached for retry:', e);
     throw e;
   }
 
@@ -526,7 +554,7 @@ async function pushEntriesAndDeletions(db: Database): Promise<number> {
   });
 
   // Clear fallback cache on success
-  try { writeFileSync(SYNC_FALLBACK_CACHE_PATH, JSON.stringify({ entries: [], deletions: [] })); } catch {}
+  try { writeFileSync(cachePath, JSON.stringify({ entries: [] })); } catch {}
 
   const now = new Date().toISOString();
   prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now);
