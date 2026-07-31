@@ -1,5 +1,4 @@
 import { IpcMain, dialog, BrowserWindow } from 'electron'
-import { ENABLE_TOMBSTONE_AUTO_CLEANUP } from '../../src/config/syncFlags'
 import { google } from 'googleapis'
 import bcrypt from 'bcryptjs'
 import { readFileSync, existsSync } from 'fs'
@@ -172,16 +171,6 @@ export async function pullRosterFromSheet(
   db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string,
   skipKeys: Set<string> = new Set(), skipRepCodes: Set<string> = new Set(),
 ): Promise<{ imported: number; repCodesOnSheet: Set<string> }> {
-  // Validate required headers before processing rows
-  const headerRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Roster!1:1' })
-  const headerRow = (headerRes.data.values?.[0] ?? []) as string[]
-  const requiredHeaders = ['rep_code', 'full_name', 'branch_code']
-  for (const h of requiredHeaders) {
-    if (!headerRow.some(col => col.toLowerCase().includes(h))) {
-      throw new Error(`[sync] Missing required column ${h} in Roster sheet`)
-    }
-  }
-
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Roster!A:I' })
   const allRows = res.data.values ?? []
   const dataRows = allRows.length > 0 && String(allRows[0][0]).toLowerCase().includes('month') ? allRows.slice(1) : allRows
@@ -264,9 +253,6 @@ export async function pullRosterFromSheet(
 
   return { imported, repCodesOnSheet }
 }
-
-// Export for unit‑test visibility only
-export const __testOnly__ = { validateRosterHeaders: null as any }
 
 // Pull-back for SupervisorRoster — column order must stay in lockstep with
 // pushSupervisorRoster. Used to skip a sup_code/name with no local match (relying on the
@@ -814,11 +800,9 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
   success: boolean
   counts: { entries: number; configs: number; settings: number; branches: number; kpiRates: number; roster: number; qtyTiers: number; users: number; supervisors: number; monthlyTargets: number; kpiSubmissions: number; auditLogs: number; uploadLogs: number }
   error?: string
-  tombstonesRemoved?: number
 }> {
   const counts = { entries: 0, configs: 0, settings: 0, branches: 0, kpiRates: 0, roster: 0, supervisorRoster: 0, qtyTiers: 0, users: 0, supervisors: 0, monthlyTargets: 0, kpiSubmissions: 0, auditLogs: 0, uploadLogs: 0 }
   const sectionErrors: string[] = []
-  let tombstonesRemoved = 0
   try {
     const auth   = getServiceAuth(saPath)
     const sheets = google.sheets({ version: 'v4', auth })
@@ -992,24 +976,12 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     // swallowed auth/permission error on just this tab would look identical to "nothing new
     // to import" with zero way for anyone on that device to tell the difference.
     let repCodesOnSheet = new Set<string>()
-    let pullRetry = 0
-    const maxRetries = 1
-    while (true) {
-      try {
-        const rosterRes = await pullRosterFromSheet(db, sheets, sheetsId)
-        counts.roster += rosterRes.imported
-        repCodesOnSheet = rosterRes.repCodesOnSheet
-        break
-      } catch (e) {
-        if (pullRetry < maxRetries && (e.message?.includes('ENOTFOUND') || e.message?.includes('network'))) {
-          pullRetry++
-          await new Promise(r => setTimeout(r, 3000))
-          continue
-        }
-        sectionErrors.push(`Roster: ${e instanceof Error ? e.message : String(e)}`)
-        break
-      }
+    try {
+      const rosterRes = await pullRosterFromSheet(db, sheets, sheetsId)
+      counts.roster += rosterRes.imported
+      repCodesOnSheet = rosterRes.repCodesOnSheet
     }
+    catch (e) { sectionErrors.push(`Roster: ${e instanceof Error ? e.message : String(e)}`) }
     try { counts.supervisorRoster += await pullSupervisorRosterFromSheet(db, sheets, sheetsId) }
     catch (e) { sectionErrors.push(`SupervisorRoster: ${e instanceof Error ? e.message : String(e)}`) }
 
@@ -1021,43 +993,26 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     if (rosterDelRes) {
       const all = rosterDelRes.data.values ?? []
       const data = all.length > 0 && String(all[0][0]).toLowerCase() === 'rep_code' ? all.slice(1) : all
-      // Optional tombstone auto‑cleanup
-      const toDelete: string[] = []
+      transaction(db, () => {
       for (const row of data) {
         const [repCode] = row as string[]
-        if (repCode && repCodesOnSheet.has(repCode) && ENABLE_TOMBSTONE_AUTO_CLEANUP) {
-          toDelete.push(repCode)
-        }
+        if (!repCode) continue
+
+        // Skip deleting if this rep is currently present in the pulled Roster sheet tab
+        if (repCodesOnSheet.has(repCode)) continue
+
+        const sm = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(repCode) as { id: number } | undefined
+        if (!sm) continue
+        // Same guard roster:permanentlyDelete itself uses — if this device somehow still has
+        // entries for this rep (pulled in before this tombstone arrived), skip rather than
+        // throw a FOREIGN KEY error that would fail the whole pull over one stale rep.
+        const { n: entryCount } = prepare(db, `SELECT COUNT(*) AS n FROM daily_entries WHERE salesman_id = ?`).get(sm.id) as { n: number }
+        if (entryCount > 0) continue
+        prepare(db, `DELETE FROM roster_monthly WHERE salesman_id = ?`).run(sm.id)
+        prepare(db, `DELETE FROM entry_deletions WHERE salesman_id = ?`).run(sm.id)
+        prepare(db, `DELETE FROM salesmen WHERE id = ?`).run(sm.id)
       }
-      if (toDelete.length) {
-        // Remove matching rows by rewriting the sheet without those rows (simplified batch update)
-        const filtered = data.filter(r => !toDelete.includes(r[0]))
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: sheetsId,
-          range: `${TABS.ROSTER_DELETIONS}!A:B`,
-          valueInputOption: 'RAW',
-          requestBody: { values: [['rep_code', 'deleted_at'], ...filtered] }
-        })
-        tombstonesRemoved = toDelete.length
-      }
-      // Process deletions (skip those present on roster)
-      const CHUNK = 500
-      for (let i = 0; i < data.length; i += CHUNK) {
-        transaction(db, () => {
-          for (const row of data.slice(i, i + CHUNK)) {
-            const [repCode] = row as string[]
-            if (!repCode) continue
-            if (repCodesOnSheet.has(repCode)) continue
-            const sm = prepare(db, `SELECT id FROM salesmen WHERE rep_code = ?`).get(repCode) as { id: number } | undefined
-            if (!sm) continue
-            const { n: entryCount } = prepare(db, `SELECT COUNT(*) AS n FROM daily_entries WHERE salesman_id = ?`).get(sm.id) as { n: number }
-            if (entryCount > 0) continue
-            prepare(db, `DELETE FROM roster_monthly WHERE salesman_id = ?`).run(sm.id)
-            prepare(db, `DELETE FROM entry_deletions WHERE salesman_id = ?`).run(sm.id)
-            prepare(db, `DELETE FROM salesmen WHERE id = ?`).run(sm.id)
-          }
-        })
-      }
+      })
     }
 
     // ── Daily Entries ─────────────────────────────────────────────────
@@ -1222,12 +1177,12 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
     prepare(db, `INSERT INTO sync_logs (direction, records_count, status, error_message) VALUES ('pull', ?, ?, ?)`)
       .run(counts.entries, sectionErrors.length ? 'partial' : 'success', sectionErrors.join('; ') || null)
 
-    if (sectionErrors.length) return { success: false, counts, error: sectionErrors.join('; '), tombstonesRemoved }
-    return { success: true, counts, tombstonesRemoved }
+    if (sectionErrors.length) return { success: false, counts, error: sectionErrors.join('; ') }
+    return { success: true, counts }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     try { prepare(getDb(), `INSERT INTO sync_logs (direction, records_count, status, error_message) VALUES ('pull', 0, 'error', ?)`).run(msg) } catch { /* ignore */ }
-    return { success: false, counts, error: msg, tombstonesRemoved }
+    return { success: false, counts, error: msg }
   }
 }
 
