@@ -115,7 +115,7 @@ app.whenReady().then(async () => {
   // never-configured sync is visible on screen instead of silently logged to a console
   // nobody on that machine will ever open.
   const sheetsId = getSetting('sheets_id')
-  const saPath   = getSetting('service_account_path')
+  const saPath = getSetting('service_account_path')
   function reportSyncResult(result: { configured: boolean; success: boolean; error?: string }) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('sheets:startupSyncResult', result)
