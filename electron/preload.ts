@@ -1,16 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 // Expose safe, typed IPC API to the renderer via window.api
-console.log('[preload] preload script loaded – window.api will be exposed')
-function safeExpose(name, api) {
-  try {
-    contextBridge.exposeInMainWorld(name, api)
-    console.log(`[preload] ✔ ${name} exposed`)
-  } catch (e) {
-    console.error(`[preload] ❌ Failed to expose ${name}:`, e)
-  }
-}
-safeExpose('api', {
+contextBridge.exposeInMainWorld('api', {
   // ── Auth ──────────────────────────────────────────────────────────────
   login: (username: string, password: string) =>
     ipcRenderer.invoke('auth:login', username, password),
@@ -244,7 +235,7 @@ safeExpose('api', {
     ipcRenderer.invoke('upload:getRepUploadStatus', token, branchIds, days),
 
   // ── Startup lifecycle ─────────────────────────────────────────────────
-  checkAppReady: () => ipcRenderer.invoke('app:isReady') as Promise<{ ready: boolean, error?: string }>,
+  checkAppReady: () => ipcRenderer.invoke('app:isReady') as Promise<boolean>,
   onAppReady: (cb: () => void) => ipcRenderer.once('app:ready', cb),
   onAppInitError: (cb: (message: string) => void) => ipcRenderer.once('app:init-error', (_e, message: string) => cb(message)),
   onStartupSyncResult: (cb: (r: { configured: boolean; success: boolean; error?: string }) => void) =>
@@ -255,10 +246,6 @@ safeExpose('api', {
     ipcRenderer.on('updater:available', (_e, info) => cb(info)),
   onUpdateDownloaded: (cb: () => void) =>
     ipcRenderer.on('updater:downloaded', () => cb()),
-  onUpdateProgress: (cb: (data: { percent: number }) => void) =>
-    ipcRenderer.on('updater:progress', (_e, data) => cb(data)),
-  onUpdateError: (cb: (msg: string) => void) =>
-    ipcRenderer.on('updater:error', (_e, msg) => cb(msg)),
   downloadUpdate: () => ipcRenderer.invoke('updater:download'),
   installUpdate: () => ipcRenderer.invoke('updater:install'),
 

@@ -23,43 +23,28 @@ export default function App() {
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [updateDownloading, setUpdateDownloading] = useState(false)
   const [updateReady, setUpdateReady] = useState(false)
-  const [downloadPercent, setDownloadPercent] = useState(0)
-  const [updateError, setUpdateError] = useState<string | null>(null)
-
 
   useEffect(() => {
-    console.log('[App] useEffect start – window.api', !!window.api)
-    // Ensure preload API is available before invoking any methods.
-    if (window.api?.checkAppReady) {
-      window.api.checkAppReady().then((res: { ready: boolean, error?: string }) => {
-        if (res.error) setInitError(res.error)
-        else if (res.ready) setDbReady(true)
-        else window.api?.onAppReady?.(() => setDbReady(true))
-      })
-    } else {
-      console.warn('[App] preload API not ready – will retry on next render')
-    }
-    if (window.api?.onAppInitError) {
-      window.api.onAppInitError((message: string) => setInitError(message))
-    }
-    if (window.api?.onStartupSyncResult) {
-      window.api.onStartupSyncResult(r => {
-        setSyncBanner(r)
-        if (r.success) setLastSyncedAt(new Date().toISOString())
-      })
-    }
-    if (window.api?.onUpdateAvailable) {
-      window.api.onUpdateAvailable(info => setUpdateVersion(info.version))
-    }
-    if (window.api?.onUpdateDownloaded) {
-      window.api.onUpdateDownloaded(() => { setUpdateDownloading(false); setUpdateReady(true) })
-    }
-    if (window.api?.onUpdateProgress) {
-      window.api.onUpdateProgress(p => setDownloadPercent(Math.round(p.percent)))
-    }
-    if (window.api?.onUpdateError) {
-      window.api.onUpdateError(msg => setUpdateError(msg))
-    }
+    // Poll once: if DB already ready (fast startup), resolve immediately.
+    // Otherwise register listener for the event (normal 20-30s startup).
+    window.api.checkAppReady().then((ready: boolean) => {
+      if (ready) setDbReady(true)
+      else window.api.onAppReady(() => setDbReady(true))
+    })
+    window.api.onAppInitError((message: string) => setInitError(message))
+    // Surfaces the startup auto-pull's outcome (configured/success/error) so a device with
+    // no admin/hr login still sees why its data looks stale or empty — see TopBar banner.
+    window.api.onStartupSyncResult(r => {
+      setSyncBanner(r)
+      // main.ts already ran a full pull before this window was even interactive — record
+      // when, so Login's own post-submit pull can skip re-doing the exact same full
+      // table-by-table merge a few seconds later if nothing's changed since (see Login.tsx).
+      if (r.success) setLastSyncedAt(new Date().toISOString())
+    })
+    // electron-updater found a newer GitHub release — user decides whether to download,
+    // nothing happens automatically (see main.ts: autoDownload = false).
+    window.api.onUpdateAvailable(info => setUpdateVersion(info.version))
+    window.api.onUpdateDownloaded(() => { setUpdateDownloading(false); setUpdateReady(true) })
   }, [])
 
   function handleDownloadUpdate() {
@@ -77,18 +62,6 @@ export default function App() {
           <code className="mx-1 px-1.5 py-0.5 bg-surface-container rounded">startup-error.log</code> in the app's data folder.
         </p>
         <pre className="max-w-2xl max-h-64 overflow-auto bg-surface-container text-on-surface text-xs p-4 rounded-lg whitespace-pre-wrap">{initError}</pre>
-      </div>
-    )
-  }
-
-  // Updater error banner
-  if (updateError) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-error/10 to-error/5 gap-4 p-8">
-        <span className="material-symbols-outlined text-5xl text-error">warning</span>
-        <p className="text-on-surface font-bold text-lg">Update failed</p>
-        <p className="text-on-surface-variant text-sm text-center max-w-xl">{updateError}</p>
-        <button onClick={() => { setUpdateError(null); setUpdateDownloading(true); window.api.downloadUpdate(); }} className="px-3 py-1 rounded-md bg-white text-primary font-bold hover:opacity-90">Retry</button>
       </div>
     )
   }
@@ -123,7 +96,7 @@ export default function App() {
             <>
               <span>Update available — v{updateVersion}.</span>
               <button onClick={handleDownloadUpdate} disabled={updateDownloading} className="px-3 py-1 rounded-md bg-white text-primary font-bold hover:opacity-90 disabled:opacity-60">
-                {updateDownloading ? `Downloading… ${downloadPercent}%` : 'Update'}
+                {updateDownloading ? 'Downloading…' : 'Update'}
               </button>
             </>
           )}

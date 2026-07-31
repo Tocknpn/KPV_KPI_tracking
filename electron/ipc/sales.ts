@@ -43,7 +43,7 @@ function weekNumberSun(dateStr: string): number {
 
 function buildFilters(branchIds: number[], staffType?: string): { branchSql: string; typeSql: string; params: unknown[] } {
   const branchSql = branchIds.length > 0 ? `AND de.branch_id IN (${branchIds.map(() => '?').join(',')})` : ''
-  const typeSql   = staffType ? `AND de.staff_type = ?` : ''
+  const typeSql   = staffType ? `AND s.staff_type = ?` : ''
   const params: unknown[] = [...branchIds, ...(staffType ? [staffType] : [])]
   return { branchSql, typeSql, params }
 }
@@ -180,49 +180,12 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
 
     const prevByBranchMap = new Map(byBranchPrevRaw.map(r => [r.branch_id, r]))
 
-<<<<<<< HEAD
     // Branch-level B2B/B2C breakdown (current period)
-=======
-    // Get unfiltered branch totals for branch-internal breakdown calculations
-    const { branchSql: bSqlUnfiltered, params: fParamsUnfiltered } = buildFilters(branchIds)
-    const byBranchUnfilteredRaw = prepare(db, `
-      SELECT
-        b.id AS branch_id,
-        COALESCE(SUM(de.jewelry_weight_g), 0) AS jewelry,
-        COALESCE(SUM(de.bar_weight_g), 0) AS bar
-      FROM daily_entries de
-      JOIN branches b ON b.id = de.branch_id
-      JOIN salesmen s ON s.id = de.salesman_id
-      WHERE de.entry_date >= ? AND de.entry_date <= ?
-        ${bSqlUnfiltered}
-      GROUP BY b.id
-    `).all(dateFrom, dateTo, ...fParamsUnfiltered) as Array<{ branch_id: number; jewelry: number; bar: number }>
-
-    const byBranchUnfilteredMap = new Map(byBranchUnfilteredRaw.map(r => [r.branch_id, r.jewelry + r.bar]))
-
-    // Get unfiltered previous period branch totals for change calculations
-    const byBranchUnfilteredPrevRaw = prepare(db, `
-      SELECT
-        b.id AS branch_id,
-        COALESCE(SUM(de.jewelry_weight_g), 0) AS jewelry,
-        COALESCE(SUM(de.bar_weight_g), 0) AS bar
-      FROM daily_entries de
-      JOIN branches b ON b.id = de.branch_id
-      JOIN salesmen s ON s.id = de.salesman_id
-      WHERE de.entry_date >= ? AND de.entry_date <= ?
-        ${bSqlUnfiltered}
-      GROUP BY b.id
-    `).all(lmFrom, lmTo, ...fParamsUnfiltered) as Array<{ branch_id: number; jewelry: number; bar: number }>
-
-    const byBranchUnfilteredPrevMap = new Map(byBranchUnfilteredPrevRaw.map(r => [r.branch_id, r.jewelry + r.bar]))
-
-    // Branch-level B2B/B2C breakdown (current period) - always show full breakdown regardless of staffType filter
->>>>>>> 047f80d4232f9c3118f286f95add01518c628b6e
-    const { branchSql: bSqlType, params: fParamsType } = buildFilters(branchIds)
+    const { branchSql: bSqlType, params: fParamsType } = buildFilters(branchIds, staffType)
     const branchTypeRaw = prepare(db, `
       SELECT
         de.branch_id,
-        de.staff_type,
+        s.staff_type,
         COALESCE(SUM(de.jewelry_weight_g), 0) AS jewelry,
         COALESCE(SUM(de.bar_weight_g),     0) AS bar,
         COALESCE(SUM(de.quantity),         0) AS qty
@@ -230,14 +193,14 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
       JOIN salesmen s ON s.id = de.salesman_id
       WHERE de.entry_date >= ? AND de.entry_date <= ?
         ${bSqlType}
-      GROUP BY de.branch_id, de.staff_type
+      GROUP BY de.branch_id, s.staff_type
     `).all(dateFrom, dateTo, ...fParamsType) as Array<{ branch_id: number; staff_type: string; jewelry: number; bar: number; qty: number }>
 
-    // Branch-level B2B/B2C breakdown (previous period) - always show full breakdown regardless of staffType filter
+    // Branch-level B2B/B2C breakdown (previous period)
     const branchTypePrevRaw = prepare(db, `
       SELECT
         de.branch_id,
-        de.staff_type,
+        s.staff_type,
         COALESCE(SUM(de.jewelry_weight_g), 0) AS jewelry,
         COALESCE(SUM(de.bar_weight_g),     0) AS bar,
         COALESCE(SUM(de.quantity),         0) AS qty
@@ -245,7 +208,7 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
       JOIN salesmen s ON s.id = de.salesman_id
       WHERE de.entry_date >= ? AND de.entry_date <= ?
         ${bSqlType}
-      GROUP BY de.branch_id, de.staff_type
+      GROUP BY de.branch_id, s.staff_type
     `).all(lmFrom, lmTo, ...fParamsType) as Array<{ branch_id: number; staff_type: string; jewelry: number; bar: number; qty: number }>
 
     // Build maps for quick lookup
@@ -279,17 +242,15 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
       const barContrib = totW > 0 ? (r.bar / totW) * 100 : 0
       const barContribChange = prevBarContrib > 0 ? barContrib - prevBarContrib : null
 
-      // Branch-internal gold type breakdown - use unfiltered total for correct percentages
-      const unfilteredTotal = byBranchUnfilteredMap.get(r.branch_id) ?? total
-      const unfilteredPrevTotal = byBranchUnfilteredPrevMap.get(r.branch_id) ?? prevTotal
-      const jewelryPct = unfilteredTotal > 0 ? (r.jewelry / unfilteredTotal) * 100 : 0
-      const barPct = unfilteredTotal > 0 ? (r.bar / unfilteredTotal) * 100 : 0
-      const prevJewelryPct = unfilteredPrevTotal > 0 && prev ? (prev.jewelry / unfilteredPrevTotal) * 100 : 0
-      const prevBarPct = unfilteredPrevTotal > 0 && prev ? (prev.bar / unfilteredPrevTotal) * 100 : 0
+      // Branch-internal gold type breakdown
+      const jewelryPct = total > 0 ? (r.jewelry / total) * 100 : 0
+      const barPct = total > 0 ? (r.bar / total) * 100 : 0
+      const prevJewelryPct = prevTotal > 0 && prev ? (prev.jewelry / prevTotal) * 100 : 0
+      const prevBarPct = prevTotal > 0 && prev ? (prev.bar / prevTotal) * 100 : 0
       const jewelryPctChange = prevJewelryPct > 0 ? jewelryPct - prevJewelryPct : null
       const barPctChange = prevBarPct > 0 ? barPct - prevBarPct : null
 
-      // Branch-internal customer type breakdown - use unfiltered total for correct percentages
+      // Branch-internal customer type breakdown
       const b2cKey = `${r.branch_id}-b2c`
       const b2bKey = `${r.branch_id}-b2b`
       const b2cData = branchTypeMap.get(b2cKey) || { jewelry: 0, bar: 0, total: 0, qty: 0 }
@@ -299,14 +260,13 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
 
       const b2cTotal = b2cData.total
       const b2bTotal = b2bData.total
-      const b2cPct = unfilteredTotal > 0 ? (b2cTotal / unfilteredTotal) * 100 : 0
-      const b2bPct = unfilteredTotal > 0 ? (b2bTotal / unfilteredTotal) * 100 : 0
+      const b2cPct = total > 0 ? (b2cTotal / total) * 100 : 0
+      const b2bPct = total > 0 ? (b2bTotal / total) * 100 : 0
       const b2cPrevTotal = b2cPrevData.total
       const b2bPrevTotal = b2bPrevData.total
       const prevTotalForType = b2cPrevTotal + b2bPrevTotal
-      const unfilteredPrevTotalForType = byBranchUnfilteredPrevMap.get(r.branch_id) ?? 0
-      const b2cPrevPct = unfilteredPrevTotalForType > 0 ? (b2cPrevTotal / unfilteredPrevTotalForType) * 100 : 0
-      const b2bPrevPct = unfilteredPrevTotalForType > 0 ? (b2bPrevTotal / unfilteredPrevTotalForType) * 100 : 0
+      const b2cPrevPct = prevTotalForType > 0 ? (b2cPrevTotal / prevTotalForType) * 100 : 0
+      const b2bPrevPct = prevTotalForType > 0 ? (b2bPrevTotal / prevTotalForType) * 100 : 0
       const b2cPctChange = prevTotalForType > 0 ? b2cPct - b2cPrevPct : null
       const b2bPctChange = prevTotalForType > 0 ? b2bPct - b2bPrevPct : null
 
@@ -336,10 +296,10 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
     })
 
     // ── By type ──────────────────────────────────────────────────────────
-    const { branchSql: bSqlT, typeSql: tSqlT, params: fParamsT } = buildFilters(branchIds, staffType)
+    const { branchSql: bSqlT, params: fParamsT } = buildFilters(branchIds)
     const byTypeRaw = prepare(db, `
       SELECT
-        de.staff_type,
+        s.staff_type,
         COALESCE(SUM(de.jewelry_weight_g), 0) AS jewelry,
         COALESCE(SUM(de.bar_weight_g),     0) AS bar,
         COALESCE(SUM(de.quantity),         0) AS qty,
@@ -348,8 +308,8 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
       FROM daily_entries de
       JOIN salesmen s ON s.id = de.salesman_id
       WHERE de.entry_date >= ? AND de.entry_date <= ?
-        ${bSqlT} ${tSqlT}
-      GROUP BY de.staff_type
+        ${bSqlT}
+      GROUP BY s.staff_type
     `).all(dateFrom, dateTo, ...fParamsT) as Array<{ staff_type: string; jewelry: number; bar: number; qty: number; entries: number; reps: number }>
 
     const totTW = byTypeRaw.reduce((s, r) => s + r.jewelry + r.bar, 0)
@@ -358,15 +318,15 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
     // prev period by type
     const byTypePrevRaw = prepare(db, `
       SELECT
-        de.staff_type,
+        s.staff_type,
         COALESCE(SUM(de.jewelry_weight_g), 0) AS jewelry,
         COALESCE(SUM(de.bar_weight_g),     0) AS bar,
         COALESCE(SUM(de.quantity),         0) AS qty
       FROM daily_entries de
       JOIN salesmen s ON s.id = de.salesman_id
       WHERE de.entry_date >= ? AND de.entry_date <= ?
-        ${bSqlT} ${tSqlT}
-      GROUP BY de.staff_type
+        ${bSqlT}
+      GROUP BY s.staff_type
     `).all(lmFrom, lmTo, ...fParamsT) as Array<{ staff_type: string; jewelry: number; bar: number; qty: number }>
 
     const prevByTypeMap = new Map(byTypePrevRaw.map(r => [r.staff_type, r]))

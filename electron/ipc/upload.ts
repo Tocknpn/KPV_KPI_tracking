@@ -171,7 +171,7 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
         `${meta.filename}: ${imported} imported, ${skippedCodes.length} rejected`, 'upload_log', String(logId), meta.branchId)
 
       // Completed records are saved locally above; auto-publish them to the cloud now
-      const cloudSync = await pushEntriesAndDeletionsIfConfigured(db)
+      syncEntriesToCloudIfConfigured(db).catch(() => {})
       syncUploadLogsToCloudIfConfigured(db).catch(() => {})
       return {
         success: true, count: imported, skipped: skippedCodes.length, results, errorRows,
@@ -179,8 +179,6 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
           totalRecords: rows.length, totalJewelry: sumJewelry, totalBar: sumBar, totalQty: sumQty,
           totalWeight: sumJewelry + sumBar, complete: imported, errors: errorRows.length,
         },
-        cloudSynced: cloudSync.success,
-        cloudSyncError: cloudSync.success ? undefined : (cloudSync.error ?? 'Upload saved locally but failed to reach Google Sheets — retry "Push to Sheets" in Settings before asking for a re-upload.'),
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)

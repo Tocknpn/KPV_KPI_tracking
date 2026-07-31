@@ -492,24 +492,20 @@ export default function SaleReport() {
 
   useEffect(() => {
     if (!token) return
-    let cancelled = false
     setLoading(true)
     window.api.getSalesReport(token, effectiveBranchIds, year, month, dateFrom, dateTo, staffType || undefined)
-      .then(d => { if (!cancelled) setData(d as ReportData) })
-      .catch(err => { if (!cancelled) console.error(err) })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
+      .then(d => setData(d as ReportData))
+      .catch(console.error)
+      .finally(() => setLoading(false))
   }, [token, JSON.stringify(effectiveBranchIds), year, month, dateFrom, dateTo, staffType])
 
   useEffect(() => {
     if (!token || activeTab !== 'trends') return
-    let cancelled = false
     setTrendLoading(true)
     window.api.getSalesTrendDetail(token, effectiveBranchIds, trendFrom, trendTo, staffType || undefined)
-      .then(d => { if (!cancelled) setTrendData(d) })
-      .catch(err => { if (!cancelled) console.error(err) })
-      .finally(() => { if (!cancelled) setTrendLoading(false) })
-    return () => { cancelled = true }
+      .then(setTrendData)
+      .catch(console.error)
+      .finally(() => setTrendLoading(false))
   }, [token, JSON.stringify(effectiveBranchIds), trendFrom, trendTo, staffType, activeTab])
 
   const d = data

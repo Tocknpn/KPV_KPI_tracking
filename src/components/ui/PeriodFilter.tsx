@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { fiscalRangeForLabel, fiscalRangeLabel, fiscalMonthOf } from '../../utils/dates'
+import { fiscalRangeForLabel, fiscalRangeLabel } from '../../utils/dates'
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -24,20 +24,9 @@ export function MonthDropdown({ year, month, onChange }: MonthDropdownProps) {
 
   const options: Array<{ y: number; m: number; label: string }> = []
   const now = new Date()
-  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  const currentFiscal = fiscalMonthOf(todayISO)
-<<<<<<< HEAD
   for (let i = 0; i < 24; i++) {
-    const d = new Date(currentFiscal.year, currentFiscal.month - 1 - i, 1)
-    const y = d.getFullYear()
-    const m = d.getMonth() + 1
-    options.push({ y, m, label: `${MONTH_NAMES[m - 1]} ${y} (${fiscalRangeLabel(y, m)})` })
-=======
-  
-  for (let i = 0; i < 24; i++) {
-    const d = new Date(currentFiscal.year, currentFiscal.month - 1 - i, 1)
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
     options.push({ y: d.getFullYear(), m: d.getMonth() + 1, label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}` })
->>>>>>> 047f80d4232f9c3118f286f95add01518c628b6e
   }
 
   return (
