@@ -181,7 +181,7 @@ export function registerSalesHandlers(ipcMain: IpcMain): void {
     const prevByBranchMap = new Map(byBranchPrevRaw.map(r => [r.branch_id, r]))
 
     // Branch-level B2B/B2C breakdown (current period)
-    const { branchSql: bSqlType, params: fParamsType } = buildFilters(branchIds, staffType)
+    const { branchSql: bSqlType, params: fParamsType } = buildFilters(branchIds)
     const branchTypeRaw = prepare(db, `
       SELECT
         de.branch_id,
