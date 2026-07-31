@@ -1539,7 +1539,9 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
 
   // Force full sync: reset all entries + clear Entries tab + push everything
   ipcMain.handle('sheets:forceSyncAll', async (_e, token: string) => {
-    requireAuth(token)
+    const user = requireAuth(token)
+    if (user.role !== 'admin') throw new Error('Forbidden: Only admins can force a full sync.')
+
     const sheetsId = getSetting('sheets_id')
     const saPath   = getSetting('service_account_path')
     if (!sheetsId || !saPath) return { success: false, error: 'Google Sheets not configured. Go to Settings.' }
@@ -1553,14 +1555,32 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       // freshly-installed device whose initial pull missed rows (skipped salesman match,
       // network blip, etc). Without this, the clear-then-rewrite below would permanently
       // erase every row the local device doesn't have, even though the Sheet had them.
-      // Mirrors the same protection writeTab already applies to the config tabs.
-      const { n: localCount } = prepare(db, `SELECT COUNT(*) AS n FROM daily_entries`).get() as { n: number }
-      const remoteCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A:A' }).catch(() => null)
-      const remoteCount = Math.max((remoteCheck?.data.values?.length ?? 1) - 1, 0) // minus header row
-      if (remoteCount > 0 && localCount < remoteCount) {
+      //
+      // Improved branch-aware check: We check if the Sheet has entries for a branch code
+      // that is entirely missing from this device's local database.
+      const localBranchesRes = prepare(db, `
+        SELECT DISTINCT b.code
+        FROM daily_entries de
+        JOIN branches b ON b.id = de.branch_id
+      `).all() as Array<{ code: string }>
+      const localBranchCodes = new Set(localBranchesRes.map(b => b.code))
+
+      const remoteCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!B:B' }).catch(() => null)
+      const remoteValues = remoteCheck?.data.values ?? []
+      
+      const remoteBranchCodes = new Set<string>()
+      // Skip header row
+      for (let i = 1; i < remoteValues.length; i++) {
+        const code = remoteValues[i][0]
+        if (code) remoteBranchCodes.add(code)
+      }
+
+      const missingBranches = Array.from(remoteBranchCodes).filter(code => !localBranchCodes.has(code))
+
+      if (missingBranches.length > 0) {
         return {
           success: false,
-          error: `Refused to force-sync: this device only has ${localCount} local entries but the Sheet has ${remoteCount}. Pull from cloud first so this device has the full history before forcing a full sync, or this would erase rows the Sheet has that this device doesn't.`,
+          error: `Refused to force-sync: The Google Sheet contains entries for branch(es) "${missingBranches.join(', ')}", but this device has 0 local entries for them. Pull from cloud first so this device has the full history before forcing a full sync, otherwise you will permanently delete those branches' data.`,
         }
       }
 

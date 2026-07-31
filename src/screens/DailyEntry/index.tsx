@@ -41,6 +41,7 @@ export default function DailyEntry() {
   const [uploadSummary, setUploadSummary] = useState<UploadSummary | null>(null)
   const [errorRows, setErrorRows] = useState<ErrorRow[]>([])
   const [showErrorModal, setShowErrorModal] = useState(false)
+  const [cloudSyncError, setCloudSyncError] = useState<string | null>(null)
 
   const effectiveBranchId = (user?.role === 'sales_sup' || user?.role === 'branch_manager' || user?.role === 'accountant_officer')
     ? (user.branchId ?? 1)
@@ -50,7 +51,7 @@ export default function DailyEntry() {
 
   function resetUpload() {
     setUploadFile(null); setPreview(null); setUploadErrors([]); setUploadResult(null)
-    setUploadSummary(null); setErrorRows([])
+    setUploadSummary(null); setErrorRows([]); setCloudSyncError(null)
   }
 
   async function handleFilePick(file: File) {
@@ -92,6 +93,7 @@ export default function DailyEntry() {
       if (res.success) {
         setUploadSummary(res.summary ?? null)
         setErrorRows(res.errorRows ?? [])
+        setCloudSyncError(res.cloudSyncError ?? null)
         setUploadResult(null)
         setUploadErrors(errors)
         setUploadFile(null); setPreview(null)
@@ -120,6 +122,7 @@ export default function DailyEntry() {
     if (res.success) {
       const stillErrored = res.errorRows ?? []
       setErrorRows(stillErrored)
+      setCloudSyncError(res.cloudSyncError ?? null)
       setUploadSummary(prev => prev ? {
         ...prev,
         complete: prev.complete + (res.summary?.complete ?? 0),
@@ -180,6 +183,18 @@ export default function DailyEntry() {
             <span className="material-symbols-outlined text-primary">fact_check</span>
             {t('de_results_after_upload')}
           </h4>
+
+          {cloudSyncError && (
+            <div className="mb-4 flex items-start gap-3 bg-error-container/20 border border-error/20 text-on-error-container px-4 py-3 rounded-xl shadow-sm">
+              <span className="material-symbols-outlined text-error mt-0.5">cloud_off</span>
+              <div>
+                <p className="font-bold text-sm text-error">Upload saved locally, but failed to reach Google Sheets.</p>
+                <p className="text-xs mt-1 text-on-surface-variant">{cloudSyncError}</p>
+                <p className="text-xs mt-1 font-medium">Please click "Push to Sheets" in Settings when your internet returns.</p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
             {[
               { l: t('de_total_record'),  v: uploadSummary.totalRecords },

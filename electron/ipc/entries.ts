@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth, logAudit } from './auth'
-import { syncEntriesToCloudIfConfigured, pushSupervisorsIfConfigured, pushRosterIfConfigured } from './sheets'
+import { syncEntriesToCloudIfConfigured, pushSupervisorsIfConfigured, pushRosterIfConfigured, pushEntriesAndDeletionsIfConfigured } from './sheets'
 import { snapshotSalesman } from '../db/history'
 import { fiscalRangeForLabel } from '../db/fiscalMonth'
 
@@ -131,8 +131,12 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
     prepare(db, `DELETE FROM daily_entries WHERE salesman_id = ? AND entry_date = ?`).run(entry.salesmanId, entry.date)
     prepare(db, `INSERT INTO daily_entries (salesman_id, branch_id, staff_type, entry_date, jewelry_weight_g, bar_weight_g, quantity, synced, updated_at) VALUES (?,?,?,?,?,?,?,0,?)`)
       .run(entry.salesmanId, entry.branchId, sm?.staff_type ?? 'b2c', entry.date, entry.jewelryWeightG, entry.barWeightG, entry.quantity, now)
-    syncEntriesToCloudIfConfigured(db).catch(() => {})
-    return { success: true }
+    const cloudSync = await pushEntriesAndDeletionsIfConfigured(db)
+    return {
+      success: true,
+      cloudSynced: cloudSync.success,
+      cloudSyncError: cloudSync.success ? undefined : (cloudSync.error ?? 'Entry saved locally but failed to reach Google Sheets.'),
+    }
   })
 
   ipcMain.handle('entry:saveBatch', async (_e, token: string, entries: Array<{
@@ -150,8 +154,13 @@ export function registerEntryHandlers(ipcMain: IpcMain): void {
           .run(e.salesmanId, e.branchId, sm?.staff_type ?? 'b2c', e.date, e.jewelryWeightG, e.barWeightG, e.quantity, now)
       }
     })
-    syncEntriesToCloudIfConfigured(db).catch(() => {})
-    return { success: true, count: entries.length }
+    const cloudSync = await pushEntriesAndDeletionsIfConfigured(db)
+    return {
+      success: true,
+      count: entries.length,
+      cloudSynced: cloudSync.success,
+      cloudSyncError: cloudSync.success ? undefined : (cloudSync.error ?? 'Batch saved locally but failed to reach Google Sheets.'),
+    }
   })
 
   ipcMain.handle('entry:getUnsyncedCount', async (_e, token: string) => {
