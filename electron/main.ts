@@ -150,6 +150,11 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('updater:available', { version: info.version })
     }
   })
+  autoUpdater.on('download-progress', (progressObj) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater:progress', progressObj)
+    }
+  })
   autoUpdater.on('update-downloaded', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('updater:downloaded')
@@ -157,6 +162,9 @@ app.whenReady().then(async () => {
   })
   autoUpdater.on('error', (err) => {
     console.warn('[updater] check/download failed:', err?.message)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater:error', err?.message)
+    }
   })
   if (is.dev) {
     console.log('[updater] skipped in dev')
