@@ -144,6 +144,7 @@ app.whenReady().then(async () => {
   // before a download starts; quitAndInstall only fires when they explicitly click it
   // (see ipcMain handlers below), never silently mid-session.
   autoUpdater.autoDownload = false
+  autoUpdater.disableDifferentialDownload = true
   autoUpdater.on('update-available', (info) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('updater:available', { version: info.version })
