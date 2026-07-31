@@ -1,12 +1,42 @@
-import { IpcMain, dialog, BrowserWindow } from 'electron'
-import { ENABLE_TOMBSTONE_AUTO_CLEANUP } from '../../src/config/syncFlags'
+import { IpcMain, dialog, BrowserWindow, app } from 'electron'
+import { ENABLE_TOMBSTONE_AUTO_CLEANUP, SYNC_DELETION_CHUNK_SIZE, SYNC_RETRY_ATTEMPTS, SYNC_RETRY_BASE_MS } from '../../src/config/syncFlags'
 import { google } from 'googleapis'
 import bcrypt from 'bcryptjs'
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync, existsSync, writeFileSync } from 'fs'
 import { getDb } from '../db/connection'
 import { prepare, transaction } from '../db/query'
 import { requireAuth } from './auth'
 import type { Database } from 'better-sqlite3'
+
+// Stable per-device path for the sync fallback cache.
+// Using app.getPath('userData') instead of a literal relative path means this
+// always lands in %APPDATA%\<appName>\ regardless of what directory the user
+// launches the exe from (a relative path resolves against the shell's cwd,
+// which is undefined for desktop shortcuts and Electron packaged apps).
+function getSyncCachePath(): string {
+  const { join } = require('path') as typeof import('path')
+  return join(app.getPath('userData'), 'syncCache.json')
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(res => setTimeout(res, ms));
+}
+async function retryWithBackoff<T>(fn: () => Promise<T>, attempts: number = SYNC_RETRY_ATTEMPTS, baseMs: number = SYNC_RETRY_BASE_MS): Promise<T> {
+  let lastError: any;
+  for (let i = 0; i < attempts; i++) {
+    try { return await fn(); }
+    catch (e) { lastError = e; await sleep(baseMs * Math.pow(2, i)); }
+  }
+  throw lastError;
+}
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
 
 // ── Tab name registry ─────────────────────────────────────────────────────────
 const TABS = {
@@ -413,9 +443,6 @@ async function pushMonthlyBranchTargets(db: Database, sheets: ReturnType<typeof 
   await writeTab(sheets, spreadsheetId, TABS.MONTHLY_TARGETS, ['Branch', 'Month', 'Target (pts/person)', 'B2C Target Override', 'B2B Target Override'], rows)
 }
 
-// "HR confirmed this month" marker — previously local-only, which meant it got silently
-// wiped (with no way to recover) every time bootstrapConnect switched/re-pulled a sheet.
-// Pushing/pulling it like every other config tab lets it survive a sheet-source switch.
 async function pushKpiSubmissions(db: Database, sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<void> {
   const rows = (prepare(db, `SELECT year_month, submitted_by, submitted_at FROM kpi_monthly_submissions ORDER BY year_month`).all() as Array<{
     year_month: string; submitted_by: string | null; submitted_at: string
@@ -424,55 +451,116 @@ async function pushKpiSubmissions(db: Database, sheets: ReturnType<typeof google
   await writeTab(sheets, spreadsheetId, TABS.KPI_SUBMISSIONS, ['Month', 'submitted_by', 'submitted_at'], rows)
 }
 
-// ── Shared push: unsynced daily entries + unsynced delete tombstones ──────────
-// Single choke point both syncEntriesToCloudIfConfigured (fire-and-forget) and the manual
-// "Push to Sheets" button delegate to — previously each had its own copy of this exact
-// append logic, which is how the Entries push code drifted in the first place. Append-only:
-// new entries and tombstone rows are appended, the tab itself is never cleared/rewritten.
 async function pushEntriesAndDeletions(db: Database): Promise<number> {
-  const sheetsId = getSetting('sheets_id')
-  const saPath   = getSetting('service_account_path')
-  if (!sheetsId || !saPath) return 0
+  const sheetsId = getSetting('sheets_id');
+  const saPath = getSetting('service_account_path');
+  if (!sheetsId || !saPath) return 0;
 
-  const auth   = getServiceAuth(saPath)
-  const sheets = google.sheets({ version: 'v4', auth })
-
+  // Gather unsynced entries and deletions from DB first — if both are empty
+  // AND there's no pending-entries cache, skip the entire function without
+  // touching the filesystem or opening a Sheets connection.
   const unsyncedEntries = prepare(db, `
     SELECT de.id, de.entry_date, b.code AS branch_code, s.rep_code, s.full_name, de.jewelry_weight_g, de.bar_weight_g, de.quantity
     FROM daily_entries de JOIN salesmen s ON s.id=de.salesman_id JOIN branches b ON b.id=de.branch_id
-    WHERE de.synced=0 ORDER BY de.entry_date, de.branch_id
-  `).all() as Array<{ id: number; entry_date: string; branch_code: string; rep_code: string | null; full_name: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number }>
+    WHERE de.synced=0 ORDER BY de.entry_date, de.branch_code
+  `).all() as Array<{ id: number; entry_date: string; branch_code: string; rep_code: string | null; full_name: string; jewelry_weight_g: number; bar_weight_g: number; quantity: number }>;
 
+  // Deletions always come from the DB (synced=0 rows) — NEVER from the
+  // fallback cache.  The cache only retries failed *entry* pushes, which are
+  // safe to replay (the Sheet treats a duplicate data row as a harmless
+  // duplicate — the pull deduplicates by last-write-wins on the same key).
+  // Replaying cached *deletions* is catastrophically unsafe: a Deleted='1'
+  // tombstone that already reached the Sheet on a previous attempt would be
+  // appended again on the retry, causing every device's next pull to re-delete
+  // entries that may have been re-uploaded in the meantime.  This was the
+  // exact mechanism that erased VangThong and Morning Market's July entries.
   const unsyncedDeletions = prepare(db, `
     SELECT ed.salesman_id, ed.entry_date, b.code AS branch_code, s.rep_code, s.full_name
     FROM entry_deletions ed JOIN salesmen s ON s.id=ed.salesman_id JOIN branches b ON b.id=s.branch_id
     WHERE ed.synced=0 ORDER BY ed.entry_date
-  `).all() as Array<{ salesman_id: number; entry_date: string; branch_code: string; rep_code: string | null; full_name: string }>
+  `).all() as Array<{ salesman_id: number; entry_date: string; branch_code: string; rep_code: string | null; full_name: string }>;
 
-  if (!unsyncedEntries.length && !unsyncedDeletions.length) return 0
-
-  const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: `${TABS.ENTRIES}!A1` }).catch(() => null)
-  if (!headerCheck?.data?.values?.[0]?.[0]) {
-    await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetsId, requestBody: { requests: [{ addSheet: { properties: { title: TABS.ENTRIES } } }] } }).catch(() => {})
-    await sheets.spreadsheets.values.update({ spreadsheetId: sheetsId, range: `${TABS.ENTRIES}!A1`, valueInputOption: 'USER_ENTERED', requestBody: { values: [SHEET_HEADERS] } })
+  // Load any pending *entry* rows from a previous failed push — safe to retry
+  // because entry rows are idempotent (pull uses last-write-wins per key).
+  // Deletion rows from a previous cache are intentionally NOT replayed (see above).
+  const cachePath = getSyncCachePath();
+  let pendingEntries: any[] = [];
+  if (existsSync(cachePath)) {
+    try {
+      const raw = JSON.parse(readFileSync(cachePath, 'utf8'));
+      // Accept both the old {entries,deletions} shape and the new {entries} shape.
+      pendingEntries = Array.isArray(raw?.entries) ? raw.entries : [];
+      // Silently drop any cached deletions — they must not be replayed.
+    } catch { /* corrupt cache — ignore */ }
   }
 
-  const rows = [
-    ...unsyncedEntries.map(e => [e.entry_date, e.branch_code, e.rep_code ?? '', e.full_name, e.jewelry_weight_g, e.bar_weight_g, e.quantity, '']),
-    ...unsyncedDeletions.map(d => [d.entry_date, d.branch_code, d.rep_code ?? '', d.full_name, '', '', '', '1']),
-  ]
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: sheetsId, range: `${TABS.ENTRIES}!A:H`, valueInputOption: 'USER_ENTERED',
-    requestBody: { values: rows },
-  })
+  const allEntries = [...pendingEntries, ...unsyncedEntries];
+  // Deletions are always DB-fresh only.
+  const allDeletions = [...unsyncedDeletions];
 
-  const now = new Date().toISOString()
-  unsyncedEntries.forEach(e => prepare(db, `UPDATE daily_entries SET synced=1 WHERE id=?`).run(e.id))
-  unsyncedDeletions.forEach(d => prepare(db, `UPDATE entry_deletions SET synced=1 WHERE salesman_id=? AND entry_date=?`).run(d.salesman_id, d.entry_date))
-  prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now)
-  prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('push', ?, 'success')`).run(rows.length)
+  // Prepare rows for ENTRIES sheet
+  const entryRows = allEntries.map(e => [e.entry_date, e.branch_code, e.rep_code ?? '', e.full_name, e.jewelry_weight_g, e.bar_weight_g, e.quantity, '']);
+  const delRows = allDeletions.map(d => [d.entry_date, d.branch_code, d.rep_code ?? '', d.full_name, '', '', '', '1']);
+  const rows = [...entryRows, ...delRows];
+  if (rows.length === 0) return 0;
 
-  return rows.length
+  const auth = getServiceAuth(saPath);
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  // Ensure header exists
+  const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: `${TABS.ENTRIES}!A1` }).catch(() => null);
+  if (!headerCheck?.data?.values?.[0]?.[0]) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetsId, requestBody: { requests: [{ addSheet: { properties: { title: TABS.ENTRIES } } }] } }).catch(() => {});
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetsId,
+      range: `${TABS.ENTRIES}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [SHEET_HEADERS] },
+    });
+  }
+
+  // Send rows with retry and chunking for deletions
+  try {
+    if (entryRows.length) {
+      await retryWithBackoff(() => sheets.spreadsheets.values.append({
+        spreadsheetId: sheetsId,
+        range: `${TABS.ENTRIES}!A:H`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: entryRows },
+      }));
+    }
+    const deletionChunks = chunkArray(delRows, SYNC_DELETION_CHUNK_SIZE);
+    for (const chunk of deletionChunks) {
+      await retryWithBackoff(() => sheets.spreadsheets.values.append({
+        spreadsheetId: sheetsId,
+        range: `${TABS.ENTRIES}!A:H`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: chunk },
+      }));
+    }
+  } catch (e) {
+    // Cache only the pending *entry* rows for later retry — deletions are
+    // always re-read from the DB on the next attempt, never cached.
+    try { writeFileSync(cachePath, JSON.stringify({ entries: allEntries })); } catch {}
+    prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('push', ?, 'failed')`).run(rows.length);
+    console.error('[sync] pushEntriesAndDeletions failed, entry rows cached for retry:', e);
+    throw e;
+  }
+
+  // Mark original rows as synced
+  transaction(db, () => {
+    unsyncedEntries.forEach(r => prepare(db, `UPDATE daily_entries SET synced=1 WHERE id=?`).run(r.id));
+    unsyncedDeletions.forEach(r => prepare(db, `UPDATE entry_deletions SET synced=1 WHERE salesman_id=? AND entry_date=?`).run(r.salesman_id, r.entry_date));
+  });
+
+  // Clear fallback cache on success
+  try { writeFileSync(cachePath, JSON.stringify({ entries: [] })); } catch {}
+
+  const now = new Date().toISOString();
+  prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now);
+  prepare(db, `INSERT INTO sync_logs (direction, records_count, status) VALUES ('push', ?, 'success')`).run(rows.length);
+  console.info('[sync] pushEntriesAndDeletions succeeded, rows sent:', rows.length);
+  return rows.length;
 }
 
 // ── Push all unsynced daily entries — exported for use in entries.ts, upload.ts ─
@@ -1451,7 +1539,9 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
 
   // Force full sync: reset all entries + clear Entries tab + push everything
   ipcMain.handle('sheets:forceSyncAll', async (_e, token: string) => {
-    requireAuth(token)
+    const user = requireAuth(token)
+    if (user.role !== 'admin') throw new Error('Forbidden: Only admins can force a full sync.')
+
     const sheetsId = getSetting('sheets_id')
     const saPath   = getSetting('service_account_path')
     if (!sheetsId || !saPath) return { success: false, error: 'Google Sheets not configured. Go to Settings.' }
@@ -1465,14 +1555,32 @@ export function registerSheetsHandlers(ipcMain: IpcMain): void {
       // freshly-installed device whose initial pull missed rows (skipped salesman match,
       // network blip, etc). Without this, the clear-then-rewrite below would permanently
       // erase every row the local device doesn't have, even though the Sheet had them.
-      // Mirrors the same protection writeTab already applies to the config tabs.
-      const { n: localCount } = prepare(db, `SELECT COUNT(*) AS n FROM daily_entries`).get() as { n: number }
-      const remoteCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!A:A' }).catch(() => null)
-      const remoteCount = Math.max((remoteCheck?.data.values?.length ?? 1) - 1, 0) // minus header row
-      if (remoteCount > 0 && localCount < remoteCount) {
+      //
+      // Improved branch-aware check: We check if the Sheet has entries for a branch code
+      // that is entirely missing from this device's local database.
+      const localBranchesRes = prepare(db, `
+        SELECT DISTINCT b.code
+        FROM daily_entries de
+        JOIN branches b ON b.id = de.branch_id
+      `).all() as Array<{ code: string }>
+      const localBranchCodes = new Set(localBranchesRes.map(b => b.code))
+
+      const remoteCheck = await sheets.spreadsheets.values.get({ spreadsheetId: sheetsId, range: 'Entries!B:B' }).catch(() => null)
+      const remoteValues = remoteCheck?.data.values ?? []
+      
+      const remoteBranchCodes = new Set<string>()
+      // Skip header row
+      for (let i = 1; i < remoteValues.length; i++) {
+        const code = remoteValues[i][0]
+        if (code) remoteBranchCodes.add(code)
+      }
+
+      const missingBranches = Array.from(remoteBranchCodes).filter(code => !localBranchCodes.has(code))
+
+      if (missingBranches.length > 0) {
         return {
           success: false,
-          error: `Refused to force-sync: this device only has ${localCount} local entries but the Sheet has ${remoteCount}. Pull from cloud first so this device has the full history before forcing a full sync, or this would erase rows the Sheet has that this device doesn't.`,
+          error: `Refused to force-sync: The Google Sheet contains entries for branch(es) "${missingBranches.join(', ')}", but this device has 0 local entries for them. Pull from cloud first so this device has the full history before forcing a full sync, otherwise you will permanently delete those branches' data.`,
         }
       }
 

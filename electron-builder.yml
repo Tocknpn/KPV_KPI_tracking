@@ -1,4 +1,4 @@
-appId: com.salestrackpro.app
+appId: ${APP_ID:-com.salestrackpro.app}
 productName: SalesTrack Pro
 copyright: Copyright © 2026 SalesTrack Pro
 
@@ -9,11 +9,15 @@ directories:
 files:
   - out/**/*
   - "!out/**/*.map"
+  - "node_modules/better-sqlite3/**/*"
 
 # better-sqlite3 ships a native .node binary — must stay unpacked from asar (a native binary
 # can't be loaded/mmap'd from inside the asar archive at runtime).
 asarUnpack:
   - "**/node_modules/better-sqlite3/**/*"
+
+# Disable native dependency rebuilding to avoid compilation issues with older Electron versions
+npmRebuild: false
 
 # Copy the app icon into the packaged app's resources folder so main.ts can load it at
 # runtime for the window/taskbar icon (separate from win.icon below, which only sets the
@@ -24,10 +28,10 @@ extraResources:
 
 win:
   icon: build/icon.png
+  artifactName: ${productName}-${version}-${arch}-${os}.exe
+  signingHashAlgorithms: []
   target:
-    - target: nsis
-      arch:
-        - x64
+    - nsis
 
 nsis:
   oneClick: false
@@ -37,6 +41,7 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: SalesTrack Pro
+  warningsAsErrors: false
 
 publish:
   provider: github
@@ -47,3 +52,4 @@ publish:
   # with "No published versions on GitHub" until someone manually publishes the draft on
   # github.com. releaseType: release publishes it immediately on upload instead.
   releaseType: release
+  channel: ${env.CHANNEL}

@@ -9,6 +9,20 @@ import { pullAllFromCloud, getSetting } from './ipc/sheets'
 
 let mainWindow: BrowserWindow | null = null
 
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+  process.exit(0)
+}
+
+app.on('second-instance', () => {
+  // Someone tried to run a second instance, we should focus our window.
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  }
+})
+
 // Dev: build/icon.png lives at the project root, two levels up from out/main/main.js.
 // Packaged: copied into resources/ via electron-builder.yml's extraResources — win.icon
 // in that file only sets the installer/.exe/shortcut icon, the live window needs its own.
@@ -53,6 +67,7 @@ function createWindow(): void {
 }
 
 let isDbReady = false
+let initErrorMessage: string | null = null
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.salestrackpro.app')
@@ -61,8 +76,23 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  // Global error handling – forward unexpected failures to renderer for visibility
+  process.on('uncaughtException', (err) => {
+    console.error('[global] uncaughtException:', err)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('app:init-error', err instanceof Error ? err.message : String(err))
+    }
+  })
+  process.on('unhandledRejection', (reason) => {
+    console.error('[global] unhandledRejection:', reason)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const msg = reason instanceof Error ? reason.message : String(reason)
+      mainWindow.webContents.send('app:init-error', msg)
+    }
+  })
+
   // Allow renderer to poll readiness synchronously (handles fast-startup race)
-  ipcMain.handle('app:isReady', () => isDbReady)
+  ipcMain.handle('app:isReady', () => ({ ready: isDbReady, error: initErrorMessage }))
 
   // User-initiated update actions — never triggered automatically, only from the
   // in-app "Update available" banner the renderer shows on 'updater:available'.
@@ -100,6 +130,7 @@ app.whenReady().then(async () => {
     // Without this, a thrown error here leaves the renderer spinning on "Starting up…"
     // forever with no way to tell what broke — surface it instead of failing silently.
     const message = e instanceof Error ? (e.stack ?? e.message) : String(e)
+    initErrorMessage = message
     console.error('[startup] Database init failed:', message)
     try { writeFileSync(join(app.getPath('userData'), 'startup-error.log'), `${new Date().toISOString()}\n${message}\n`) } catch { /* best effort */ }
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -144,6 +175,7 @@ app.whenReady().then(async () => {
   // before a download starts; quitAndInstall only fires when they explicitly click it
   // (see ipcMain handlers below), never silently mid-session.
   autoUpdater.autoDownload = false
+  autoUpdater.disableDifferentialDownload = true // Forcibly disable delta updates to prevent slow chunked downloads and checksum failure loops
   autoUpdater.on('update-available', (info) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('updater:available', { version: info.version })
@@ -156,6 +188,17 @@ app.whenReady().then(async () => {
   })
   autoUpdater.on('error', (err) => {
     console.warn('[updater] check/download failed:', err?.message)
+    // Forward the error to the renderer so UI can show it
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater:error', err?.message ?? 'unknown')
+    }
+  })
+  // Forward download progress to renderer (percentage 0‑100)
+  autoUpdater.on('download-progress', (progress) => {
+    const percent = Math.round(progress.percent)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater:progress', { percent })
+    }
   })
   if (is.dev) {
     console.log('[updater] skipped in dev')
