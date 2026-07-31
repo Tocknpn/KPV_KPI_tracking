@@ -1,10 +1,6 @@
 {
   "name": "salestrack-pro",
-<<<<<<< HEAD
   "version": "2.0.0",
-=======
-  "version": "1.12.1",
->>>>>>> 047f80d4232f9c3118f286f95add01518c628b6e
   "description": "Gold & Jewelry Sales Performance Tracking System",
   "author": "SalesTrack Pro",
   "main": "out/main/main.js",
@@ -61,14 +57,6 @@
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.5.2",
-<<<<<<< HEAD
     "vite": "^5.3.1"
   }
 }
-=======
-    "vite": "^5.3.1",
-    "rimraf": "^5.0.0"
-  },
-  "electron": "22.3.0"
-}
->>>>>>> 047f80d4232f9c3118f286f95add01518c628b6e
