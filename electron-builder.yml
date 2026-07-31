@@ -37,6 +37,9 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: SalesTrack Pro
+  # ADDED: Disables differential update packaging so electron-builder doesn't attempt 
+  # chunk-based delta downloads on the client installer
+  differentialPackageDownload: false
 
 publish:
   provider: github
