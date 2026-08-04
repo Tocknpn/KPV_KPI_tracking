@@ -6,7 +6,7 @@ import { prepare } from '../db/query'
 import { requireAuth } from './auth'
 import { fiscalMonthOf, fiscalRangeForLabel } from '../db/fiscalMonth'
 
-const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 interface EmailCfg {
   recipients: string; frequency: string; dispatch_time: string
@@ -23,10 +23,10 @@ function buildTransport(cfg: EmailCfg) {
 }
 
 function buildSubjectAndHtml(): { subject: string; html: string } {
-  const db  = getDb()
+  const db = getDb()
   const now = new Date()
-  const d1  = new Date(now); d1.setDate(d1.getDate() - 1)
-  const d1Str   = d1.toISOString().slice(0, 10)
+  const d1 = new Date(now); d1.setDate(d1.getDate() - 1)
+  const d1Str = d1.toISOString().slice(0, 10)
   const d1Label = d1.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
   const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const { year, month } = fiscalMonthOf(todayISO)
@@ -71,7 +71,7 @@ function buildSubjectAndHtml(): { subject: string; html: string } {
   }).join('')
 
   const top5Rows = top5.length > 0
-    ? top5.map((r, i) => `<tr><td style="padding:6px 12px;font-weight:bold;color:#004f96">#${i+1} ${r.full_name}</td><td style="padding:6px 12px;color:#666">${r.branch}</td><td style="padding:6px 12px;text-align:right;font-weight:bold">${fmt(r.total_weight)}g</td></tr>`).join('')
+    ? top5.map((r, i) => `<tr><td style="padding:6px 12px;font-weight:bold;color:#004f96">#${i + 1} ${r.full_name}</td><td style="padding:6px 12px;color:#666">${r.branch}</td><td style="padding:6px 12px;text-align:right;font-weight:bold">${fmt(r.total_weight)}g</td></tr>`).join('')
     : '<tr><td colspan="3" style="padding:12px;color:#888">No entries for this date.</td></tr>'
 
   const missingWarning = missingBranches.length > 0
@@ -134,7 +134,7 @@ export function registerEmailHandlers(ipcMain: IpcMain): void {
     requireAuth(token)
     const cfg = getCfg()
     if (!cfg) return null
-    return { ...cfg, recipients: JSON.parse(cfg.recipients), metrics: ['jewelry','bar','quantity'] }
+    return { ...cfg, recipients: JSON.parse(cfg.recipients), metrics: ['jewelry', 'bar', 'quantity'] }
   })
 
   ipcMain.handle('email:saveConfig', async (_e, token: string, config: {
