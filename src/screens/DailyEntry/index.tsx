@@ -37,6 +37,10 @@ export default function DailyEntry() {
   const [isDragging, setIsDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  const [weightUnit, setWeightUnit] = useState<'baht' | 'grams'>(() => {
+    return (localStorage.getItem('kpv_upload_weight_unit') as 'baht' | 'grams') || 'baht'
+  })
+
   // Upload result summary (accountant-facing) + error-fix flow
   const [uploadSummary, setUploadSummary] = useState<UploadSummary | null>(null)
   const [errorRows, setErrorRows] = useState<ErrorRow[]>([])
@@ -76,9 +80,18 @@ export default function DailyEntry() {
     try {
       const buffer = await readFileAsArrayBuffer(uploadFile)
       const parsed = parseXLSX(buffer)
-      const { rows, errors } = validateDailyRows(parsed)
+      const { rows: initialRows, errors } = validateDailyRows(parsed)
       if (errors.length) { setUploadErrors(errors) }
-      if (!rows.length) { setUploading(false); return }
+      if (!initialRows.length) { setUploading(false); return }
+
+      if (weightUnit === 'grams') {
+        const proceed = window.confirm("You are uploading in Grams. The system will divide the jewelry and bar weight values by 15 to convert them to Baht. Continue?")
+        if (!proceed) { setUploading(false); return }
+      }
+
+      const rows = weightUnit === 'grams'
+        ? initialRows.map(r => ({ ...r, jewelryWeightG: r.jewelryWeightG / 15, barWeightG: r.barWeightG / 15 }))
+        : initialRows
 
       const dates = rows.map(r => r.date).sort()
       const res = await window.api.uploadDaily(token, rows, {
@@ -171,6 +184,8 @@ export default function DailyEntry() {
         fileRef={fileRef}
         submitLabel={t('de_import_daily_data')}
         accent="primary"
+        weightUnit={weightUnit}
+        setWeightUnit={(u) => { setWeightUnit(u); localStorage.setItem('kpv_upload_weight_unit', u) }}
       />
 
       {/* Upload result summary (accountant-facing) */}
@@ -237,9 +252,10 @@ interface PanelProps {
   isDragging: boolean; setIsDragging: (v: boolean) => void
   fileRef: React.RefObject<HTMLInputElement>
   submitLabel: string; accent: 'primary' | 'secondary'
+  weightUnit?: 'baht' | 'grams'; setWeightUnit?: (u: 'baht' | 'grams') => void
 }
 
-function CSVUploadPanel({ title, description, templateNote, onDownloadTemplate, onFilePick, uploadFile, uploading, preview, errors, result, onSubmit, onReset, isDragging, setIsDragging, fileRef, submitLabel, accent }: PanelProps) {
+function CSVUploadPanel({ title, description, templateNote, onDownloadTemplate, onFilePick, uploadFile, uploading, preview, errors, result, onSubmit, onReset, isDragging, setIsDragging, fileRef, submitLabel, accent, weightUnit, setWeightUnit }: PanelProps) {
   const { t } = useLanguage()
   const accentBtn = accent === 'secondary'
     ? 'bg-secondary text-white hover:opacity-90'
@@ -265,6 +281,42 @@ function CSVUploadPanel({ title, description, templateNote, onDownloadTemplate, 
           </button>
         </div>
       </GlassCard>
+
+      {/* Weight Unit Toggle (only if passed) */}
+      {weightUnit && setWeightUnit && (
+        <GlassCard elevated className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h4 className="font-label-md font-bold text-on-surface">Upload Weight Unit</h4>
+            <p className="text-[11px] text-on-surface-variant">Select the unit used in your upload file.</p>
+          </div>
+          <div className="flex bg-surface-container-low rounded-lg p-1 border border-outline-variant/30">
+            <button
+              onClick={() => setWeightUnit('baht')}
+              className={`px-4 py-1.5 rounded-md text-label-md font-bold transition-colors ${weightUnit === 'baht' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
+            >
+              Baht (Default)
+            </button>
+            <button
+              onClick={() => setWeightUnit('grams')}
+              className={`px-4 py-1.5 rounded-md text-label-md font-bold transition-colors ${weightUnit === 'grams' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
+            >
+              Grams
+            </button>
+          </div>
+        </GlassCard>
+      )}
+      
+      {weightUnit === 'grams' && (
+        <div className="bg-tertiary-fixed border-l-4 border-tertiary p-4 rounded-r-lg flex gap-3">
+          <span className="material-symbols-outlined text-on-tertiary-fixed-variant">info</span>
+          <div>
+            <h5 className="font-label-md font-bold text-on-tertiary-fixed-variant">Grams Mode Active</h5>
+            <p className="text-body-sm text-on-tertiary-fixed-variant mt-1">
+              You have selected Grams. Your uploaded values for Jewelry and Bar weight will automatically be <strong>divided by 15</strong> to convert them to Baht before saving to the system.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Dropzone */}
       {!uploadFile && (
