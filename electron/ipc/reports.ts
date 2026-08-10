@@ -678,9 +678,21 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
   // ── Yearly KPI (reps) — sum of each active fiscal month's score / count of active months,
   // grouped by the rep's CURRENT branch/supervisor (not a historical snapshot). A fully
   // deactivated rep never appears — "current status" has no meaning for someone who's left.
-  ipcMain.handle('report:yearlyKpiReps', async (_e, token: string, year: number) => {
-    requireAuth(token)
+  ipcMain.handle('report:yearlyKpiReps', async (_e, token: string, year: number, branchIds: number[] = []) => {
+    const user = requireAuth(token)
     const db = getDb()
+
+    let effectiveBranchIds: number[]
+    let effectiveSupervisorId: number | null = null
+
+    if (user.role === 'sales_sup') {
+      effectiveBranchIds = []
+      effectiveSupervisorId = user.supervisor_id
+    } else if (user.role === 'branch_manager' || user.role === 'accountant_officer') {
+      effectiveBranchIds = user.branch_id ? [user.branch_id] : branchIds
+    } else {
+      effectiveBranchIds = branchIds
+    }
 
     const now = new Date()
     const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
@@ -693,6 +705,11 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const months: Array<{ year: number; month: number; ym: string }> = []
     for (let m = 1; m <= lastMonth; m++) months.push({ year, month: m, ym: `${year}${String(m).padStart(2, '0')}` })
 
+    const branchSql = effectiveBranchIds.length > 0 ? `AND s.branch_id IN (${effectiveBranchIds.map(() => '?').join(',')})` : ''
+    const branchParams = effectiveBranchIds.length > 0 ? effectiveBranchIds : []
+    const supSql = effectiveSupervisorId ? `AND s.supervisor_id = ?` : ''
+    const supParams = effectiveSupervisorId ? [effectiveSupervisorId] : []
+
     const reps = prepare(db, `
       SELECT s.id, s.rep_code, s.full_name, s.nickname,
              s.branch_id, b.name AS branch_name, b.code AS branch_code,
@@ -700,8 +717,8 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
       FROM salesmen s
       JOIN branches b ON b.id = s.branch_id
       LEFT JOIN supervisors sup ON sup.id = s.supervisor_id
-      WHERE s.active = 1
-    `).all() as Array<{
+      WHERE s.active = 1 ${branchSql} ${supSql}
+    `).all(...branchParams, ...supParams) as Array<{
       id: number; rep_code: string; full_name: string; nickname: string
       branch_id: number; branch_name: string; branch_code: string
       supervisor_id: number | null; supervisor_name: string | null; staff_type: string
@@ -773,9 +790,21 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
   // membership per month comes from the same carry-forward roster resolution used by
   // report:supHistory; the supervisor's OWN active-month status comes from
   // getSupervisorRosterMapAsOf, independent of team size that month.
-  ipcMain.handle('report:yearlyKpiTeams', async (_e, token: string, year: number) => {
-    requireAuth(token)
+  ipcMain.handle('report:yearlyKpiTeams', async (_e, token: string, year: number, branchIds: number[] = []) => {
+    const user = requireAuth(token)
     const db = getDb()
+
+    let effectiveBranchIds: number[]
+    let effectiveSupervisorId: number | null = null
+
+    if (user.role === 'sales_sup') {
+      effectiveBranchIds = []
+      effectiveSupervisorId = user.supervisor_id
+    } else if (user.role === 'branch_manager' || user.role === 'accountant_officer') {
+      effectiveBranchIds = user.branch_id ? [user.branch_id] : branchIds
+    } else {
+      effectiveBranchIds = branchIds
+    }
 
     const now = new Date()
     const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
@@ -786,11 +815,16 @@ export function registerReportHandlers(ipcMain: IpcMain): void {
     const months: Array<{ year: number; month: number; ym: string }> = []
     for (let m = 1; m <= lastMonth; m++) months.push({ year, month: m, ym: `${year}${String(m).padStart(2, '0')}` })
 
+    const branchSql = effectiveBranchIds.length > 0 ? `AND sv.branch_id IN (${effectiveBranchIds.map(() => '?').join(',')})` : ''
+    const branchParams = effectiveBranchIds.length > 0 ? effectiveBranchIds : []
+    const supSql = effectiveSupervisorId ? `AND sv.id = ?` : ''
+    const supParams = effectiveSupervisorId ? [effectiveSupervisorId] : []
+
     const sups = prepare(db, `
       SELECT sv.id, sv.full_name, sv.nickname, sv.branch_id, b.name AS branch_name, b.code AS branch_code, sv.staff_type
       FROM supervisors sv JOIN branches b ON b.id = sv.branch_id
-      WHERE sv.active = 1
-    `).all() as Array<{ id: number; full_name: string; nickname: string; branch_id: number; branch_name: string; branch_code: string; staff_type: string }>
+      WHERE sv.active = 1 ${branchSql} ${supSql}
+    `).all(...branchParams, ...supParams) as Array<{ id: number; full_name: string; nickname: string; branch_id: number; branch_name: string; branch_code: string; staff_type: string }>
     if (!sups.length) return []
 
     const supRosterByYm = new Map(months.map(m => [m.ym, getSupervisorRosterMapAsOf(db, m.year, m.month)]))

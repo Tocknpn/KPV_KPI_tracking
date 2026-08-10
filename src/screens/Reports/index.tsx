@@ -374,12 +374,12 @@ export default function Reports() {
     if (!token) return
     setYearlyLoading(true)
     Promise.all([
-      window.api.getYearlyKpiReps(token, kpiYear),
-      window.api.getYearlyKpiTeams(token, kpiYear),
+      window.api.getYearlyKpiReps(token, kpiYear, effectiveBranchIds),
+      window.api.getYearlyKpiTeams(token, kpiYear, effectiveBranchIds),
     ]).then(([reps, teams]) => { setYearlyRepRows(reps); setYearlyTeamRows(teams) })
       .catch(console.error)
       .finally(() => setYearlyLoading(false))
-  }, [token, kpiYear, lastSyncedAt])
+  }, [token, kpiYear, JSON.stringify(effectiveBranchIds), lastSyncedAt])
 
   useEffect(() => { setSelectedSupIds([]) }, [JSON.stringify(effectiveBranchIds)])
 
