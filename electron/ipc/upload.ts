@@ -164,8 +164,8 @@ export function registerUploadHandlers(ipcMain: IpcMain): void {
       })
 
       const skippedCodes = results.filter(r => r.status === 'error').map(r => r.code)
-      prepare(db, `UPDATE upload_logs SET records_count = ?, notes = ? WHERE id = ?`)
-        .run(imported, skippedCodes.length ? `Skipped: ${skippedCodes.slice(0,5).join(', ')}${skippedCodes.length > 5 ? '…' : ''}` : null, logId)
+      prepare(db, `UPDATE upload_logs SET records_count = ?, notes = ?, status = ? WHERE id = ?`)
+        .run(imported, skippedCodes.length ? `Skipped: ${skippedCodes.slice(0,5).join(', ')}${skippedCodes.length > 5 ? '…' : ''}` : null, imported === 0 ? 'error' : 'success', logId)
 
       logAudit(db, user.id, user.username, user.role, 'sales_upload_submitted',
         `${meta.filename}: ${imported} imported, ${skippedCodes.length} rejected`, 'upload_log', String(logId), meta.branchId)

@@ -1129,17 +1129,20 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
       for (const row of data) {
         const [occurredAt, username, role, eventType, targetType, targetId, detail, branchIdStr] = row as string[]
         if (!occurredAt || !eventType) continue
+        let normOccurredAt = occurredAt
+        if (normOccurredAt && normOccurredAt.match(/ \d:/)) normOccurredAt = normOccurredAt.replace(/ (\d):/, ' 0$1:')
+        
         const exists = prepare(db, `
           SELECT 1 FROM audit_logs
           WHERE occurred_at=? AND username=? AND event_type=? AND IFNULL(target_id,'')=? AND IFNULL(detail,'')=?
           LIMIT 1
-        `).get(occurredAt, username ?? '', eventType, targetId ?? '', detail ?? '')
+        `).get(normOccurredAt, username ?? '', eventType, targetId ?? '', detail ?? '')
         if (exists) continue
         const branchId = parseInt(branchIdStr, 10)
         prepare(db, `
           INSERT INTO audit_logs (occurred_at, username, role, event_type, target_type, target_id, detail, branch_id, synced)
           VALUES (?,?,?,?,?,?,?,?,1)
-        `).run(occurredAt, username ?? '', role ?? '', eventType, targetType || null, targetId || null, detail || null, isNaN(branchId) ? null : branchId)
+        `).run(normOccurredAt, username ?? '', role ?? '', eventType, targetType || null, targetId || null, detail || null, isNaN(branchId) ? null : branchId)
         counts.auditLogs++
       }
       })
@@ -1157,21 +1160,28 @@ export async function pullAllFromCloud(sheetsId: string, saPath: string): Promis
         const branch = prepare(db, `SELECT id FROM branches WHERE code = ?`).get(branchCode) as { id: number } | undefined
         const u = prepare(db, `SELECT id FROM users WHERE username = ?`).get(username) as { id: number } | undefined
         if (!branch || !u) continue // can't satisfy NOT NULL branch_id/user_id — skip rather than guess
+        let normUploadedAt = uploadedAt
+        if (normUploadedAt && normUploadedAt.match(/ \d:/)) normUploadedAt = normUploadedAt.replace(/ (\d):/, ' 0$1:')
+
         const exists = prepare(db, `
           SELECT 1 FROM upload_logs
           WHERE uploaded_at=? AND user_id=? AND upload_type=? AND filename=? AND IFNULL(notes,'')=?
           LIMIT 1
-        `).get(uploadedAt, u.id, uploadType, filename ?? '', notes ?? '')
+        `).get(normUploadedAt, u.id, uploadType, filename ?? '', notes ?? '')
         if (exists) continue
         const month = parseInt(monthStr, 10); const year = parseInt(yearStr, 10)
         prepare(db, `
           INSERT INTO upload_logs (uploaded_at, branch_id, user_id, upload_type, filename, records_count, date_from, date_to, month, year, status, notes, synced)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)
-        `).run(uploadedAt, branch.id, u.id, uploadType, filename ?? '', parseInt(recordsCountStr, 10) || 0, dateFrom || null, dateTo || null, isNaN(month) ? null : month, isNaN(year) ? null : year, status || 'success', notes || null)
+        `).run(normUploadedAt, branch.id, u.id, uploadType, filename ?? '', parseInt(recordsCountStr, 10) || 0, dateFrom || null, dateTo || null, isNaN(month) ? null : month, isNaN(year) ? null : year, status || 'success', notes || null)
         counts.uploadLogs++
       }
       })
     }
+
+    // Clean up any existing malformed duplicates caused by Google Sheets stripping the leading zero
+    prepare(db, `DELETE FROM upload_logs WHERE length(uploaded_at) < 19 AND uploaded_at LIKE '% %:%:%'`).run()
+    prepare(db, `DELETE FROM audit_logs WHERE length(occurred_at) < 19 AND occurred_at LIKE '% %:%:%'`).run()
 
     prepare(db, `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_synced_at', ?)`).run(now)
     prepare(db, `INSERT INTO sync_logs (direction, records_count, status, error_message) VALUES ('pull', ?, ?, ?)`)
