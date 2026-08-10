@@ -30,9 +30,9 @@ export default function DailyEntry() {
 
   // CSV upload state
   const [uploadFile, setUploadFile] = useState<File | null>(null)
-  const [uploading, setUploading]   = useState(false)
-  const [preview, setPreview]       = useState<{ headers: string[]; sample: string[][] } | null>(null)
-  const [uploadErrors, setUploadErrors]  = useState<ParseError[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [preview, setPreview] = useState<{ headers: string[]; sample: string[][] } | null>(null)
+  const [uploadErrors, setUploadErrors] = useState<ParseError[]>([])
   const [uploadResult, setUploadResult] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -65,7 +65,7 @@ export default function DailyEntry() {
       const parsed = parseXLSX(buffer)
       setPreview({
         headers: parsed.headers,
-        sample:  parsed.rows.slice(0, 3).map(r => parsed.headers.map(h => r[h] ?? '')),
+        sample: parsed.rows.slice(0, 3).map(r => parsed.headers.map(h => r[h] ?? '')),
       })
       if (parsed.errors.length) setUploadErrors(parsed.errors)
     } catch {
@@ -168,7 +168,7 @@ export default function DailyEntry() {
       <CSVUploadPanel
         title={t('de_panel_title')}
         description={t('de_panel_desc')}
-        templateNote="Format: Date (YYYY-MM-DD), Staff_ID, Full_Name, Branch_ID, KPI_1 (Jewelry g), KPI_2 (Bar g), KPI_3 (Quantity)"
+        templateNote="Format: Date (YYYY-MM-DD), Staff_ID, Full_Name, Branch_ID, KPI_1 (Jewelry baht), KPI_2 (Bar baht), KPI_3 (Quantity)"
         onDownloadTemplate={downloadDailyTemplate}
         templateFilename={`daily_template_${date}.xlsx`}
         onFilePick={handleFilePick}
@@ -197,12 +197,12 @@ export default function DailyEntry() {
           </h4>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
             {[
-              { l: t('de_total_record'),  v: uploadSummary.totalRecords },
+              { l: t('de_total_record'), v: uploadSummary.totalRecords },
               { l: t('de_total_jewelry'), v: fmt(uploadSummary.totalJewelry) + ' g' },
-              { l: t('de_total_bar'),     v: fmt(uploadSummary.totalBar) + ' g' },
-              { l: t('de_total_qty'),     v: uploadSummary.totalQty },
-              { l: t('de_total_weight'),  v: fmt(uploadSummary.totalWeight) + ' g' },
-              { l: t('de_complete'),      v: uploadSummary.complete },
+              { l: t('de_total_bar'), v: fmt(uploadSummary.totalBar) + ' g' },
+              { l: t('de_total_qty'), v: uploadSummary.totalQty },
+              { l: t('de_total_weight'), v: fmt(uploadSummary.totalWeight) + ' g' },
+              { l: t('de_complete'), v: uploadSummary.complete },
             ].map(item => (
               <div key={item.l} className="bg-surface-container/40 rounded-xl p-3">
                 <p className="text-[9px] text-on-surface-variant uppercase font-bold mb-1">{item.l}</p>
@@ -305,7 +305,7 @@ function CSVUploadPanel({ title, description, templateNote, onDownloadTemplate, 
           </div>
         </GlassCard>
       )}
-      
+
       {weightUnit === 'grams' && (
         <div className="bg-tertiary-fixed border-l-4 border-tertiary p-4 rounded-r-lg flex gap-3">
           <span className="material-symbols-outlined text-on-tertiary-fixed-variant">info</span>
@@ -432,7 +432,7 @@ function ErrorFixModal({ rows, onReupload, onClose }: {
         ...r.data,
         [field]: field === 'jewelryWeightG' || field === 'barWeightG' ? (parseFloat(value) || 0)
           : field === 'quantity' ? (parseInt(value) || 0)
-          : value,
+            : value,
       },
     } : r))
   }
